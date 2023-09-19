@@ -9,7 +9,6 @@ class VersionedModel:
     version: str = field(default_factory=lambda: uuid4().hex)
     previous_version: str = field(default_factory=lambda: '00000000000000000000000000000000')
     active: bool = field(default_factory=lambda: True)
-    latest: bool = field(default_factory=lambda: True)
     changed_by_id: str = field(default_factory=lambda: '00000000000000000000000000000000')
     changed_on: datetime = field(default_factory=lambda: datetime.utcnow())
 

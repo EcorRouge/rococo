@@ -11,7 +11,7 @@ name: Upload Python Package to Test PyPi
 on:
   push:
     branches:
-      - test
+      - staging
 
 permissions:
   contents: read

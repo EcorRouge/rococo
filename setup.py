@@ -1,9 +1,9 @@
-from setuptools import setup
+from setuptools import setup, find_packages
 
 setup(
     name='rococo',
-    version='0.1.2',
-    packages=['rococo'],
+    version='0.1.4',
+    packages=find_packages(),
     url='https://github.com/EcorRouge/rococo',
     license='MIT',
     author='Jay Grieves',

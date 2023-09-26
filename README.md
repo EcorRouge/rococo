@@ -14,6 +14,8 @@ pip install rococo
 
 ### Example
 
+#### Models
+
 ```python
 from rococo.models import Person
 
@@ -36,4 +38,52 @@ someone.as_dict()
     'version': '08489d2bc5d74f78b7af0f2c1d9c5498'
 }
 ```
+
+#### Messaging
+
+
+##### RabbitMQ
+```python
+# Producer
+from rococo.messaging import RabbitMqConnection
+
+with RabbitMqConnection('host', 'port', 'username', 'password', 'virtual_host') as conn:
+    conn.send_message('queue_name', {'message': 'data'})
+
+
+# Consumer
+from rococo.messaging import RabbitMqConnection
+
+def process_message(message_data: dict):
+    print(f"Processing message {message_data}...")
+
+with RabbitMqConnection('host', 'port', 'username', 'password', 'virtual_host') as conn:
+    conn.consume_messages('queue_name', process_message)
+```
+
+##### SQS
+```python
+# Producer
+from rococo.messaging import SqsConnection
+
+with SqsConnection(region_name='us-east-1') as conn:
+    conn.send_message('queue_name', {'message': 'data'})
+
+
+# Consumer
+from rococo.messaging import SqsConnection
+
+def process_message(message_data: dict):
+    print(f"Processing message {message_data}...")
+
+with SqsConnection(region_name='us-east-1') as conn:
+    conn.consume_messages('queue_name', process_message)
+
+# Note: since cleanup is not required for SQS connections, you can also do:
+conn = SqsConnection(region_name='us-east-1')
+conn.send_message('queue_name', {'message': 'data'})
+conn.consume_messages('queue_name', process_message)
+```
+
+
 

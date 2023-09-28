@@ -85,5 +85,27 @@ conn.send_message('queue_name', {'message': 'data'})
 conn.consume_messages('queue_name', process_message)
 ```
 
+#### Data
+
+##### SurrealDB
+```python
+from rococo.data import SurrealDbAdapter
+
+def get_db_connection():
+    endpoint = "ws://localhost:8000/rpc"
+    username = "myuser"
+    password = "mypassword"
+    namespace = "test"
+    database = "test"
+
+    return SurrealDbAdapter(endpoint, username, password, namespace, database)
 
 
+with get_db_connection() as db:
+    db.execute_query("""insert into person {
+        user: 'me',
+        pass: 'very_safe',
+        tags: ['python', 'documentation']
+    };""")
+    print(db.execute_query("SELECT * FROM person;", {}))
+```

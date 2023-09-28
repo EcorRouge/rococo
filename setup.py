@@ -11,5 +11,10 @@ setup(
     description='A Python library to help build things the way we want them built',
     long_description=open('README.md').read(),
     long_description_content_type='text/markdown',
+    install_requires=[
+        'surrealdb==0.3.1',
+        'boto3==1.28.55',
+        'pika==1.3.2'
+    ],
     python_requires=">=3.10"
 )

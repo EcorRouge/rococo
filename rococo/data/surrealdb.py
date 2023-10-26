@@ -46,7 +46,6 @@ class SurrealDbAdapter(DbAdapter):
 
         if not self._db:
             raise Exception("No connection to SurrealDB.")
-
         return self._event_loop.run_until_complete(self._db.query(sql, _vars))
 
 
@@ -99,6 +98,7 @@ class SurrealDbAdapter(DbAdapter):
         columns = ', '.join(data.keys())
         values = ', '.join([f"'{v}'" for v in data.values()])
         query = f"INSERT INTO {table} ({columns}) VALUES ({values})"
+        
         db_response = self.execute_query(query)
 
         return self.parse_db_response(db_response)

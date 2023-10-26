@@ -109,3 +109,78 @@ with get_db_connection() as db:
     };""")
     print(db.execute_query("SELECT * FROM person;", {}))
 ```
+
+### Implementation using Repository 
+
+```python
+class FlaskBaseRepository:
+    def __init__(self):
+        endpoint = "ws://localhost:8000/rpc"
+        username = "myuser"
+        password = "mypassword"
+        namespace = "hell"
+        db_name = "abclolo"
+        self.adapter = SurrealDbAdapter(endpoint, username, password, namespace, db_name)
+
+    def get_db_connection(self):
+        return self.adapter
+
+
+class LoginMethodRepository(BaseRepository):
+    def __init__(self):
+        super().__init__(FlaskBaseRepository().get_db_connection(), LoginMethod)
+
+    def save(self, login_method: LoginMethod):
+        with self.adapter:
+            return super().save(login_method)
+
+    def get_one(self, conditions: Dict[str, Any]):
+        with self.adapter:
+            return super().get_one(conditions)
+        
+    def get_many(self, conditions: Dict[str, Any]):
+        with self.adapter:
+            return super().get_many(conditions)
+
+# Create a new LoginMethod instance
+sample_data = LoginMethod(
+    person_id="asd123123",
+    method_type="email",
+    method_data={},
+    email="user@example.com",
+    password="hashed_password"
+)
+
+# Instantiate the LoginMethodRepository
+repo = LoginMethodRepository()
+
+result = repo.save(sample_data)
+
+print("Done",repo.get_one({}))   
+print("Done",repo.get_many({}))   
+```
+
+Explanation : 
+- Sure, let's go step by step:
+    ### Class Definition child repository:
+    ```python
+    class LoginMethodRepository(BaseRepository):
+    ```
+    Here, you're defining a new class called LoginMethodRepository which is a child class of BaseRepository. This means it will inherit properties and methods from the BaseRepository class.
+
+    ### Constructor Method:
+    ```python
+    def __init__(self):
+        super().__init__(FlaskBaseRepository().get_db_connection(), LoginMethod)
+    ```
+    The __init__ method is the constructor. Whenever an object of the LoginMethodRepository class is created, this method will be called.
+
+    super() is a built-in function that returns a temporary object of the superclass, which allows you to call its methods.
+
+    super().__init__(FlaskBaseRepository().get_db_connection(), LoginMethod) is calling the constructor of the BaseRepository class. This is passing two arguments:
+
+    A database connection obtained via the get_db_connection() method of the FlaskBaseRepository class.
+    The LoginMethod class which likely represents the model for the data structure.
+
+
+

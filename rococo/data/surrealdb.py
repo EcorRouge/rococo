@@ -1,5 +1,7 @@
-from surrealdb import Surreal
 import asyncio
+from typing import Any, Dict, List, Tuple, Union
+
+from surrealdb import Surreal
 
 
 class SurrealDbAdapter():
@@ -44,3 +46,57 @@ class SurrealDbAdapter():
             raise Exception("No connection to SurrealDB.")
 
         return self._event_loop.run_until_complete(self._db.query(sql, _vars))
+
+
+    def parse_db_response(self, response: List[Dict[str, Any]]) -> Union[Dict[str, Any], List[Dict[str, Any]]]:
+        """
+        Parse the response from SurrealDB.
+
+        If the 'result' list has one item, return that item.
+        If the 'result' list has multiple items, return the list.
+        If the 'result' list is empty or if there's no 'result', return an empty list.
+        """
+        if not response or not isinstance(response, list):
+            return []
+
+        results = response[0].get('result', [])
+        if len(results) == 1:
+            return results[0]
+        return results
+
+    def get_one(self, table: str, conditions: Dict[str, Any], sort: List[Tuple[str, str]] = None) -> Dict[str, Any]:
+        query = f"SELECT * FROM {table}"
+        if conditions:
+            condition_strs = [f"{k}='{v}'" for k, v in conditions.items()]
+            query += f" WHERE {' AND '.join(condition_strs)}"
+        if sort:
+            sort_strs = [f"{column} {direction}" for column, direction in sort]
+            query += f" ORDER BY {', '.join(sort_strs)}"
+        query += " LIMIT 1"
+
+        db_response = self.execute_query(query)
+        
+        return self.parse_db_response(db_response)
+
+    def get_many(self, table: str, conditions: Dict[str, Any] = None, sort: List[Tuple[str, str]] = None,
+                 limit: int = 100) -> List[Dict[str, Any]]:
+        query = f"SELECT * FROM {table}"
+        if conditions:
+            condition_strs = [f"{k}='{v}'" for k, v in conditions.items()]
+            query += f" WHERE {' AND '.join(condition_strs)}"
+        if sort:
+            sort_strs = [f"{column} {direction}" for column, direction in sort]
+            query += f" ORDER BY {', '.join(sort_strs)}"
+        query += f" LIMIT {limit}"
+
+        db_response = self.execute_query(query)
+        
+        return self.parse_db_response(db_response)
+
+    def insert(self, table: str, data: Dict[str, Any]):
+        columns = ', '.join(data.keys())
+        values = ', '.join([f"'{v}'" for v in data.values()])
+        query = f"INSERT INTO {table} ({columns}) VALUES ({values})"
+        db_response = self.execute_query(query)
+
+        return self.parse_db_response(db_response)

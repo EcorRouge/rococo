@@ -3,8 +3,10 @@ from typing import Any, Dict, List, Tuple, Union
 
 from surrealdb import Surreal
 
+from rococo.data.base import DbAdapter
 
-class SurrealDbAdapter():
+
+class SurrealDbAdapter(DbAdapter):
     """SurrealDB adapter for interacting with SurrealDB."""
 
     def __init__(self, endpoint: str, username: str, password: str, namespace: str, db_name: str):
@@ -93,10 +95,27 @@ class SurrealDbAdapter():
         
         return self.parse_db_response(db_response)
 
-    def insert(self, table: str, data: Dict[str, Any]):
+    def save(self, table: str, data: Dict[str, Any]):
         columns = ', '.join(data.keys())
         values = ', '.join([f"'{v}'" for v in data.values()])
         query = f"INSERT INTO {table} ({columns}) VALUES ({values})"
         db_response = self.execute_query(query)
 
         return self.parse_db_response(db_response)
+    
+    def delete(self, table: str, conditions: Dict[str, Any]) -> bool:
+        # Construct the conditions string for the SQL query
+        condition_strs = [f"{k}='{v}'" for k, v in conditions.items()]
+        conditions_sql = ' AND '.join(condition_strs)
+
+        # Construct the DELETE SQL query
+        query = f"DELETE FROM {table} WHERE {conditions_sql}"
+
+        # Execute the DELETE query
+        db_response = self.execute_query(query)
+
+        # Interpret the response. Here I'm making an assumption that the db_response 
+        # will contain some indication of success, which might vary based on the DB and adapter. 
+        # Adjust as necessary.
+        success = self.parse_db_response(db_response) # Assuming it returns a boolean or some indication
+        return success

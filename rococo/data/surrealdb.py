@@ -75,9 +75,9 @@ class SurrealDbAdapter(DbAdapter):
             query += f" ORDER BY {', '.join(sort_strs)}"
         query += " LIMIT 1"
 
-        db_response = self.execute_query(query)
+        db_response = self.parse_db_response(self.execute_query(query))
         
-        return self.parse_db_response(db_response)
+        return db_response
 
     def get_many(self, table: str, conditions: Dict[str, Any] = None, sort: List[Tuple[str, str]] = None,
                  limit: int = 100) -> List[Dict[str, Any]]:
@@ -90,18 +90,18 @@ class SurrealDbAdapter(DbAdapter):
             query += f" ORDER BY {', '.join(sort_strs)}"
         query += f" LIMIT {limit}"
 
-        db_response = self.execute_query(query)
+        db_response = self.parse_db_response(self.execute_query(query))
         
-        return self.parse_db_response(db_response)
+        return db_response
 
     def save(self, table: str, data: Dict[str, Any]):
         columns = ', '.join(data.keys())
         values = ', '.join([f"'{v}'" for v in data.values()])
         query = f"INSERT INTO {table} ({columns}) VALUES ({values})"
         
-        db_response = self.execute_query(query)
+        db_response = self.parse_db_response(self.execute_query(query))
 
-        return self.parse_db_response(db_response)
+        return db_response
     
     def delete(self, table: str, conditions: Dict[str, Any]) -> bool:
         # Construct the conditions string for the SQL query
@@ -114,8 +114,5 @@ class SurrealDbAdapter(DbAdapter):
         # Execute the DELETE query
         db_response = self.execute_query(query)
 
-        # Interpret the response. Here I'm making an assumption that the db_response 
-        # will contain some indication of success, which might vary based on the DB and adapter. 
-        # Adjust as necessary.
-        success = self.parse_db_response(db_response) # Assuming it returns a boolean or some indication
+        success = self.parse_db_response(db_response)
         return success

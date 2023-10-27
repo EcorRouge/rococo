@@ -110,25 +110,12 @@ with get_db_connection() as db:
     print(db.execute_query("SELECT * FROM person;", {}))
 ```
 
-### Implementation using Repository 
+### How to use the adapter and base Repository in another projects
 
 ```python
-class FlaskBaseRepository:
-    def __init__(self):
-        endpoint = "ws://localhost:8000/rpc"
-        username = "myuser"
-        password = "mypassword"
-        namespace = "hell"
-        db_name = "abclolo"
-        self.adapter = SurrealDbAdapter(endpoint, username, password, namespace, db_name)
-
-    def get_db_connection(self):
-        return self.adapter
-
-
 class LoginMethodRepository(BaseRepository):
-    def __init__(self):
-        super().__init__(FlaskBaseRepository().get_db_connection(), LoginMethod)
+    def __init__(self, adapter):
+        super().__init__(adapter, LoginMethod)
 
     def save(self, login_method: LoginMethod):
         with self.adapter:
@@ -137,51 +124,65 @@ class LoginMethodRepository(BaseRepository):
     def get_one(self, conditions: Dict[str, Any]):
         with self.adapter:
             return super().get_one(conditions)
-        
+
     def get_many(self, conditions: Dict[str, Any]):
         with self.adapter:
             return super().get_many(conditions)
 
-# Create a new LoginMethod instance
+```
+ - The LoginMethodRepository class is a concrete implementation of the BaseRepository class. It is responsible for managing LoginMethod objects in the database.
+
+    The __init__() method takes an adapter object as input. This adapter object is responsible for communicating with the database. The adapter object is passed to the super().__init__() method, which initializes the base repository class.
+
+    The save() method takes a LoginMethod object as input and saves it to the database. The get_one() method takes a dictionary of conditions as input and returns a single LoginMethod object that matches those conditions. The get_many() method takes a dictionary of conditions as input and returns a list of LoginMethod objects that match those conditions.
+
+#### RepositoryFactory
+
+```python
+class RepositoryFactory:
+    _repositories = {}
+
+    @classmethod
+    def _get_db_connection(cls):
+        endpoint = "ws://localhost:8000/rpc"
+        username = "myuser"
+        password = "mypassword"
+        namespace = "hell"
+        db_name = "abclolo"
+        return SurrealDbAdapter(endpoint, username, password, namespace, db_name)
+
+    @classmethod
+    def get_repository(cls, repo_class: Type[BaseRepository]):
+        if repo_class not in cls._repositories:
+            adapter = cls._get_db_connection()
+            cls._repositories[repo_class] = repo_class(adapter)
+        return cls._repositories[repo_class]
+
+```
+- The RepositoryFactory class is a singleton class that is responsible for creating and managing repositories. It uses a cache to store the repositories that it has already created. This allows it to avoid creating the same repository multiple times.
+
+    The _get_db_connection() method creates a new database connection using the specified endpoint, username, password, namespace, and database name. The get_repository() method takes a repository class as input and returns the corresponding repository object. If the repository object does not already exist in the cache, then the factory will create a new one and add it to the cache.
+
+#### Sample usage
+```python
 sample_data = LoginMethod(
     person_id="asd123123",
     method_type="email",
     method_data={},
     email="user@example.com",
-    password="hashed_password"
+    password="hashed_password",
 )
 
-# Instantiate the LoginMethodRepository
-repo = LoginMethodRepository()
+repo = RepositoryFactory.get_repository(LoginMethodRepository)
 
 result = repo.save(sample_data)
 
-print("Done",repo.get_one({}))   
-print("Done",repo.get_many({}))   
+print("Done", repo.get_one({}))
+
 ```
+- The above code creates a new LoginMethod object and saves it to the database using the LoginMethodRepository object. It then retrieves the saved object from the database and prints it to the console.
 
-Explanation : 
-- Sure, let's go step by step:
-    ### Class Definition child repository:
-    ```python
-    class LoginMethodRepository(BaseRepository):
-    ```
-    Here, you're defining a new class called LoginMethodRepository which is a child class of BaseRepository. This means it will inherit properties and methods from the BaseRepository class.
-
-    ### Constructor Method:
-    ```python
-    def __init__(self):
-        super().__init__(FlaskBaseRepository().get_db_connection(), LoginMethod)
-    ```
-    The __init__ method is the constructor. Whenever an object of the LoginMethodRepository class is created, this method will be called.
-
-    super() is a built-in function that returns a temporary object of the superclass, which allows you to call its methods.
-
-    super().__init__(FlaskBaseRepository().get_db_connection(), LoginMethod) is calling the constructor of the BaseRepository class. This is passing two arguments:
-
-    A database connection obtained via the get_db_connection() method of the FlaskBaseRepository class.
-    The LoginMethod class which likely represents the model for the data structure.
-
+    This is just a simple example of how to use the LoginMethodRepository and RepositoryFactory classes. You can use these classes to manage any type of object in a database.
 
 
 ### Deployment

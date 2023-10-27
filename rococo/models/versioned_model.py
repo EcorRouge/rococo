@@ -43,18 +43,10 @@ class VersionedModel:
         return results
 
     @classmethod
-    def from_dict(cls, model_dict: dict):
-        """Create a model from a dictionary.
-
-        Args:
-            model_dict (dict): A dictionary representation of a model.
-
-        Returns:
-            VersionedModel: A model object.
-        """
-        for key in model_dict:
-            if key in cls.__dict__:
-                cls.__dict__[key] = model_dict[key]
+    def from_dict(cls, data: Dict[str, Any]) -> "VersionedModel":
+        expected_keys = cls.__annotations__.keys()
+        filtered_data = {k: v for k, v in data.items() if k in expected_keys}
+        return cls(**filtered_data)
 
     def prepare_for_save(self, changed_by_id: str):
         """

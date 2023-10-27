@@ -5,3 +5,4 @@ from .organization import Organization
 from .otp_method import OtpMethod
 from .person import Person
 from .person_organization_role import PersonOrganizationRole
+from .email import Email

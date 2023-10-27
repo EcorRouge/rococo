@@ -1,6 +1,7 @@
 from dataclasses import dataclass
+from typing import Optional
 
-from rococo.models import VersionedModel
+from . import VersionedModel
 
 
 @dataclass

@@ -184,3 +184,27 @@ Explanation :
 
 
 
+### Deployment
+
+The process described is a Continuous Integration (CI) and Continuous Deployment (CD) pipeline for a Python package using Github Actions. Here's the breakdown:
+
+Development Phase:
+
+Developers push their changes directly to the main branch.
+This branch is likely used for ongoing development work.
+Staging/Testing Phase:
+
+When the team is ready to test a potential release, they push the code to a staging branch.
+Once code is pushed to this branch, Github Actions automatically publishes the package to the test PyPi server.
+The package can then be reviewed and tested by visiting https://test.pypi.org/project/rococo/.
+This step ensures that the package works as expected on the PyPi platform without affecting the live package.
+Release/Publish Phase:
+
+When the team is satisfied with the testing and wants to release the package to the public, they create and publish a release on the Github repository.
+Following this action, Github Actions takes over and automatically publishes the package to the official PyPi server.
+The package can then be accessed and downloaded by the public at https://pypi.org/project/rococo/.
+In essence, there are three primary phases:
+
+Development (main branch)
+Testing (staging branch with test PyPi server)
+Release (triggered by a Github release and publishes to official PyPi server).

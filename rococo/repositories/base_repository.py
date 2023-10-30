@@ -6,6 +6,7 @@ from rococo.data.base import DbAdapter
 from rococo.messaging.rabbitmq import RabbitMqConnection
 from rococo.models.versioned_model import VersionedModel
 
+import json
 
 class BaseRepository:
     def __init__(self, adapter: DbAdapter, model: Type[VersionedModel], rabbit_adapter:RabbitMqConnection, queue_name: str = 'placeholder'):
@@ -45,9 +46,12 @@ class BaseRepository:
 
         return [self.model.from_dict(record) for record in records]
 
-    def save(self, instance: VersionedModel):
+    def save(self, instance: VersionedModel, send_message: bool = False):
         data = instance.as_dict(convert_datetime_to_iso_string=True)
-        return self._execute_within_context(self.adapter.save, self.table_name, data)
+        out = self._execute_within_context(self.adapter.save, self.table_name, data)
+        if send_message:
+            self._execute_within_context(self.rabbit_adapter.send_message(self.queue_name,json.dumps(data)))
+        return out
 
     def delete(self, conditions: Dict[str, Any]) -> bool:
         return self._execute_within_context(

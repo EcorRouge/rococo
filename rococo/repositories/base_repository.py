@@ -3,12 +3,15 @@
 from typing import Any, Dict, List, Type, Union
 
 from rococo.data.base import DbAdapter
+from rococo.messaging.rabbitmq import RabbitMqConnection
 from rococo.models.versioned_model import VersionedModel
 
 
 class BaseRepository:
-    def __init__(self, adapter: DbAdapter, model: Type[VersionedModel]):
+    def __init__(self, adapter: DbAdapter, model: Type[VersionedModel], rabbit_adapter:RabbitMqConnection, queue_name: str = 'placeholder'):
         self.adapter = adapter
+        self.rabbit_adapter = rabbit_adapter
+        self.queue_name = queue_name
         self.model = model
         self.table_name = model.__name__.lower()
 

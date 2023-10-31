@@ -3,13 +3,13 @@
 from typing import Any, Dict, List, Type, Union
 
 from rococo.data.base import DbAdapter
-from rococo.messaging.base import Connection
+from rococo.messaging.base import MessageAdapter
 from rococo.models.versioned_model import VersionedModel
 
 import json
 
 class BaseRepository:
-    def __init__(self, adapter: DbAdapter, model: Type[VersionedModel], message_adapter:Connection, queue_name: str = 'placeholder'):
+    def __init__(self, adapter: DbAdapter, model: Type[VersionedModel], message_adapter:MessageAdapter, queue_name: str = 'placeholder'):
         self.adapter = adapter
         self.message_adapter = message_adapter
         self.queue_name = queue_name

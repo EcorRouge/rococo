@@ -5,7 +5,7 @@ import pytest
 from rococo.data.base import DbAdapter
 from rococo.models.versioned_model import VersionedModel
 from rococo.repositories.base_repository import BaseRepository
-from rococo.messaging.rabbitmq import RabbitMqConnection
+from rococo.messaging.base import MessageAdapter
 
 class TestVersionedModel(VersionedModel):
     @classmethod
@@ -27,16 +27,16 @@ class TestBaseRepository:
     
 
     @pytest.fixture
-    def mock_rabbit_adapter(self):
-        adapter = Mock(spec=RabbitMqConnection)
+    def mock_message_adapter(self):
+        adapter = Mock(spec=MessageAdapter)
         adapter.__enter__ = Mock(return_value=adapter)
         adapter.__exit__ = Mock()
         return adapter
 
 
     @pytest.fixture
-    def repository(self, mock_adapter, mock_rabbit_adapter):
-        return BaseRepository(mock_adapter, TestVersionedModel, mock_rabbit_adapter, "test_queue_name")
+    def repository(self, mock_adapter, mock_message_adapter):
+        return BaseRepository(mock_adapter, TestVersionedModel, mock_message_adapter, "test_queue_name")
 
     def test_get_one_existing_record(self, repository, mock_adapter):
         mock_adapter.get_one.return_value = {'id': 1, 'name': 'Test'}
@@ -94,7 +94,7 @@ class TestBaseRepository:
         mock_adapter.__exit__.assert_called()
 
 
-    def test_save_with_message(self, repository, mock_adapter, mock_rabbit_adapter):
+    def test_save_with_message(self, repository, mock_adapter, mock_message_adapter):
         mock_adapter.save.return_value = True
 
         model_instance = TestVersionedModel()

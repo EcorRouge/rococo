@@ -114,12 +114,12 @@ with get_db_connection() as db:
 
 ```python
 class LoginMethodRepository(BaseRepository):
-    def __init__(self, adapter):
-        super().__init__(adapter, LoginMethod)
+    def __init__(self, adapter, message_adapter, queue_name):
+        super().__init__(adapter, LoginMethod, message_adapter, queue_name)
 
-    def save(self, login_method: LoginMethod):
+    def save(self, login_method: LoginMethod, send_message: bool = False):
         with self.adapter:
-            return super().save(login_method)
+            return super().save(login_method,send_message)
 
     def get_one(self, conditions: Dict[str, Any]):
         with self.adapter:
@@ -133,6 +133,7 @@ class LoginMethodRepository(BaseRepository):
  - The LoginMethodRepository class is a concrete implementation of the BaseRepository class. It is responsible for managing LoginMethod objects in the database.
 
     The __init__() method takes an adapter object as input. This adapter object is responsible for communicating with the database. The adapter object is passed to the super().__init__() method, which initializes the base repository class.
+    It also takes in a message adapter and queue name for RabbitMQ and SQS messaging which can later be used in the save() method by passing a boolean.
 
     The save() method takes a LoginMethod object as input and saves it to the database. The get_one() method takes a dictionary of conditions as input and returns a single LoginMethod object that matches those conditions. The get_many() method takes a dictionary of conditions as input and returns a list of LoginMethod objects that match those conditions.
 

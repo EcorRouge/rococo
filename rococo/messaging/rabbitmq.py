@@ -5,11 +5,11 @@ import threading
 import logging
 from typing import Callable
 
-from . import Connection
+from . import MessageAdapter
 
 logger = logging.getLogger(__name__)
 
-class RabbitMqConnection(Connection):
+class RabbitMqConnection(MessageAdapter):
     """A connection to a RabbitMQ message queue that allows to send and receive messages."""
 
 

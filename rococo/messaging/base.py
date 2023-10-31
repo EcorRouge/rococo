@@ -3,7 +3,7 @@ from abc import abstractmethod
 
 # An abstract Connection class that enforces the implementation of the send_message and consume_messages methods.
 
-class Connection:
+class MessageAdapter:
     """Abstract class for a connection to a message queue."""
     
     @abstractmethod

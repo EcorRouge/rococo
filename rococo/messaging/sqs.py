@@ -3,11 +3,11 @@ import boto3
 import logging
 import uuid
 
-from . import Connection
+from . import MessageAdapter
 
 logger = logging.getLogger(__name__)
 
-class SqsConnection(Connection):
+class SqsConnection(MessageAdapter):
     """A connection to AWS SQS that allows sending and receiving messages to and from queues."""
 
     def __init__(self, aws_access_key_id: str = None, aws_access_key_secret: str = None, region_name: str = None):

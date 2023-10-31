@@ -3,15 +3,15 @@
 from typing import Any, Dict, List, Type, Union
 
 from rococo.data.base import DbAdapter
-from rococo.messaging.rabbitmq import RabbitMqConnection
+from rococo.messaging.base import Connection
 from rococo.models.versioned_model import VersionedModel
 
 import json
 
 class BaseRepository:
-    def __init__(self, adapter: DbAdapter, model: Type[VersionedModel], rabbit_adapter:RabbitMqConnection, queue_name: str = 'placeholder'):
+    def __init__(self, adapter: DbAdapter, model: Type[VersionedModel], message_adapter:Connection, queue_name: str = 'placeholder'):
         self.adapter = adapter
-        self.rabbit_adapter = rabbit_adapter
+        self.message_adapter = message_adapter
         self.queue_name = queue_name
         self.model = model
         self.table_name = model.__name__.lower()
@@ -50,7 +50,7 @@ class BaseRepository:
         data = instance.as_dict(convert_datetime_to_iso_string=True)
         out = self._execute_within_context(self.adapter.save, self.table_name, data)
         if send_message:
-            self._execute_within_context(self.rabbit_adapter.send_message(self.queue_name,json.dumps(data)))
+            self._execute_within_context(self.message_adapter.send_message(self.queue_name,json.dumps(data)))
         return out
 
     def delete(self, conditions: Dict[str, Any]) -> bool:

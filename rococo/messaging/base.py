@@ -38,3 +38,14 @@ class MessageAdapter:
     def __exit__(self, exc_type, exc_value, traceback):
         """Performs any cleanup required for the connection."""
         pass
+
+
+class BaseServiceProcessor:
+    """Abstract class for processing data from a message queue."""
+
+    @abstractmethod
+    def process(self):
+        """
+        Processes the message data.
+        """
+        pass

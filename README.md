@@ -85,6 +85,9 @@ conn.send_message('queue_name', {'message': 'data'})
 conn.consume_messages('queue_name', process_message)
 ```
 
+##### Processing
+Processing data from messages can be achieved by implementing the abstract class BaseServiceProcessor within messaging/base.py 
+
 #### Data
 
 ##### SurrealDB

@@ -18,7 +18,7 @@ class MessageAdapter:
         pass
 
     @abstractmethod
-    def consume_messages(self, queue_name: str, callback_function: callable):
+    def consume_messages(self, queue_name: str, callback_function: callable = None):
         """
         Consumes messages from the specified queue.
 

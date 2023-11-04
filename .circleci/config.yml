@@ -13,7 +13,7 @@ jobs:
           pkg-manager: pip-dist
       - run:
           name: Run tests
-          command: pytest --junitxml=junit.xml || ((($? == 5)) && echo 'Did not find any tests to run.')
+          command: pytest --junitxml=junit.xml
       - store_test_results:
           path: junit.xml
   build-package:

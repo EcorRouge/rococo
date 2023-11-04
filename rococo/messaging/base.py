@@ -51,7 +51,7 @@ class BaseServiceProcessor:
         pass
 
     @abstractmethod
-    def process(self, message: Any):
+    def process(self, message):
         """
         Processes the message data.
         """

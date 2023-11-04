@@ -1,11 +1,16 @@
+"""
+    An abstract Connection class that enforces the implementation
+    of the 'send_message' and 'consume_messages' methods.
+"""
 from abc import abstractmethod
 
 
-# An abstract Connection class that enforces the implementation of the send_message and consume_messages methods.
-
 class MessageAdapter:
     """Abstract class for a connection to a message queue."""
-    
+
+    def __init__(self):
+        pass
+
     @abstractmethod
     def send_message(self, queue_name: str, message: dict):
         """
@@ -28,7 +33,6 @@ class MessageAdapter:
         """
         pass
 
-    
     @abstractmethod
     def __enter__(self):
         """Performs any initialization required for the connection."""
@@ -43,8 +47,11 @@ class MessageAdapter:
 class BaseServiceProcessor:
     """Abstract class for processing data from a message queue."""
 
+    def __init__(self):
+        pass
+
     @abstractmethod
-    def process(self):
+    def process(self, message):
         """
         Processes the message data.
         """

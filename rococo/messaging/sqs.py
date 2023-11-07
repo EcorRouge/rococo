@@ -1,7 +1,8 @@
+"""A connection to AWS SQS that allows sending and receiving messages to and from queues."""
 import json
-import boto3
 import logging
 import uuid
+import boto3
 
 from . import MessageAdapter
 
@@ -45,7 +46,7 @@ class SqsConnection(MessageAdapter):
 
         queue.send_message(QueueUrl=queue_name, MessageBody=json.dumps(message))
 
-    def consume_messages(self, queue_name: str, callback_function: callable):
+    def consume_messages(self, queue_name: str, callback_function: callable = None):
         """Consumes messages from the specified SQS queue.
 
         Args:
@@ -64,11 +65,11 @@ class SqsConnection(MessageAdapter):
                 ]
             )
 
-        logger.info(f"Connecting to SQS queue: {queue_name}...")
+        logger.info("Connecting to SQS queue: %s...",queue_name)
         queue = self._sqs.get_queue_by_name(QueueName=queue_name)
 
         while True:
-            logger.info(f"Fetching messages from SQS queue: {queue_name}...")
+            logger.info("Fetching messages from SQS queue: %s...",queue_name)
             responses = queue.receive_messages(
                 AttributeNames=['All'],
                 MaxNumberOfMessages=1,
@@ -82,7 +83,8 @@ class SqsConnection(MessageAdapter):
             try:
                 response = responses[0]
                 body = json.loads(response.body)
-                callback_function(body)
-            except Exception as _:
+                if callback_function is not None:
+                    callback_function(body)
+            except Exception as _: # pylint: disable=W0718
                 logger.exception("Error processing message...")
             _delete_queue_message(queue, response.receipt_handle)

@@ -1,3 +1,7 @@
+"""
+PersonOrganizationRole model
+"""
+
 from dataclasses import dataclass
 
 from . import VersionedModel

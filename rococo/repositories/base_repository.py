@@ -1,12 +1,14 @@
-# base_repository.py for rococo
-
+"""
+base repository for rococo
+"""
 from typing import Any, Dict, List, Type, Union
+import json
 
 from rococo.data.base import DbAdapter
 from rococo.messaging.base import MessageAdapter
 from rococo.models.versioned_model import VersionedModel
 
-import json
+
 
 class BaseRepository:
     def __init__(self, adapter: DbAdapter, model: Type[VersionedModel], message_adapter:MessageAdapter, queue_name: str = 'placeholder'):

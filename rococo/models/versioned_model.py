@@ -1,8 +1,17 @@
+"""
+VersionedModel for rococo. Base model
+"""
+
 from uuid import uuid4
 from dataclasses import dataclass, field, fields
 from datetime import datetime
 from typing import Any, Dict, List
 
+def default_datetime():
+    """
+    Definition for default datetime
+    """
+    return datetime.utcnow()
 
 @dataclass(kw_only=True)
 class VersionedModel:
@@ -13,7 +22,7 @@ class VersionedModel:
     previous_version: str = '00000000000000000000000000000000'
     active: bool = True
     changed_by_id: str = '00000000000000000000000000000000'
-    changed_on: datetime = field(default_factory=lambda: datetime.utcnow())
+    changed_on: datetime = field(default_factory=default_datetime)
 
     @classmethod
     def fields(cls) -> List[str]:
@@ -44,6 +53,9 @@ class VersionedModel:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "VersionedModel":
+        """
+        Load VersionedModel from dict
+        """
         expected_keys = cls.__annotations__.keys()
         filtered_data = {k: v for k, v in data.items() if k in expected_keys}
         return cls(**filtered_data)

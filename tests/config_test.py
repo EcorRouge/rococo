@@ -6,7 +6,10 @@ import pytest
 from rococo.config import Config
 
 @pytest.fixture
-def env_setup():
+def _env_setup():
+    """
+    declare an environment
+    """
     os.environ["VAR_1"] = "value1"
     os.environ["VAR_2"] = "value2"
     os.environ["TO_LIST_VAR"] = "A,B,C"
@@ -17,23 +20,35 @@ def env_setup():
     del os.environ["TO_LIST_VAR"]
     del os.environ["JSON_STRING"]
 
-def test_create_config(env_setup):
+def test_create_config(_env_setup):
+    """
+    Test retrieving the vars and asserting their values
+    """
     config = Config()
     assert config.get_env_var("VAR_1") == "value1"
     assert config.get_env_var("VAR_2") == "value2"
     assert config.get_env_var("TO_LIST_VAR") == "A,B,C"
 
-def test_var_to_list(env_setup):
+def test_var_to_list(_env_setup):
+    """
+    Test converting a comma-delimited string into a list
+    """
     config = Config()
     assert config.convert_var_into_list("TO_LIST_VAR") is True
     assert config.get_env_var("TO_LIST_VAR") == ["A","B","C"]
 
-def test_var_from_json(env_setup):
+def test_var_from_json(_env_setup):
+    """
+    Test converting a json string into a pythonic type
+    """
     config = Config()
     assert config.convert_var_from_json_string("JSON_STRING") is True
     assert config.get_env_var("JSON_STRING") == {"some_key":"some_value"}
 
-def test_project_toml_version(env_setup):
+def test_project_toml_version(_env_setup):
+    """
+    Test reading a toml file and get it's version. Creates a temporary toml file in project root.
+    """
     config = Config()
     try:
         with open("pyproject.toml","w",encoding="UTF-8") as f:

@@ -1,3 +1,7 @@
+"""
+OtpMethod model
+"""
+
 from dataclasses import dataclass
 from typing import List
 

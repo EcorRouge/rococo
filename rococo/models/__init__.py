@@ -1,3 +1,7 @@
+"""
+Models for rococo
+"""
+
 from .versioned_model import VersionedModel
 
 from .login_method import LoginMethod

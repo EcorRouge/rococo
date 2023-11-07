@@ -1,9 +1,12 @@
+"""
+A connection to a RabbitMQ message queue that allows to send and receive messages.
+"""
 import json
-import pika
 import functools
 import threading
 import logging
 from typing import Callable
+import pika
 
 from . import MessageAdapter
 
@@ -32,6 +35,7 @@ class RabbitMqConnection(MessageAdapter):
 
         self._connection = None
         self._channel = None
+        self._threads = []
 
     def __enter__(self):
         """
@@ -92,10 +96,9 @@ class RabbitMqConnection(MessageAdapter):
                 body,
             )
             try:
-                success = callback(body)
-            except Exception:
+                callback(body)
+            except Exception: # pylint: disable=W0718
                 logger.exception("Error processing message...")
-                success = False
             logger.info(
                 "Thread id: %s Delivery tag: %s Message body: %s Processed...",
                 thread_id,
@@ -103,7 +106,7 @@ class RabbitMqConnection(MessageAdapter):
                 body,
             )
             cb = functools.partial(_ack_message, ch, delivery_tag)
-            logger.info(f"Sent ack for Delivery tag {delivery_tag}...")
+            logger.info("Sent ack for Delivery tag %s...",delivery_tag)
             self._connection.add_callback_threadsafe(cb)
 
         def _on_message(ch, method_frame, _header_frame, body, args):
@@ -129,7 +132,7 @@ class RabbitMqConnection(MessageAdapter):
         )
 
         try:
-            logger.info(f"Listening to RabbitMQ queue {queue_name} on {self._host}:{self._port} with {num_threads} threads...")
+            logger.info('Listening to RabbitMQ queue %s on %s:%s with %s threads...',queue_name, self._host, self._port, num_threads)
             self._channel.start_consuming()
         except KeyboardInterrupt:
             logger.info("Exiting gracefully...")

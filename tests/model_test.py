@@ -1,8 +1,14 @@
+"""
+Test VersionedModel
+"""
 from datetime import datetime, timedelta
 from rococo.models import VersionedModel
 
 
 def test_prepare_for_save():
+    """
+    Test model's prepare_for_save func
+    """
     model = VersionedModel()
     version = model.version
     changed_by_id = 'test'
@@ -15,6 +21,9 @@ def test_prepare_for_save():
 
 
 def test_as_dict():
+    """
+    Test converting model to dict
+    """
     model = VersionedModel()
 
     model_as_dict = model.as_dict(True)

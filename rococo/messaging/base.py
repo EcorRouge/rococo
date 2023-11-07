@@ -20,7 +20,6 @@ class MessageAdapter:
             queue_name (str): The name of the queue to send the message to.
             message (dict): The message to send.
         """
-        pass
 
     @abstractmethod
     def consume_messages(self, queue_name: str, callback_function: callable = None):
@@ -31,20 +30,17 @@ class MessageAdapter:
             queue_name (str): The name of the queue to consume messages from.
             callback_function (callable): The function to call when a message is received.
         """
-        pass
 
     @abstractmethod
     def __enter__(self):
         """Performs any initialization required for the connection."""
-        pass
 
     @abstractmethod
     def __exit__(self, exc_type, exc_value, traceback):
         """Performs any cleanup required for the connection."""
-        pass
 
 
-class BaseServiceProcessor:
+class BaseServiceProcessor: # pylint: disable=R0903
     """Abstract class for processing data from a message queue."""
 
     def __init__(self):
@@ -55,4 +51,3 @@ class BaseServiceProcessor:
         """
         Processes the message data.
         """
-        pass

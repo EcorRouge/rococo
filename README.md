@@ -1,6 +1,7 @@
 # rococo
 A Python library to help build things the way we want them built.
 
+_Anything worth doing is worth doing well.  Anything worth doing twice is worth doing in rococo._
 
 ## Basic Usage
 

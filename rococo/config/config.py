@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
 
-class Config():
+class BaseConfig():
     """
     Config class that allows to load from a .toml file, and/or use a .env file.
     """

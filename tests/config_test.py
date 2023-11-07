@@ -60,4 +60,3 @@ def test_project_toml_version(_env_setup):
             assert config.get_project_version() == "1.0.0"
     finally:
         os.remove("pyproject.toml")
-

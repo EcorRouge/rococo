@@ -40,7 +40,7 @@ class MessageAdapter:
         """Performs any cleanup required for the connection."""
 
 
-class BaseServiceProcessor: # pylint: disable=R0903
+class BaseServiceProcessor:  # pylint: disable=R0903
     """Abstract class for processing data from a message queue."""
 
     def __init__(self):

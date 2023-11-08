@@ -5,6 +5,7 @@ import os
 import pytest
 from rococo.config import BaseConfig
 
+
 @pytest.fixture
 def _env_setup():
     """
@@ -20,6 +21,7 @@ def _env_setup():
     del os.environ["TO_LIST_VAR"]
     del os.environ["JSON_STRING"]
 
+
 def test_create_config(_env_setup):
     """
     Test retrieving the vars and asserting their values
@@ -29,13 +31,15 @@ def test_create_config(_env_setup):
     assert config.get_env_var("VAR_2") == "value2"
     assert config.get_env_var("TO_LIST_VAR") == "A,B,C"
 
+
 def test_var_to_list(_env_setup):
     """
     Test converting a comma-delimited string into a list
     """
     config = BaseConfig()
     assert config.convert_var_into_list("TO_LIST_VAR") is True
-    assert config.get_env_var("TO_LIST_VAR") == ["A","B","C"]
+    assert config.get_env_var("TO_LIST_VAR") == ["A", "B", "C"]
+
 
 def test_var_from_json(_env_setup):
     """
@@ -43,7 +47,8 @@ def test_var_from_json(_env_setup):
     """
     config = BaseConfig()
     assert config.convert_var_from_json_string("JSON_STRING") is True
-    assert config.get_env_var("JSON_STRING") == {"some_key":"some_value"}
+    assert config.get_env_var("JSON_STRING") == {"some_key": "some_value"}
+
 
 def test_project_toml_version(_env_setup):
     """
@@ -51,7 +56,7 @@ def test_project_toml_version(_env_setup):
     """
     config = BaseConfig()
     try:
-        with open("pyproject.toml","w",encoding="UTF-8") as f:
+        with open("pyproject.toml", "w", encoding="UTF-8") as f:
             f.write('version = "1.0.0"')
         project_root = os.path.dirname(os.path.abspath(__file__))
         while not os.path.exists(os.path.join(project_root, 'pyproject.toml')):

@@ -3,7 +3,7 @@ import unittest
 from unittest.mock import MagicMock
 
 from rococo.models import VersionedModel
-from rococo.repositories.surreal_db_repository import SurrealDbRepository
+from rococo.repositories import SurrealDbRepository
 
 
 class VersionedModelHelper(VersionedModel):

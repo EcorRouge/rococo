@@ -1,6 +1,6 @@
 import json
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 from rococo.models.versioned_model import VersionedModel
 from rococo.repositories.surreal_db_repository import SurrealDbRepository

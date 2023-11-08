@@ -1,19 +1,19 @@
 import json
 from typing import Type
 
-from rococo.data.surrealdb import SurrealDbAdapter
-from rococo.messaging.base import MessageAdapter
-from rococo.models.versioned_model import VersionedModel
-from rococo.repositories.base_repository import BaseRepository
+from rococo.data import SurrealDbAdapter
+from rococo.messaging import MessageAdapter
+from rococo.models import VersionedModel
+from rococo.repositories import BaseRepository
 
 
 class SurrealDbRepository(BaseRepository):
     def __init__(
-        self,
-        db_adapter: SurrealDbAdapter,
-        model: Type[VersionedModel],
-        message_adapter: MessageAdapter,
-        queue_name: str,
+            self,
+            db_adapter: SurrealDbAdapter,
+            model: Type[VersionedModel],
+            message_adapter: MessageAdapter,
+            queue_name: str,
     ):
         super().__init__(db_adapter, model, message_adapter, queue_name)
 

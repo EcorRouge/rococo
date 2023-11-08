@@ -7,11 +7,13 @@ from rococo.repositories.surreal_db_repository import SurrealDbRepository
 
 
 class VersionedModelHelper(VersionedModel):
-    __test__=False
+    __test__ = False
+
     def __init__(self, data):
         super().__init__()
         for key, value in data.items():
             setattr(self, key, value)
+
 
 class SurrealDbRepositoryTestCase(unittest.TestCase):
     def setUp(self):
@@ -26,7 +28,7 @@ class SurrealDbRepositoryTestCase(unittest.TestCase):
             message_adapter=self.message_adapter_mock,
             queue_name=self.queue_name
         )
-    
+
     def test_save_sends_message(self):
         # Set up the mock to return a successful save
         self.db_adapter_mock.save.return_value = True

@@ -7,11 +7,13 @@ from dataclasses import dataclass, field, fields
 from datetime import datetime
 from typing import Any, Dict, List
 
+
 def default_datetime():
     """
     Definition for default datetime
     """
     return datetime.utcnow()
+
 
 @dataclass(kw_only=True)
 class VersionedModel:
@@ -37,7 +39,8 @@ class VersionedModel:
         """Convert this model to a dictionary.
 
         Args:
-            convert_datetime_to_iso_string (bool, optional): Whether to convert datetime objects to ISO strings. Defaults to False.
+            convert_datetime_to_iso_string (bool, optional): Whether to convert datetime objects to ISO strings.
+            Defaults to False.
 
         Returns:
             Dict[str, Any]: A dictionary representation of this model.

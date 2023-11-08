@@ -50,9 +50,7 @@ class SurrealDbAdapter(DbAdapter):
             raise Exception("No connection to SurrealDB.")
         return self._event_loop.run_until_complete(self._db.query(sql, _vars))
 
-    def parse_db_response(
-        self, response: List[Dict[str, Any]]
-    ) -> Union[Dict[str, Any], List[Dict[str, Any]]]:
+    def parse_db_response(self, response: List[Dict[str, Any]]) -> Union[Dict[str, Any], List[Dict[str, Any]]]:
         """
         Parse the response from SurrealDB.
 

@@ -9,9 +9,9 @@ from rococo.messaging.base import MessageAdapter
 from rococo.models.versioned_model import VersionedModel
 
 
-
 class BaseRepository:
-    def __init__(self, adapter: DbAdapter, model: Type[VersionedModel], message_adapter:MessageAdapter, queue_name: str = 'placeholder'):
+    def __init__(self, adapter: DbAdapter, model: Type[VersionedModel], message_adapter: MessageAdapter,
+                 queue_name: str = 'placeholder'):
         self.adapter = adapter
         self.message_adapter = message_adapter
         self.queue_name = queue_name
@@ -52,7 +52,7 @@ class BaseRepository:
         data = instance.as_dict(convert_datetime_to_iso_string=True)
         out = self._execute_within_context(self.adapter.save, self.table_name, data)
         if send_message:
-            self._execute_within_context(self.message_adapter.send_message(self.queue_name,json.dumps(data)))
+            self._execute_within_context(self.message_adapter.send_message(self.queue_name, json.dumps(data)))
         return out
 
     def delete(self, conditions: Dict[str, Any]) -> bool:

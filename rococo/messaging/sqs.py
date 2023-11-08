@@ -8,6 +8,7 @@ from . import MessageAdapter
 
 logger = logging.getLogger(__name__)
 
+
 class SqsConnection(MessageAdapter):
     """A connection to AWS SQS that allows sending and receiving messages to and from queues."""
 
@@ -23,7 +24,8 @@ class SqsConnection(MessageAdapter):
         self._aws_access_key_id = aws_access_key_id
         self._aws_access_key_secret = aws_access_key_secret
         self._region_name = region_name
-        self._sqs = boto3.resource('sqs', aws_access_key_id=self._aws_access_key_id, aws_secret_access_key=self._aws_access_key_secret, region_name=self._region_name)
+        self._sqs = boto3.resource('sqs', aws_access_key_id=self._aws_access_key_id,
+                                   aws_secret_access_key=self._aws_access_key_secret, region_name=self._region_name)
         self._queue_map = {}
 
     def __enter__(self):
@@ -65,11 +67,11 @@ class SqsConnection(MessageAdapter):
                 ]
             )
 
-        logger.info("Connecting to SQS queue: %s...",queue_name)
+        logger.info("Connecting to SQS queue: %s...", queue_name)
         queue = self._sqs.get_queue_by_name(QueueName=queue_name)
 
         while True:
-            logger.info("Fetching messages from SQS queue: %s...",queue_name)
+            logger.info("Fetching messages from SQS queue: %s...", queue_name)
             responses = queue.receive_messages(
                 AttributeNames=['All'],
                 MaxNumberOfMessages=1,
@@ -85,6 +87,6 @@ class SqsConnection(MessageAdapter):
                 body = json.loads(response.body)
                 if callback_function is not None:
                     callback_function(body)
-            except Exception as _: # pylint: disable=W0718
+            except Exception as _:  # pylint: disable=W0718
                 logger.exception("Error processing message...")
             _delete_queue_message(queue, response.receipt_handle)

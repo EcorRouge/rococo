@@ -12,9 +12,9 @@ from . import MessageAdapter
 
 logger = logging.getLogger(__name__)
 
+
 class RabbitMqConnection(MessageAdapter):
     """A connection to a RabbitMQ message queue that allows to send and receive messages."""
-
 
     def __init__(self, host: str, port: int, username: str, password: str, virtual_host: str = ''):
         """
@@ -45,7 +45,8 @@ class RabbitMqConnection(MessageAdapter):
             RabbitMqConnection: The connection to the RabbitMQ server.
         """
         self._connection = pika.BlockingConnection(
-            pika.ConnectionParameters(host=self._host, port=self._port, credentials=pika.PlainCredentials(self._username, self._password), 
+            pika.ConnectionParameters(host=self._host, port=self._port,
+                                      credentials=pika.PlainCredentials(self._username, self._password),
                                       virtual_host=self._virtual_host))
         self._channel = self._connection.channel()
 
@@ -58,7 +59,6 @@ class RabbitMqConnection(MessageAdapter):
         self._connection.close()
         self._connection = None
         self._channel = None
-
 
     def send_message(self, queue_name: str, message: dict):
         """
@@ -77,6 +77,7 @@ class RabbitMqConnection(MessageAdapter):
         Args:
             queue_name (str): The name of the queue to consume messages from.
             callback_function (callable): The function to call when a message is received.
+            num_threads (int): number of threads
         """
 
         def _ack_message(ch, delivery_tag):
@@ -97,7 +98,7 @@ class RabbitMqConnection(MessageAdapter):
             )
             try:
                 callback(body)
-            except Exception: # pylint: disable=W0718
+            except Exception:  # pylint: disable=W0718
                 logger.exception("Error processing message...")
             logger.info(
                 "Thread id: %s Delivery tag: %s Message body: %s Processed...",
@@ -106,7 +107,7 @@ class RabbitMqConnection(MessageAdapter):
                 body,
             )
             cb = functools.partial(_ack_message, ch, delivery_tag)
-            logger.info("Sent ack for Delivery tag %s...",delivery_tag)
+            logger.info("Sent ack for Delivery tag %s...", delivery_tag)
             self._connection.add_callback_threadsafe(cb)
 
         def _on_message(ch, method_frame, _header_frame, body, args):
@@ -132,7 +133,8 @@ class RabbitMqConnection(MessageAdapter):
         )
 
         try:
-            logger.info('Listening to RabbitMQ queue %s on %s:%s with %s threads...',queue_name, self._host, self._port, num_threads)
+            logger.info('Listening to RabbitMQ queue %s on %s:%s with %s threads...', queue_name,
+                        self._host, self._port, num_threads)
             self._channel.start_consuming()
         except KeyboardInterrupt:
             logger.info("Exiting gracefully...")

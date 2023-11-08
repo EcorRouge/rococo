@@ -11,6 +11,7 @@ from rococo.models.versioned_model import VersionedModel
 from rococo.repositories.base_repository import BaseRepository
 from rococo.messaging.base import MessageAdapter
 
+
 class TestVersionedModel(VersionedModel):
     """
     Test Class for VersionedModel
@@ -36,7 +37,6 @@ class TestBaseRepository:
         adapter.__enter__ = Mock(return_value=adapter)
         adapter.__exit__ = Mock()
         return adapter
-    
 
     @pytest.fixture
     def _mock_message_adapter(self):
@@ -47,7 +47,6 @@ class TestBaseRepository:
         adapter.__enter__ = Mock(return_value=adapter)
         adapter.__exit__ = Mock()
         return adapter
-
 
     @pytest.fixture
     def repository(self, mock_adapter, _mock_message_adapter):
@@ -126,7 +125,6 @@ class TestBaseRepository:
         mock_adapter.__enter__.assert_called()
         mock_adapter.__exit__.assert_called()
 
-
     def test_save_with_message(self, repository, mock_adapter, _mock_message_adapter):
         """
         Test saving and sending message
@@ -134,12 +132,13 @@ class TestBaseRepository:
         mock_adapter.save.return_value = True
 
         model_instance = TestVersionedModel()
-        result = repository.save(model_instance,True)
+        result = repository.save(model_instance, True)
 
         assert result is True
         mock_adapter.save.assert_called_with('testversionedmodel', {})
         mock_adapter.__enter__.assert_called()
         mock_adapter.__exit__.assert_called()
+
 
 if __name__ == '__main__':
     pytest.main()

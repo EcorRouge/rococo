@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
 
+
 class BaseConfig():
     """
     Config class that allows to load from a .toml file, and/or use a .env file.
@@ -27,7 +28,7 @@ class BaseConfig():
         """
         return self.env_vars
 
-    def get_env_var(self, var_name : str):
+    def get_env_var(self, var_name: str):
         """
         Retrieve the value of the specified environment variable
         Args:
@@ -36,10 +37,10 @@ class BaseConfig():
         if var_name in self.env_vars.keys():
             return self.env_vars[var_name]
         else:
-            logger.warning("Variable %s not found.",var_name)
+            logger.warning("Variable %s not found.", var_name)
             return None
 
-    def load_toml(self,toml_folder_dir:str) -> bool:
+    def load_toml(self, toml_folder_dir: str) -> bool:
         """
         Loads the toml file for the project
         Args:
@@ -49,19 +50,19 @@ class BaseConfig():
 
         # Read pyproject.toml and extract the version using regular expression
         try:
-            with open(pyproject_path, 'r',encoding='UTF-8') as file:
+            with open(pyproject_path, 'r', encoding='UTF-8') as file:
                 pyproject_content = file.read()
                 version_match = re.search(r'version\s*=\s*[\'"]([^\'"]+)[\'"]', pyproject_content)
                 if version_match:
                     version = version_match.group(1)
-                    logger.info('Project Version: %s',version)
+                    logger.info('Project Version: %s', version)
                     self.project_version = version
                     return True
                 else:
                     logger.error('Version not found in pyproject.toml.')
                     return False
         except FileNotFoundError:
-            logger.error('pyproject.toml not found for toml_folder_dir = %s',toml_folder_dir)
+            logger.error('pyproject.toml not found for toml_folder_dir = %s', toml_folder_dir)
             return False
 
     def get_project_version(self) -> Optional[str]:
@@ -70,7 +71,7 @@ class BaseConfig():
         """
         return self.project_version
     
-    def convert_var_into_list(self,var_name:str) -> bool:
+    def convert_var_into_list(self, var_name: str) -> bool:
         """
         Converts a comma-delimited var into a list
         """
@@ -81,10 +82,10 @@ class BaseConfig():
             except ValueError:
                 logger.error("Error: Invalid input format. Please provide a comma-delimited string.")
                 return False
-        logger.warning("Warning: var %s not found.",var_name)
+        logger.warning("Warning: var %s not found.", var_name)
         return False
     
-    def convert_var_from_json_string(self,var_name:str) -> bool:
+    def convert_var_from_json_string(self, var_name: str) -> bool:
         """
         Converts a json string into a pythonic type
         """
@@ -95,7 +96,7 @@ class BaseConfig():
             except ValueError:
                 logger.error("Error: Invalid input format. Please provide a proper json string.")
                 return False
-        logger.warning("Warning: var %s not found.",var_name)
+        logger.warning("Warning: var %s not found.", var_name)
         return False
     
     @abstractmethod

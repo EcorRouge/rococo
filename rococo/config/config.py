@@ -70,7 +70,7 @@ class BaseConfig():
         Returns the project version from the toml file
         """
         return self.project_version
-    
+
     def convert_var_into_list(self, var_name: str) -> bool:
         """
         Converts a comma-delimited var into a list
@@ -80,11 +80,12 @@ class BaseConfig():
                 self.env_vars[var_name] = self.env_vars[var_name].split(",")
                 return True
             except ValueError:
-                logger.error("Error: Invalid input format. Please provide a comma-delimited string.")
+                logger.error(
+                    "Error: Invalid input format. Please provide a comma-delimited string.")
                 return False
         logger.warning("Warning: var %s not found.", var_name)
         return False
-    
+
     def convert_var_from_json_string(self, var_name: str) -> bool:
         """
         Converts a json string into a pythonic type
@@ -98,7 +99,7 @@ class BaseConfig():
                 return False
         logger.warning("Warning: var %s not found.", var_name)
         return False
-    
+
     @abstractmethod
     def validate_env_vars(self):
         """

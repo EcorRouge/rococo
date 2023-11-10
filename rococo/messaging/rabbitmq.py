@@ -46,7 +46,10 @@ class RabbitMqConnection(MessageAdapter):
         """
         self._connection = pika.BlockingConnection(
             pika.ConnectionParameters(host=self._host, port=self._port,
-                                      credentials=pika.PlainCredentials(self._username, self._password),
+                                      credentials=pika.PlainCredentials(
+                                          self._username,
+                                          self._password
+                                          ),
                                       virtual_host=self._virtual_host))
         self._channel = self._connection.channel()
 
@@ -70,7 +73,9 @@ class RabbitMqConnection(MessageAdapter):
         """
         self._channel.basic_publish(exchange='', routing_key=queue_name, body=json.dumps(message))
 
-    def consume_messages(self, queue_name: str, callback_function: Callable[[dict], bool], num_threads: int = 1):
+    def consume_messages(self, queue_name: str,
+                         callback_function: Callable[[dict], bool],
+                         num_threads: int = 1):
         """
         Consumes messages from the specified queue.
 

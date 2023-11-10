@@ -1,6 +1,7 @@
 """
 base repository for rococo
 """
+
 from typing import Any, Dict, List, Type, Union
 import json
 
@@ -10,6 +11,9 @@ from rococo.models.versioned_model import VersionedModel
 
 
 class BaseRepository:
+    """
+    BaseRepository class
+    """
     def __init__(self, adapter: DbAdapter, model: Type[VersionedModel], message_adapter: MessageAdapter,
                  queue_name: str = 'placeholder'):
         self.adapter = adapter
@@ -24,6 +28,7 @@ class BaseRepository:
             return func(*args, **kwargs)
 
     def get_one(self, conditions: Dict[str, Any]) -> Union[VersionedModel, None]:
+        """get one"""
         data = self._execute_within_context(
             self.adapter.get_one, self.table_name, conditions
         )
@@ -38,6 +43,7 @@ class BaseRepository:
         sort: List[tuple] = None,
         limit: int = 100,
     ) -> List[VersionedModel]:
+        """get many"""
         records = self._execute_within_context(
             self.adapter.get_many, self.table_name, conditions, sort, limit
         )
@@ -49,6 +55,7 @@ class BaseRepository:
         return [self.model.from_dict(record) for record in records]
 
     def save(self, instance: VersionedModel, send_message: bool = False):
+        """Save func"""
         data = instance.as_dict(convert_datetime_to_iso_string=True)
         out = self._execute_within_context(self.adapter.save, self.table_name, data)
         if send_message:
@@ -56,6 +63,7 @@ class BaseRepository:
         return out
 
     def delete(self, conditions: Dict[str, Any]) -> bool:
+        """delete func"""
         return self._execute_within_context(
             self.adapter.delete, self.table_name, conditions
         )

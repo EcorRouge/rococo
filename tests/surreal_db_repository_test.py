@@ -1,3 +1,7 @@
+"""
+Surreal DB repository test
+"""
+
 import json
 import unittest
 from unittest.mock import MagicMock
@@ -7,6 +11,9 @@ from rococo.repositories import SurrealDbRepository
 
 
 class VersionedModelHelper(VersionedModel):
+    """
+    VersionedModelHelper class
+    """
     __test__ = False
 
     def __init__(self, data):
@@ -16,6 +23,9 @@ class VersionedModelHelper(VersionedModel):
 
 
 class SurrealDbRepositoryTestCase(unittest.TestCase):
+    """
+    SurrealDbRepository Test Case class
+    """
     def setUp(self):
         self.db_adapter_mock = MagicMock()
         self.message_adapter_mock = MagicMock()
@@ -30,6 +40,9 @@ class SurrealDbRepositoryTestCase(unittest.TestCase):
         )
 
     def test_save_sends_message(self):
+        """
+        test that saving sends the message
+        """
         # Set up the mock to return a successful save
         self.db_adapter_mock.save.return_value = True
 
@@ -47,6 +60,9 @@ class SurrealDbRepositoryTestCase(unittest.TestCase):
         )
 
     def test_save_without_message(self):
+        """
+        Test save without sending message
+        """
         # Set up the mock to return a successful save
         self.db_adapter_mock.save.return_value = True
 

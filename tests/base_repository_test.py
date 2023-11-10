@@ -53,14 +53,18 @@ class TestBaseRepository:
         """
         Fixture for BaseRepository
         """
-        return BaseRepository(mock_adapter, TestVersionedModel, _mock_message_adapter, "test_queue_name")
+        return BaseRepository(
+            mock_adapter,
+            TestVersionedModel,
+            _mock_message_adapter,
+            "test_queue_name")
 
     def test_get_one_existing_record(self, repository, mock_adapter):
         """
         Tests getting one existing record from TestVersionedModel
         """
         mock_adapter.get_one.return_value = {'id': 1, 'name': 'Test'}
-        
+
         result = repository.get_one({'id': 1})
 
         assert isinstance(result, TestVersionedModel)
@@ -73,7 +77,7 @@ class TestBaseRepository:
         Tests getting one non existing record from TestVersionedModel
         """
         mock_adapter.get_one.return_value = None
-        
+
         result = repository.get_one({'id': 2})
 
         assert result is None
@@ -85,8 +89,11 @@ class TestBaseRepository:
         """
         Test getting many records
         """
-        mock_adapter.get_many.return_value = [{'id': 1, 'name': 'Test1'}, {'id': 2, 'name': 'Test2'}]
-        
+        mock_adapter.get_many.return_value = [
+            {'id': 1, 'name': 'Test1'},
+            {'id': 2, 'name': 'Test2'}
+        ]
+
         result = repository.get_many()
 
         assert isinstance(result, list)
@@ -138,7 +145,6 @@ class TestBaseRepository:
         mock_adapter.save.assert_called_with('testversionedmodel', {})
         mock_adapter.__enter__.assert_called()
         mock_adapter.__exit__.assert_called()
-
 
 if __name__ == '__main__':
     pytest.main()

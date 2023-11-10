@@ -1,3 +1,5 @@
+"""SurrealDbRepository class"""
+
 import json
 from typing import Type
 
@@ -8,6 +10,7 @@ from rococo.repositories import BaseRepository
 
 
 class SurrealDbRepository(BaseRepository):
+    """SurrealDbRepository class"""
     def __init__(
             self,
             db_adapter: SurrealDbAdapter,

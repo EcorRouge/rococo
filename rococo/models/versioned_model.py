@@ -39,7 +39,8 @@ class VersionedModel:
         """Convert this model to a dictionary.
 
         Args:
-            convert_datetime_to_iso_string (bool, optional): Whether to convert datetime objects to ISO strings.
+            convert_datetime_to_iso_string (bool, optional): Whether to
+              convert datetime objects to ISO strings.
             Defaults to False.
 
         Returns:

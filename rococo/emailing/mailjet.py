@@ -1,4 +1,5 @@
 import re
+from typing import Any
 
 from mailjet_rest import Client
 
@@ -23,10 +24,12 @@ class MailjetService(EmailService):
             version=self.config.MAILJET_API_VERSION
         )
 
-    def send_email(self, message: dict):
-        event_name = message.get('event_name')
-        event_data = message.get('event_data')
-        to_addresses = message.get('to_addresses')
+        return self
+
+    def send_email(self, message: dict) -> Any:
+        event_name = message.get('event')
+        event_data = message.get('data')
+        to_addresses = message.get('to_emails')
 
         event_mapping = self.config.get_event(event_name)
         data = {
@@ -35,7 +38,7 @@ class MailjetService(EmailService):
                     "From": self.from_address,
                     "To": [{'Email': email} for email in to_addresses],
                     "TemplateLanguage": True,
-                    "TemplateID": event_mapping['id'][self.config.SERVICE_NAME],
+                    "TemplateID": event_mapping['id'][self.config.EMAIL_PROVIDER],
                     "Variables": event_data
                 }
             ]
@@ -46,10 +49,5 @@ class MailjetService(EmailService):
             }
 
         result = self.client.send.create(data=data)
-        # logger.debug('Source: {}'.format(data['Messages'][0]['From']))
-        # logger.debug('Destination: {}'.format(data['Messages'][0]['To']))
-        # logger.debug('Template: {}'.format(data['Messages'][0]['TemplateID']))
-        # logger.debug('TemplateData: {}'.format(data['Messages'][0]['Variables']))
-        #
-        # logger.debug('Status Code: {}'.format(result.status_code))
-        # logger.debug('Response: {}'.format(result.text))
+
+        return result

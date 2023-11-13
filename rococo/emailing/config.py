@@ -1,32 +1,53 @@
 import json
-from typing import Dict
+import os.path
+from pprint import pprint
+from typing import Any
 
-from pydantic import BaseSettings
+from pydantic import BaseSettings, Extra
+
+from .enums import EmailProvider
 
 
 class Config(BaseSettings):
-    SERVICE_NAME: str
-    SOURCE_EMAIL: str
-    ERROR_REPORTING_EMAIL: str
-    CONFIG_JSON_PATH: str
+    CONFIG_FILEPATH: str
+    EMAIL_PROVIDER: EmailProvider
 
-    _config: Dict
+    events: Any = None
+    provider_config: Any = None
 
-    def read_config_json(self):
-        with open(self.CONFIG_JSON_PATH) as config:
-            self._config = json.load(config)
+    class Config:
+        extra = Extra.ignore
 
-    def get_config(self):
-        for configuration in self._config['configurations']:
-            if configuration['provider'] == self.SERVICE_NAME:
-                return configuration
+    def __init__(self, **kwargs: Any):
+        super().__init__(**kwargs)
+        self.read_config()
+
+    def read_config(self):
+        if not os.path.isfile(self.CONFIG_FILEPATH):
+            raise OSError(f'Config.json file not found on specified path. {self.CONFIG_FILEPATH}')
+
+        with open(self.CONFIG_FILEPATH) as config:
+            config = json.load(config)
+            self.events = config.get('events')
+
+            for configuration in config['configurations']:
+                if configuration['provider'] == self.EMAIL_PROVIDER:
+                    self.provider_config = configuration
+                    pprint(self.provider_config)
 
     def get_event(self, event_name: str):
-        return self._config['events'][event_name]
+        return self.events.get(event_name)
+
+    @property
+    def SOURCE_EMAIL(self) -> str:
+        return self.provider_config.get("sourceEmail")
+
+    @property
+    def ERROR_REPORTING_EMAIL(self) -> str:
+        return self.provider_config.get('errorReportingEmail')
 
 
 class MailjetConfig(Config):
-    SERVICE_NAME: str = 'mailjet'
     MAILJET_API_KEY: str
     MAILJET_API_SECRET: str
     MAILJET_API_VERSION: str = 'v3.1'
@@ -36,7 +57,10 @@ class SESConfig(Config):
     pass
 
 
-config_classes = [MailjetConfig, SESConfig]
+config_classes = [
+    MailjetConfig,
+    SESConfig
+]
 
 
 class EmailConfig(*config_classes):

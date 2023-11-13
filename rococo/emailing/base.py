@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from typing import Any
 
 from .config import EmailConfig
 
@@ -18,5 +19,5 @@ class EmailService(ABC):
         self.config = config
 
     @abstractmethod
-    def send_email(self, message: dict):
+    def send_email(self, message: dict) -> Any:
         return NotImplementedError

@@ -24,7 +24,7 @@ from rococo.models import Person
 someone = Person(first_name="John", last_name="Doe")
 
 # Prepare to save the object in the database adding/updating attributes for the object.
-someone.prepare_for_save(changed_by_id="b30884cb-5127-457c-a633-4a800ad3c44b")
+someone.prepare_for_save(changed_by_id=UUID("b30884cb-5127-457c-a633-4a800ad3c44b"))
 
 someone.as_dict()
 

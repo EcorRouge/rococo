@@ -2,7 +2,7 @@
 VersionedModel for rococo. Base model
 """
 
-from uuid import uuid4
+from uuid import uuid4, UUID
 from dataclasses import dataclass, field, fields
 from datetime import datetime
 from typing import Any, Dict, List
@@ -19,11 +19,11 @@ def default_datetime():
 class VersionedModel:
     """A base class for versioned models with common (Big 6) attributes."""
 
-    entity_id: str = uuid4().hex
-    version: str = uuid4().hex
-    previous_version: str = '00000000000000000000000000000000'
+    entity_id: UUID = uuid4()
+    version: UUID = uuid4()
+    previous_version: UUID = UUID('00000000-0000-4000-8000-000000000000')
     active: bool = True
-    changed_by_id: str = '00000000000000000000000000000000'
+    changed_by_id: UUID = UUID('00000000-0000-4000-8000-000000000000')
     changed_on: datetime = field(default_factory=default_datetime)
 
     @classmethod
@@ -52,6 +52,8 @@ class VersionedModel:
             for key, value in results.items():
                 if isinstance(value, datetime):
                     results[key] = value.isoformat()
+                if isinstance(value,UUID):
+                    results[key] = str(value)
 
         return results
 
@@ -62,9 +64,17 @@ class VersionedModel:
         """
         expected_keys = cls.__annotations__.keys()
         filtered_data = {k: v for k, v in data.items() if k in expected_keys}
+        for k,v in filtered_data:
+            if k in ["entity_id","version","previous_version","changed_by"]:
+                try:
+                    # Attempt to cast the string to a UUID
+                    filtered_data[k] = UUID(v)
+                except ValueError:
+                    # Handle the case where the string is not a valid UUID
+                    print(f"'{v}' is not a valid UUID.")
         return cls(**filtered_data)
 
-    def prepare_for_save(self, changed_by_id: str):
+    def prepare_for_save(self, changed_by_id: UUID):
         """
         Prepare this model for saving to the database.
 
@@ -72,6 +82,6 @@ class VersionedModel:
             changed_by_id (str): The ID of the user making the change.
         """
         self.previous_version = self.version
-        self.version = uuid4().hex
+        self.version = uuid4()
         self.changed_on = datetime.utcnow()
         self.changed_by_id = changed_by_id

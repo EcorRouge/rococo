@@ -30,13 +30,13 @@ someone.as_dict()
 
 {
     'active': True,
-    'changed_by_id': 'jane_doe',
+    'changed_by_id': 'b30884cb-5127-457c-a633-4a800ad3c44b',
     'changed_on': datetime.datetime(2023, 9, 20, 19, 50, 23, 532875),
-    'entity_id': 'e06876705b364640a20efc165f6ffb76',
+    'entity_id': 'ba68b3b1-fccd-4035-92f6-0ac2b29d71a1',
     'first_name': 'John',
     'last_name': 'Doe',
-    'previous_version': '7e63a5d0aa0f43b5aa9c8cc0634c41f2',
-    'version': '08489d2bc5d74f78b7af0f2c1d9c5498'
+    'previous_version': '3261fc4d-7db4-4945-91b5-9fb6a4b7dbc5',
+    'version': '4b6d92de-64bc-4dfb-a824-2151e8f11b73'
 }
 ```
 

@@ -64,14 +64,15 @@ class VersionedModel:
         """
         expected_keys = cls.__annotations__.keys()
         filtered_data = {k: v for k, v in data.items() if k in expected_keys}
-        for k,v in filtered_data:
+        for k,v in filtered_data.items():
             if k in ["entity_id","version","previous_version","changed_by"]:
-                try:
-                    # Attempt to cast the string to a UUID
-                    filtered_data[k] = UUID(v)
-                except ValueError:
-                    # Handle the case where the string is not a valid UUID
-                    print(f"'{v}' is not a valid UUID.")
+                if not isinstance(v, UUID):
+                    try:
+                        # Attempt to cast the string to a UUID
+                        filtered_data[k] = UUID(v)
+                    except ValueError:
+                        # Handle the case where the string is not a valid UUID
+                        print(f"'{v}' is not a valid UUID.")
         return cls(**filtered_data)
 
     def prepare_for_save(self, changed_by_id: UUID):

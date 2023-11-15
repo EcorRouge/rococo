@@ -31,14 +31,17 @@ def test_as_dict():
     assert isinstance(model_as_dict, dict)
     assert isinstance(model_as_dict['changed_on'], str)
 
-
 def test_from_dict():
     """
-    Test converting dict to model
+    Test converting model to dict
     """
-    model = VersionedModel()
+    model_dict = {"entity_id": UUID(int=0), "version": UUID(int=0)}
 
-    model_as_dict = model.as_dict(True)
+    dict_as_model = VersionedModel.from_dict(model_dict)
 
-    model_from_dict = model.from_dict(model_as_dict)
-    assert isinstance(model_from_dict.entity_id,UUID)
+    assert isinstance(dict_as_model, VersionedModel)
+    assert hasattr(dict_as_model, "entity_id")
+    assert hasattr(dict_as_model, "version")
+    assert hasattr(dict_as_model, "previous_version")
+    assert hasattr(dict_as_model, "changed_by_id")
+    assert hasattr(dict_as_model, "changed_on")

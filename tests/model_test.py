@@ -27,10 +27,13 @@ def test_as_dict():
     """
     model = VersionedModel()
 
+    model.attribute_that_should_not_exist = "SomeValue"
+
     model_as_dict = model.as_dict(True)
 
     assert isinstance(model_as_dict, dict)
     assert isinstance(model_as_dict['changed_on'], str)
+    assert 'attribute_that_should_not_exist' not in model_as_dict
 
 def test_from_dict():
     """

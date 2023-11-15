@@ -48,6 +48,8 @@ class VersionedModel:
         """
         results = self.__dict__
 
+        results = {k:v for k,v in results.items() if k in self.fields()}
+
         if convert_datetime_to_iso_string:
             for key, value in results.items():
                 if isinstance(value, datetime):
@@ -62,8 +64,7 @@ class VersionedModel:
         """
         Load VersionedModel from dict
         """
-        expected_keys = [field.name for field in fields(cls)]
-        filtered_data = {k: v for k, v in data.items() if k in expected_keys}
+        filtered_data = {k: v for k, v in data.items() if k in cls.fields()}
         for k,v in filtered_data.items():
             if k in ["entity_id","version","previous_version","changed_by"]:
                 if not isinstance(v, UUID):

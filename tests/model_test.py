@@ -2,8 +2,8 @@
 Test VersionedModel
 """
 from datetime import datetime, timedelta
+from uuid import UUID
 from rococo.models import VersionedModel
-
 
 def test_prepare_for_save():
     """
@@ -30,3 +30,15 @@ def test_as_dict():
 
     assert isinstance(model_as_dict, dict)
     assert isinstance(model_as_dict['changed_on'], str)
+
+
+def test_from_dict():
+    """
+    Test converting dict to model
+    """
+    model = VersionedModel()
+
+    model_as_dict = model.as_dict(True)
+
+    model_from_dict = model.from_dict(model_as_dict)
+    assert isinstance(model_from_dict.entity_id,UUID)

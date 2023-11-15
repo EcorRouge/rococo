@@ -62,7 +62,7 @@ class VersionedModel:
         """
         Load VersionedModel from dict
         """
-        expected_keys = cls.__annotations__.keys()
+        expected_keys = [field.name for field in fields(cls)]
         filtered_data = {k: v for k, v in data.items() if k in expected_keys}
         for k,v in filtered_data.items():
             if k in ["entity_id","version","previous_version","changed_by"]:

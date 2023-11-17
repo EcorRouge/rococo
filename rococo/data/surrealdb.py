@@ -41,14 +41,18 @@ class SurrealDbAdapter(DbAdapter):
         await db.use(self._namespace, self._db_name)
         return db
 
+    def _call_db(self, function_name, *args, **kwargs):
+        """Calls a function specified by function_name argument in SurrealDB connection passing forward args and kwargs."""
+        if not self._db:
+            raise Exception("No connection to SurrealDB.")
+        return self._event_loop.run_until_complete(getattr(self._db, function_name)(*args, **kwargs))
+
     def execute_query(self, sql, _vars=None):
         """Executes a query against the DB."""
         if _vars is None:
             _vars = {}
 
-        if not self._db:
-            raise Exception("No connection to SurrealDB.")
-        return self._event_loop.run_until_complete(self._db.query(sql, _vars))
+        return self._call_db('query', sql, _vars)
 
     def parse_db_response(self, response: List[Dict[str, Any]]) -> Union[Dict[str, Any], List[Dict[str, Any]]]:
         """
@@ -103,12 +107,8 @@ class SurrealDbAdapter(DbAdapter):
         return db_response
 
     def save(self, table: str, data: Dict[str, Any]):
-        columns = ", ".join(data.keys())
-        values = ", ".join([f"'{v}'" for v in data.values()])
-        query = f"INSERT INTO {table} ({columns}) VALUES ({values})"
-
-        db_response = self.parse_db_response(self.execute_query(query))
-
+        db_result = self._call_db('create', table, data)
+        db_response = self.parse_db_response(db_result)
         return db_response
 
     def delete(self, table: str, conditions: Dict[str, Any]) -> bool:

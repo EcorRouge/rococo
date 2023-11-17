@@ -16,4 +16,5 @@ class LoginMethod(VersionedModel):
     method_type: str
     method_data: Optional[dict]
     email: Optional[str]
+    email_id: Optional[str]
     password: Optional[str]

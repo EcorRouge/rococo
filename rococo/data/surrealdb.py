@@ -108,8 +108,8 @@ class SurrealDbAdapter(DbAdapter):
 
     def save(self, table: str, data: Dict[str, Any]):
         db_result = self._call_db('create', table, data)
-        db_response = self.parse_db_response(db_result)
-        return db_response
+        if len(db_result) > 0:
+            return db_result[0]
 
     def delete(self, table: str, conditions: Dict[str, Any]) -> bool:
         # Construct the conditions string for the SQL query

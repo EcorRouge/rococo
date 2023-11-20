@@ -59,7 +59,7 @@ class SurrealDbAdapter(DbAdapter):
         elif isinstance(value, UUID):
             return f"{key}='{str(value)}'"
         else:
-            raise NotImplementedError
+            raise Exception(f"Unsuppported type {type(value)} for condition key: {key}, value: {value}")
 
     def execute_query(self, sql, _vars=None):
         """Executes a query against the DB."""

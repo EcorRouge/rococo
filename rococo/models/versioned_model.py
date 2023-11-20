@@ -19,8 +19,8 @@ def default_datetime():
 class VersionedModel:
     """A base class for versioned models with common (Big 6) attributes."""
 
-    entity_id: UUID = None
-    version: UUID = None
+    entity_id: UUID = field(default_factory=uuid4)
+    version: UUID = UUID('00000000-0000-4000-8000-000000000000')
     previous_version: UUID = None
     active: bool = True
     latest: bool = True
@@ -92,6 +92,5 @@ class VersionedModel:
             self.previous_version = UUID('00000000-0000-4000-8000-000000000000')
         self.version = uuid4()
         self.changed_on = datetime.utcnow()
-        if changed_by_id is None:
-            changed_by_id = UUID('00000000-0000-4000-8000-000000000000')
-        self.changed_by_id = changed_by_id
+        if changed_by_id is not None:
+            self.changed_by_id = changed_by_id

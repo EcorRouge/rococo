@@ -3,6 +3,7 @@ base repository for rococo
 """
 
 from typing import Any, Dict, List, Type, Union
+from uuid import UUID
 import json
 
 from rococo.data.base import DbAdapter
@@ -15,12 +16,13 @@ class BaseRepository:
     BaseRepository class
     """
     def __init__(self, adapter: DbAdapter, model: Type[VersionedModel], message_adapter: MessageAdapter,
-                 queue_name: str = 'placeholder'):
+                 queue_name: str = 'placeholder', user_id: UUID = None):
         self.adapter = adapter
         self.message_adapter = message_adapter
         self.queue_name = queue_name
         self.model = model
         self.table_name = model.__name__.lower()
+        self.user_id = user_id
 
     def _execute_within_context(self, func, *args, **kwargs):
         """Utility method to execute adapter methods within the context manager."""
@@ -56,14 +58,16 @@ class BaseRepository:
 
     def save(self, instance: VersionedModel, send_message: bool = False):
         """Save func"""
+        instance.prepare_for_save(changed_by_id=self.user_id)
         data = instance.as_dict(convert_datetime_to_iso_string=True)
         out = self._execute_within_context(self.adapter.save, self.table_name, data)
         if send_message:
             self._execute_within_context(self.message_adapter.send_message(self.queue_name, json.dumps(data)))
         return out
 
-    def delete(self, conditions: Dict[str, Any]) -> bool:
+    def delete(self, instance: VersionedModel):
         """delete func"""
+        instance.prepare_for_save(changed_by_id=self.user_id)
         return self._execute_within_context(
-            self.adapter.delete, self.table_name, conditions
+            self.adapter.delete, self.table_name, instance.as_dict(convert_datetime_to_iso_string=True)
         )

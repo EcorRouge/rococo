@@ -1,6 +1,6 @@
 import asyncio
 from typing import Any, Dict, List, Tuple, Union
-
+from uuid import UUID
 from surrealdb import Surreal
 
 from rococo.data.base import DbAdapter
@@ -47,6 +47,20 @@ class SurrealDbAdapter(DbAdapter):
             raise Exception("No connection to SurrealDB.")
         return self._event_loop.run_until_complete(getattr(self._db, function_name)(*args, **kwargs))
 
+    def _build_condition_string(self, key, value):
+        if isinstance(value, str):
+            return f"{key}='{value}'"
+        elif isinstance(value, bool):
+            return f"{key}={'true' if value is True else 'false'}"
+        elif type(value) in [int, float]:
+            return f"{key}={value}"
+        elif isinstance(value, list):
+            return f"""{key} IN [{','.join(f'"{v}"' for v in value)}]"""
+        elif isinstance(value, UUID):
+            return f"{key}='{str(value)}'"
+        else:
+            raise NotImplementedError
+
     def execute_query(self, sql, _vars=None):
         """Executes a query against the DB."""
         if _vars is None:
@@ -75,8 +89,8 @@ class SurrealDbAdapter(DbAdapter):
     ) -> Dict[str, Any]:
         query = f"SELECT * FROM {table}"
         if conditions:
-            condition_strs = [f"{k}='{v}'" for k, v in conditions.items()]
-            query += f" WHERE {' AND '.join(condition_strs)}"
+            condition_strs = [f"{self._build_condition_string(k, v)}" for k, v in conditions.items()]
+            query += f" WHERE {' AND '.join(condition_strs)} AND latest=true AND active=true"
         if sort:
             sort_strs = [f"{column} {direction}" for column, direction in sort]
             query += f" ORDER BY {', '.join(sort_strs)}"
@@ -92,10 +106,20 @@ class SurrealDbAdapter(DbAdapter):
         conditions: Dict[str, Any] = None,
         sort: List[Tuple[str, str]] = None,
         limit: int = 100,
+        latest: bool = True,
+        active: bool = True
     ) -> List[Dict[str, Any]]:
         query = f"SELECT * FROM {table}"
+        
+        condition_strs = []
         if conditions:
-            condition_strs = [f"{k}='{v}'" for k, v in conditions.items()]
+            condition_strs = [f"{self._build_condition_string(k, v)}" for k, v in conditions.items()]
+        if active:
+            condition_strs.append("active=true")
+        if latest:
+            condition_strs.append("latest=true")
+        
+        if condition_strs:
             query += f" WHERE {' AND '.join(condition_strs)}"
         if sort:
             sort_strs = [f"{column} {direction}" for column, direction in sort]

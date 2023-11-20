@@ -107,20 +107,12 @@ class SurrealDbAdapter(DbAdapter):
         return db_response
 
     def save(self, table: str, data: Dict[str, Any]):
+        self._call_db('query', f'UPDATE {table} SET latest=false WHERE entity_id=\"{data["entity_id"]}\"')
         db_result = self._call_db('create', table, data)
         if len(db_result) > 0:
             return db_result[0]
 
-    def delete(self, table: str, conditions: Dict[str, Any]) -> bool:
-        # Construct the conditions string for the SQL query
-        condition_strs = [f"{k}='{v}'" for k, v in conditions.items()]
-        conditions_sql = " AND ".join(condition_strs)
-
-        # Construct the DELETE SQL query
-        query = f"DELETE FROM {table} WHERE {conditions_sql}"
-
-        # Execute the DELETE query
-        db_response = self.execute_query(query)
-
-        success = self.parse_db_response(db_response)
-        return success
+    def delete(self, table: str, data: Dict[str, Any]) -> bool:
+        # Set active = false
+        data['active'] = False
+        return self.save(table, data)

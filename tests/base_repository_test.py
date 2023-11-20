@@ -124,11 +124,11 @@ class TestBaseRepository:
         """
         mock_adapter.delete.return_value = True
 
-        conditions = {'id': 1}
-        result = repository.delete(conditions)
+        model_instance = TestVersionedModel()
+        result = repository.delete(model_instance)
 
         assert result is True
-        mock_adapter.delete.assert_called_with('testversionedmodel', conditions)
+        mock_adapter.delete.assert_called_with('testversionedmodel', {})
         mock_adapter.__enter__.assert_called()
         mock_adapter.__exit__.assert_called()
 

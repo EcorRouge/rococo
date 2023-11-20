@@ -42,6 +42,6 @@ class DbAdapter(ABC):
         pass
 
     @abstractmethod
-    def delete(self, table: str, conditions: Dict[str, Any]) -> bool:
+    def delete(self, table: str, data: Dict[str, Any]) -> bool:
         """Deletes a record in the specified table based on given conditions."""
         pass

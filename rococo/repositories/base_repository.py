@@ -28,12 +28,22 @@ class BaseRepository:
         """Utility method to execute adapter methods within the context manager."""
         with self.adapter:
             return func(*args, **kwargs)
+        
+    def _process_data_before_save(self, data):
+        """Method that is called before sending a data dictionary to adapter"""
+        pass
+
+    def _process_data_from_db(self, data):
+        """Method that is called after getting data dictionary results from adapter"""
+        pass
 
     def get_one(self, conditions: Dict[str, Any]) -> Union[VersionedModel, None]:
         """get one"""
         data = self._execute_within_context(
             self.adapter.get_one, self.table_name, conditions
         )
+
+        self._process_data_from_db(data)
 
         if not data:
             return None
@@ -54,20 +64,24 @@ class BaseRepository:
         if isinstance(records, dict):
             records = [records]
 
+        self._process_data_from_db(records)
+
         return [self.model.from_dict(record) for record in records]
 
     def save(self, instance: VersionedModel, send_message: bool = False):
         """Save func"""
         instance.prepare_for_save(changed_by_id=self.user_id)
         data = instance.as_dict(convert_datetime_to_iso_string=True)
-        out = self._execute_within_context(self.adapter.save, self.table_name, data)
+        self._process_data_before_save(data)
+        self._execute_within_context(self.adapter.save, self.table_name, data)
         if send_message:
-            self._execute_within_context(self.message_adapter.send_message(self.queue_name, json.dumps(data)))
-        return out
+            # This assumes that the instance is now in post-saved state with all the new DB updates
+            message = json.dumps(instance.as_dict(convert_datetime_to_iso_string=True))
+            self.message_adapter.send_message(self.queue_name, message)
+
+        return instance
 
     def delete(self, instance: VersionedModel):
         """delete func"""
-        instance.prepare_for_save(changed_by_id=self.user_id)
-        return self._execute_within_context(
-            self.adapter.delete, self.table_name, instance.as_dict(convert_datetime_to_iso_string=True)
-        )
+        instance.active = False
+        return self.save(instance)

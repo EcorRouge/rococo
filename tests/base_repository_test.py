@@ -113,7 +113,10 @@ class TestBaseRepository:
         model_instance = TestVersionedModel()
         result = repository.save(model_instance)
 
-        assert result is True
+        assert result is model_instance
+        assert result.entity_id is not None
+        assert result.version is not None
+
         mock_adapter.save.assert_called_with('testversionedmodel', {})
         mock_adapter.__enter__.assert_called()
         mock_adapter.__exit__.assert_called()
@@ -122,13 +125,14 @@ class TestBaseRepository:
         """
         Test deleting by id
         """
-        mock_adapter.delete.return_value = True
+        mock_adapter.save.return_value = True
 
         model_instance = TestVersionedModel()
         result = repository.delete(model_instance)
 
-        assert result is True
-        mock_adapter.delete.assert_called_with('testversionedmodel', {})
+        assert result is model_instance
+        assert model_instance.active == False
+        mock_adapter.save.assert_called_with('testversionedmodel', {})
         mock_adapter.__enter__.assert_called()
         mock_adapter.__exit__.assert_called()
 
@@ -141,7 +145,7 @@ class TestBaseRepository:
         model_instance = TestVersionedModel()
         result = repository.save(model_instance, True)
 
-        assert result is True
+        assert result is model_instance
         mock_adapter.save.assert_called_with('testversionedmodel', {})
         mock_adapter.__enter__.assert_called()
         mock_adapter.__exit__.assert_called()

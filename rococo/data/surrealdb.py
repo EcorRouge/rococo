@@ -19,6 +19,7 @@ class SurrealDbAdapter(DbAdapter):
         self._namespace = namespace
         self._db_name = db_name
         self._db = None
+        self._event_loop = None
 
     def __enter__(self):
         """Context manager entry point for preparing DB connection."""
@@ -61,6 +62,10 @@ class SurrealDbAdapter(DbAdapter):
         else:
             raise Exception(f"Unsuppported type {type(value)} for condition key: {key}, value: {value}")
 
+    def _move_entity_to_audit_table(self, table, entity_id):
+        query = f'INSERT INTO {table}_audit (SELECT *, "{entity_id}" AS entity_id, rand::uuid::v4() AS id FROM {table} WHERE id={table}:`{entity_id}`)'
+        self._call_db('query', query)
+
     def execute_query(self, sql, _vars=None):
         """Executes a query against the DB."""
         if _vars is None:
@@ -88,9 +93,15 @@ class SurrealDbAdapter(DbAdapter):
         self, table: str, conditions: Dict[str, Any], sort: List[Tuple[str, str]] = None
     ) -> Dict[str, Any]:
         query = f"SELECT * FROM {table}"
+        condition_strs = []
         if conditions:
+            if 'entity_id' in conditions:
+                entity_id = conditions.pop('entity_id')
+                conditions['id'] = f'{table}:`{str(entity_id)}`'
             condition_strs = [f"{self._build_condition_string(k, v)}" for k, v in conditions.items()]
-            query += f" WHERE {' AND '.join(condition_strs)} AND latest=true AND active=true"
+        condition_strs.append("active=true")
+        query += f" WHERE {' AND '.join(condition_strs)}"
+
         if sort:
             sort_strs = [f"{column} {direction}" for column, direction in sort]
             query += f" ORDER BY {', '.join(sort_strs)}"
@@ -106,19 +117,18 @@ class SurrealDbAdapter(DbAdapter):
         conditions: Dict[str, Any] = None,
         sort: List[Tuple[str, str]] = None,
         limit: int = 100,
-        latest: bool = True,
         active: bool = True
     ) -> List[Dict[str, Any]]:
         query = f"SELECT * FROM {table}"
         
         condition_strs = []
         if conditions:
+            if 'entity_id' in conditions:
+                entity_id = conditions.pop('entity_id')
+                conditions['id'] = f'{table}:`{str(entity_id)}`'
             condition_strs = [f"{self._build_condition_string(k, v)}" for k, v in conditions.items()]
         if active:
             condition_strs.append("active=true")
-        if latest:
-            condition_strs.append("latest=true")
-        
         if condition_strs:
             query += f" WHERE {' AND '.join(condition_strs)}"
         if sort:
@@ -131,10 +141,10 @@ class SurrealDbAdapter(DbAdapter):
         return db_response
 
     def save(self, table: str, data: Dict[str, Any]):
-        self._call_db('query', f'UPDATE {table} SET latest=false WHERE entity_id=\"{data["entity_id"]}\"')
-        db_result = self._call_db('create', table, data)
-        if len(db_result) > 0:
-            return db_result[0]
+        entity_id = data.pop('id')
+        self._move_entity_to_audit_table(table, entity_id)
+        db_result = self._call_db('update', f'{table}:`{entity_id}`', data)
+        return db_result
 
     def delete(self, table: str, data: Dict[str, Any]) -> bool:
         # Set active = false

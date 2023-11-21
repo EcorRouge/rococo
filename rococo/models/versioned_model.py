@@ -23,7 +23,6 @@ class VersionedModel:
     version: UUID = UUID('00000000-0000-4000-8000-000000000000')
     previous_version: UUID = None
     active: bool = True
-    latest: bool = True
     changed_by_id: UUID = UUID('00000000-0000-4000-8000-000000000000')
     changed_on: datetime = field(default_factory=default_datetime)
 
@@ -67,7 +66,7 @@ class VersionedModel:
         """
         filtered_data = {k: v for k, v in data.items() if k in cls.fields()}
         for k,v in filtered_data.items():
-            if k in ["entity_id","version","previous_version","changed_by"]:
+            if k in ["entity_id","version","previous_version","changed_by_id"]:
                 if v is not None and not isinstance(v, UUID):
                     try:
                         # Attempt to cast the string to a UUID

@@ -1,7 +1,7 @@
 """SurrealDbRepository class"""
 
-import json
-from typing import Type
+from typing import Type, Dict, Any, Union
+from uuid import UUID
 
 from rococo.data import SurrealDbAdapter
 from rococo.messaging import MessageAdapter
@@ -17,18 +17,35 @@ class SurrealDbRepository(BaseRepository):
             model: Type[VersionedModel],
             message_adapter: MessageAdapter,
             queue_name: str,
+            user_id: UUID = None
     ):
-        super().__init__(db_adapter, model, message_adapter, queue_name)
+        super().__init__(db_adapter, model, message_adapter, queue_name, user_id=user_id)
 
-    def save(self, instance: VersionedModel, send_message: bool = True):
-        self._execute_within_context(
-            self.adapter.save, self.table_name, instance.as_dict()
-        )
 
-        # After save, if the instance is updated with post-saved state, serialize and send via message adapter
-        if send_message:
-            # This assumes that the instance is now in post-saved state with all the new DB updates
-            message = json.dumps(instance.as_dict(convert_datetime_to_iso_string=True))
-            self.message_adapter.send_message(self.queue_name, message)
+    def _extract_uuid_from_surreal_id(self, surreal_id):
+        """
+        Converts a SurrealDB ID to a UUID
+        Example: 'organization:⟨c87616ac-e6ca-4d3e-9177-27db7d2ebca8⟩' -> UUID('c87616ac-e6ca-4d3e-9177-27db7d2ebca8')
+        """
+        prefix = f"{self.table_name}:⟨"
+        suffix = "⟩"
+        if surreal_id.startswith(prefix) and surreal_id.endswith(suffix):
+            uuid_str = surreal_id[len(prefix):-len(suffix)]
+            formatted_uuid = UUID(uuid_str)
+            return formatted_uuid
+        else:
+            raise ValueError(f"Invalid input format or no UUID found in the input string: {surreal_id}")
 
-        return instance
+    def _process_data_before_save(self, data):
+        """Method to rename entity_id field to id before saving."""
+        data['id'] = data.pop('entity_id')
+
+    def _process_data_from_db(self, data):
+        """Method to rename and convert id field to entity_id after retrieving from database."""
+        if isinstance(data, list):
+            for data_dict in data:
+                surreal_id = data_dict.pop('id')
+                data_dict['entity_id'] = self._extract_uuid_from_surreal_id(surreal_id)
+        else:
+            surreal_id = data.pop('id')
+            data['entity_id'] = self._extract_uuid_from_surreal_id(surreal_id)

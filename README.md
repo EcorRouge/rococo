@@ -114,6 +114,173 @@ with get_db_connection() as db:
     print(db.execute_query("SELECT * FROM person;", {}))
 ```
 
+<details>
+<summary><h5>Relationships</h5></summary>
+
+Consider the following example models:
+
+```python
+# Models
+from dataclasses import field, dataclass
+from rococo.repositories import SurrealDbRepository
+from rococo.models import VersionedModel
+from rococo.data import SurrealDbAdapter
+
+@dataclass
+class Email(VersionedModel):
+    email_address: str = None
+
+@dataclass
+class LoginMethod(VersionedModel):
+    email: str = field(default=None, metadata={
+        'relationship': {'model': Email, 'type': 'direct'},
+        'field_type': 'record_id'
+    })
+    method_type: str = None
+
+@dataclass
+class Person(VersionedModel):
+    login_method: str = field(default=None, metadata={
+        'relationship': {'model': LoginMethod, 'type': 'direct'},
+        'field_type': 'record_id'
+    })
+    name: str = None
+    
+
+@dataclass
+class Organization(VersionedModel):
+    person: str = field(default=None, metadata={
+        'relationship': {'model': Person, 'type': 'direct'},
+        'field_type': 'record_id'
+    })
+    name: str = None
+
+
+def get_db_connection():
+    endpoint = "ws://localhost:8000/rpc"
+    username = "root"
+    password = "root"
+    namespace = "breton1"
+    database = "bretondb1"
+    return SurrealDbAdapter(endpoint, username, password, namespace, database)
+
+
+
+
+
+# **Creating and relating objects.**
+email = Email(email_address="test@example.com")
+
+# Create a LoginMethod that references Email object
+login_method = LoginMethod(
+    method_type="email-password",
+    email=email  # Can be referenced by object
+)
+
+# Create a Person that references LoginMethod object
+person = Person(
+    name="Person1",
+    login_method=login_method.entity_id  # Can be referenced by UUID object.
+)
+
+# Create an Organization that references Person object
+organization = Organization(
+    name="Organization1",
+    person=str(person.entity_id)  # Can be referenced by UUID string.
+)
+
+
+with get_db_connection() as adapter:
+    # **Create repositories**
+    person_repo = SurrealDbRepository(adapter, Person, None, None)
+    organization_repo = SurrealDbRepository(adapter, Organization, None, None)
+    login_method_repo = SurrealDbRepository(adapter, LoginMethod, None, None)
+    email_repo = SurrealDbRepository(adapter, Email, None, None)
+
+    # ** Save objects.
+    organization_repo.save(organization)
+    # Saves to SurrealDB:
+    # {
+    #     "active": true,
+    #     "changed_by_id": "00000000-0000-4000-8000-000000000000",
+    #     "changed_on": "2023-11-23T19:21:00.816083",
+    #     "id": "organization:⟨5bb0a0dc-0043-45a3-9dac-d514b5ef7669⟩",
+    #     "name": "Organization1",
+    #     "person": "person:⟨7a3f4e8c-fd46-43db-b619-5b2129bbcc37⟩",
+    #     "previous_version": "00000000-0000-4000-8000-000000000000",
+    #     "version": "b49010ad-bc64-487e-bd41-4cdf20ff7aab"
+    # }
+
+    person_repo.save(person)
+    # Saves to SurrealDB:
+    # {
+    #     "active": true,
+    #     "changed_by_id": "00000000-0000-4000-8000-000000000000",
+    #     "changed_on": "2023-11-23T19:21:00.959270",
+    #     "id": "person:⟨7a3f4e8c-fd46-43db-b619-5b2129bbcc37⟩",
+    #     "login_method": "loginmethod:⟨0e1ef122-e4aa-435f-ad97-bd75ef6d1eb8⟩",
+    #     "name": "Person1",
+    #     "previous_version": "00000000-0000-4000-8000-000000000000",
+    #     "version": "95049030-80bd-45cd-a39f-09139fe67343"
+    # }
+
+    login_method_repo.save(login_method)
+    # Saves to SurrealDB:
+    # {
+    #     "active": true,
+    #     "changed_by_id": "00000000-0000-4000-8000-000000000000",
+    #     "changed_on": "2023-11-23T19:21:01.025179",
+    #     "email": "email:⟨3e654628-47fa-4a0e-bd42-79fda124149e⟩",
+    #     "id": "loginmethod:⟨0e1ef122-e4aa-435f-ad97-bd75ef6d1eb8⟩",
+    #     "method_type": "email-password",
+    #     "previous_version": "00000000-0000-4000-8000-000000000000",
+    #     "version": "9e20a1dc-bcb1-45c2-bdf8-64e441a79758"
+    # }
+
+    email_repo.save(email)
+    # Saves to SurrealDB:
+    # {
+    #     "active": true,
+    #     "changed_by_id": "00000000-0000-4000-8000-000000000000",
+    #     "changed_on": "2023-11-23T19:21:01.093089",
+    #     "email_address": "test@example.com",
+    #     "id": "email:⟨3e654628-47fa-4a0e-bd42-79fda124149e⟩",
+    #     "previous_version": "00000000-0000-4000-8000-000000000000",
+    #     "version": "0f693d94-a912-4b0a-bc96-3e558f7e13d5"
+    # }
+
+    
+    # **Fetching related objects
+    organization = organization_repo.get_one({"entity_id": organization.entity_id}, fetch_related=['person'])
+    # Roughly evaluates to "SELECT * FROM organization FETCH person;"
+
+    print(organization.person.entity_id)  # Prints entity_id of related person
+    print(organization.person.name)  # Prints name of related person
+
+    organization = organization_repo.get_one({"entity_id": organization.entity_id})
+    # Roughly evaluates to "SELECT * FROM organization;"
+
+    print(organization.person.entity_id)  # Prints entity_id of related person
+    try:
+        print(organization.person.name)  # raises AttributeError
+    except AttributeError:
+        pass
+
+
+    # FETCH chaining
+    organization = organization_repo.get_one({"entity_id": organization.entity_id}, fetch_related=['person', 'person.login_method', 'person.login_method.email'])
+    # Roughly evaluates to "SELECT * FROM organization FETCH person, person.login_method, person.login_method.email"
+
+    print(organization.entity_id)  # Prints entity_id of organization
+    print(organization.person.entity_id)  # Prints entity_id of organization.person
+    print(organization.person.login_method.entity_id)  # Prints entity_id of organization.person.login_method
+    print(organization.person.login_method.email.entity_id)  # Prints entity_id of organization.person.login_method.email
+    print(organization.person.login_method.email.email_address)  # Prints email address of organization.person.login_method.email
+
+```
+</details>
+
+
 ### How to use the adapter and base Repository in another projects
 
 ```python

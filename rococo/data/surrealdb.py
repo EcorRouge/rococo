@@ -62,7 +62,7 @@ class SurrealDbAdapter(DbAdapter):
         else:
             raise Exception(f"Unsuppported type {type(value)} for condition key: {key}, value: {value}")
 
-    def _move_entity_to_audit_table(self, table, entity_id):
+    def move_entity_to_audit_table(self, table, entity_id):
         query = f'INSERT INTO {table}_audit (SELECT *, "{entity_id}" AS entity_id, rand::uuid::v4() AS id FROM {table} WHERE id={table}:`{entity_id}`)'
         self._call_db('query', query)
 
@@ -90,7 +90,7 @@ class SurrealDbAdapter(DbAdapter):
         return results
 
     def get_one(
-        self, table: str, conditions: Dict[str, Any], sort: List[Tuple[str, str]] = None
+        self, table: str, conditions: Dict[str, Any], sort: List[Tuple[str, str]] = None, fetch_related=None
     ) -> Dict[str, Any]:
         query = f"SELECT * FROM {table}"
         condition_strs = []
@@ -106,6 +106,9 @@ class SurrealDbAdapter(DbAdapter):
             sort_strs = [f"{column} {direction}" for column, direction in sort]
             query += f" ORDER BY {', '.join(sort_strs)}"
         query += " LIMIT 1"
+        
+        if fetch_related:
+            query += f" FETCH {', '.join(field for field in fetch_related)}"
 
         db_response = self.parse_db_response(self.execute_query(query))
 
@@ -117,7 +120,8 @@ class SurrealDbAdapter(DbAdapter):
         conditions: Dict[str, Any] = None,
         sort: List[Tuple[str, str]] = None,
         limit: int = 100,
-        active: bool = True
+        active: bool = True,
+        fetch_related: list = None
     ) -> List[Dict[str, Any]]:
         query = f"SELECT * FROM {table}"
         
@@ -136,14 +140,15 @@ class SurrealDbAdapter(DbAdapter):
             query += f" ORDER BY {', '.join(sort_strs)}"
         query += f" LIMIT {limit}"
 
+        if fetch_related:
+            query += f" FETCH {', '.join(field for field in fetch_related)}"
+
         db_response = self.parse_db_response(self.execute_query(query))
 
         return db_response
 
     def save(self, table: str, data: Dict[str, Any]):
-        entity_id = data.pop('id')
-        self._move_entity_to_audit_table(table, entity_id)
-        db_result = self._call_db('update', f'{table}:`{entity_id}`', data)
+        db_result = self._call_db('update', data['id'], data)
         return db_result
 
     def delete(self, table: str, data: Dict[str, Any]) -> bool:

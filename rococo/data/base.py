@@ -37,6 +37,11 @@ class DbAdapter(ABC):
         pass
 
     @abstractmethod
+    def move_entity_to_audit_table(self, table_name: str, entity_id: str):
+        """Inserts the existing entities by entity_id in {table_name}_audit table."""
+        pass
+
+    @abstractmethod
     def save(self, table: str, data: Dict[str, Any]) -> Union[Dict[str, Any], None]:
         """Saves or updates a record in the specified table."""
         pass

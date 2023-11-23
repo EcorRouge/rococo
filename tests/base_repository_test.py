@@ -68,7 +68,7 @@ class TestBaseRepository:
         result = repository.get_one({'id': 1})
 
         assert isinstance(result, TestVersionedModel)
-        mock_adapter.get_one.assert_called_with('testversionedmodel', {'id': 1})
+        mock_adapter.get_one.assert_called_with('testversionedmodel', {'id': 1}, fetch_related=None)
         mock_adapter.__enter__.assert_called()
         mock_adapter.__exit__.assert_called()
 
@@ -81,7 +81,7 @@ class TestBaseRepository:
         result = repository.get_one({'id': 2})
 
         assert result is None
-        mock_adapter.get_one.assert_called_with('testversionedmodel', {'id': 2})
+        mock_adapter.get_one.assert_called_with('testversionedmodel', {'id': 2}, fetch_related=None)
         mock_adapter.__enter__.assert_called()
         mock_adapter.__exit__.assert_called()
 
@@ -100,7 +100,7 @@ class TestBaseRepository:
         assert len(result) == 2
         assert isinstance(result[0], TestVersionedModel)
         assert isinstance(result[1], TestVersionedModel)
-        mock_adapter.get_many.assert_called_with('testversionedmodel', None, None, 100)
+        mock_adapter.get_many.assert_called_with('testversionedmodel', None, None, 100, fetch_related=None)
         mock_adapter.__enter__.assert_called()
         mock_adapter.__exit__.assert_called()
 
@@ -109,6 +109,7 @@ class TestBaseRepository:
         Test saving a model instance
         """
         mock_adapter.save.return_value = True
+        mock_adapter.move_entity_to_audit_table.return_value = None
 
         model_instance = TestVersionedModel()
         result = repository.save(model_instance)
@@ -126,6 +127,7 @@ class TestBaseRepository:
         Test deleting by id
         """
         mock_adapter.save.return_value = True
+        mock_adapter.move_entity_to_audit_table.return_value = None
 
         model_instance = TestVersionedModel()
         result = repository.delete(model_instance)
@@ -141,6 +143,7 @@ class TestBaseRepository:
         Test saving and sending message
         """
         mock_adapter.save.return_value = True
+        mock_adapter.move_entity_to_audit_table.return_value = None
 
         model_instance = TestVersionedModel()
         result = repository.save(model_instance, True)

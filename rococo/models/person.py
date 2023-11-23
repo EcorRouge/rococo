@@ -11,5 +11,5 @@ from . import VersionedModel
 class Person(VersionedModel):
     """A person model."""
 
-    first_name: str
-    last_name: str
+    first_name: str = None
+    last_name: str = None

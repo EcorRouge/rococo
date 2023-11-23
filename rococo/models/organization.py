@@ -11,4 +11,4 @@ from . import VersionedModel
 class Organization(VersionedModel):
     """An organization model."""
 
-    name: str
+    name: str = None

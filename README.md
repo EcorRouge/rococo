@@ -249,7 +249,7 @@ with get_db_connection() as adapter:
     #     "version": "0f693d94-a912-4b0a-bc96-3e558f7e13d5"
     # }
 
-    
+
     # **Fetching related objects
     organization = organization_repo.get_one({"entity_id": organization.entity_id}, fetch_related=['person'])
     # Roughly evaluates to "SELECT * FROM organization FETCH person;"
@@ -266,6 +266,20 @@ with get_db_connection() as adapter:
     except AttributeError:
         pass
 
+    print(organization.as_dict(True))
+    # prints 
+    # {
+    #     "entity_id":"ff02a2c0-6bcf-426f-b5b9-8c01913b79f6",
+    #     "version":"9d58fd0e-b70a-4772-91f9-af3e6342de5b",
+    #     "previous_version":"00000000-0000-4000-8000-000000000000",
+    #     "active": True,
+    #     "changed_by_id":"00000000-0000-4000-8000-000000000000",
+    #     "changed_on":"2023-11-25T12:21:09.028676",
+    #     "person":{
+    #         "entity_id":"93cc132c-2a2a-46e4-853a-c02239336a28"
+    #     },
+    #     "name":"Organization1"
+    # }
 
     # FETCH chaining
     organization = organization_repo.get_one({"entity_id": organization.entity_id}, fetch_related=['person', 'person.login_method', 'person.login_method.email'])
@@ -276,8 +290,165 @@ with get_db_connection() as adapter:
     print(organization.person.login_method.entity_id)  # Prints entity_id of organization.person.login_method
     print(organization.person.login_method.email.entity_id)  # Prints entity_id of organization.person.login_method.email
     print(organization.person.login_method.email.email_address)  # Prints email address of organization.person.login_method.email
+    print(organization.as_dict(True))
+    # prints
+    # {
+    #     "entity_id":"846f0756-20ab-44d3-8899-07e10b698ccd",
+    #     "version":"578ca4c7-311a-4508-85ec-00ba264cd741",
+    #     "previous_version":"00000000-0000-4000-8000-000000000000",
+    #     "active": True,
+    #     "changed_by_id":"00000000-0000-4000-8000-000000000000",
+    #     "changed_on":"2023-11-25T12:19:46.541387",
+    #     "person":{
+    #         "entity_id":"ef99b93c-e1bb-4f37-96d5-e4e560dbdda0",
+    #         "version":"b3ce7b8a-223e-4a63-a842-042178c9645c",
+    #         "previous_version":"00000000-0000-4000-8000-000000000000",
+    #         "active": True,
+    #         "changed_by_id":"00000000-0000-4000-8000-000000000000",
+    #         "changed_on":"2023-11-25T12:19:46.623192",
+    #         "login_method":{
+    #             "entity_id":"a7efa334-ea92-4e59-95d5-c8d51a976c1b",
+    #             "version":"4d1a9a1b-81fb-433f-8b43-1bf1c3b696da",
+    #             "previous_version":"00000000-0000-4000-8000-000000000000",
+    #             "active": True,
+    #             "changed_by_id":"00000000-0000-4000-8000-000000000000",
+    #             "changed_on":"2023-11-25T12:19:46.706244",
+    #             "email":{
+    #                 "entity_id":"76e95956-0404-4c06-916b-89927b73d26d",
+    #                 "version":"d59a91a4-26ef-4a88-bee2-b5c0d651bd77",
+    #                 "previous_version":"00000000-0000-4000-8000-000000000000",
+    #                 "active":True,
+    #                 "changed_by_id":"00000000-0000-4000-8000-000000000000",
+    #                 "changed_on":"2023-11-25T12:19:46.775098",
+    #                 "email_address":"test@example.com"
+    #             },
+    #             "method_type":"email-password"
+    #         },
+    #         "name":"Person1"
+    #     },
+    #     "name":"Organization1"
+    # }
+```
+
+
+<h6>Many-to-many relationships</h6>
+
+```python
+# Many-to-Many relationships
+# Investor->investswith->Investment
+#         /\     /\    /\
+#         ||     ||    ||
+#         IN    name   OUT
+
+
+@dataclass
+class Investor(VersionedModel):
+    name: str = None
+    # One-to-Many field
+    person: str = field(default=None, metadata={
+        'relationship': {'model': Person, 'type': 'direct'},
+        'field_type': 'record_id'
+    })
+    # Many-to-Many field
+    investments: List[VersionedModel] = field(default=None, metadata={
+        'relationship': {'model': 'Investment', 'type': 'associative', 'name': 'investswith', 'direction': 'out'},
+        'field_type': 'm2m_list'
+    })
+
+@dataclass
+class Investment(VersionedMode):
+    name: str = None
+    # Many-to-Many field
+    investors: List[VersionedModel] = field(default=None, metadata={
+        'relationship': {'model': 'Investor', 'type': 'associative', 'name': 'investswith', 'direction': 'in'},
+        'field_type': 'm2m_list'
+    })
+
+# **Creating and relating objects.**
+# Many-to-Many relationships
+# Investor->investswith->Investment
+#         /\     /\    /\
+#         ||     ||    ||
+#         IN    name   OUT
+
+from typing import List
+
+@dataclass
+class Investor(VersionedModel):
+    name: str = None
+    # One-to-Many field
+    person: str = field(default=None, metadata={
+        'relationship': {'model': Person, 'type': 'direct'},
+        'field_type': 'record_id'
+    })
+    # Many-to-Many field
+    investments: List[VersionedModel] = field(default=None, metadata={
+        'relationship': {'model': 'Investment', 'type': 'associative', 'name': 'investswith', 'direction': 'out'},
+        'field_type': 'm2m_list'
+    })
+
+@dataclass
+class Investment(VersionedModel):
+    name: str = None
+    # Many-to-Many field
+    investors: List[VersionedModel] = field(default=None, metadata={
+        'relationship': {'model': 'Investor', 'type': 'associative', 'name': 'investswith', 'direction': 'in'},
+        'field_type': 'm2m_list'
+    })
+
+
+# **Creating and relating objects.**
+investor1 = Investor(name="Investor1", person=person)
+investor2 = Investor(name="Investor2", person=person.entity_id)
+investor3 = Investor(name="Investor3", person=Person(entity_id=person.entity_id))
+investment1 = Investment(name="Investment1")
+investment2 = Investment(name="Investment2")
+investment3 = Investment(name="Investment3")
+
+with get_db_connection() as adapter:
+    # **Create repositories**
+    investor_repo = SurrealDbRepository(adapter, Investor, None, None)
+    investment_repo = SurrealDbRepository(adapter, Investment, None, None)
+
+    investor_repo.save(investor1)
+    investor_repo.save(investor2)
+    investor_repo.save(investor3)
+    investment_repo.save(investment1)
+    investment_repo.save(investment2)
+    investment_repo.save(investment3)
+
+    # Relate investor1 to investment2 and investment3
+    investor_repo.relate(investor1, 'investswith', investment2)
+    # OR
+    investment_repo.relate(investor1, 'investswith', Investment(entity_id=investment3.entity_id))
+
+    # Relate investor2 to investment1 and investment3
+    investor_repo.relate(Investor(entity_id=investor2.entity_id), 'investswith', investment1)
+    investor_repo.relate(investor2, 'investswith', investment3)
+
+    # Relate investor3 to investment1 and investment2
+    investment_repo.relate(investor3, 'investswith', investment1)
+    investment_repo.relate(investor3, 'investswith', investment2)
+
+
+    # Fetching many-to-many relations
+    for investment in investment_repo.get_many({}, fetch_related=['investors']):
+        print("Investment: ", investment.as_dict(True))
+        print()
+
+    # Fetch-chaining for many-to-many relations
+    for investment in investment_repo.get_many({}, fetch_related=['investors', 'investors.person', 'investors.person.login_method', 'investors.person.login_method.email']):
+        print("Investment: ", investment.as_dict(True))
+        print()
+
+    # Get investments of an investor by investor's entity_id
+    investor_with_investments = investor_repo.get_one({'entity_id': investor1.entity_id}, fetch_related=['investments'])
+    investments = investor_with_investments.investments
+    for investment in investments:
+        print(investment.as_dict())
 
 ```
+
 </details>
 
 

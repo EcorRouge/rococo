@@ -90,14 +90,21 @@ class SurrealDbAdapter(DbAdapter):
         return results
 
     def get_one(
-        self, table: str, conditions: Dict[str, Any], sort: List[Tuple[str, str]] = None, fetch_related=None
+        self,
+        table: str,
+        conditions: Dict[str, Any],
+        sort: List[Tuple[str, str]] = None,
+        fetch_related: list = None,
+        additional_fields: list = None
     ) -> Dict[str, Any]:
-        query = f"SELECT * FROM {table}"
+        fields = ['*']
+        if additional_fields:
+            fields += additional_fields
+
+        query = f"SELECT {', '.join(fields)} FROM {table}"
+        
         condition_strs = []
         if conditions:
-            if 'entity_id' in conditions:
-                entity_id = conditions.pop('entity_id')
-                conditions['id'] = f'{table}:`{str(entity_id)}`'
             condition_strs = [f"{self._build_condition_string(k, v)}" for k, v in conditions.items()]
         condition_strs.append("active=true")
         query += f" WHERE {' AND '.join(condition_strs)}"
@@ -121,15 +128,18 @@ class SurrealDbAdapter(DbAdapter):
         sort: List[Tuple[str, str]] = None,
         limit: int = 100,
         active: bool = True,
-        fetch_related: list = None
+        fetch_related: list = None,
+        additional_fields: list = None
     ) -> List[Dict[str, Any]]:
-        query = f"SELECT * FROM {table}"
+        
+        fields = ['*']
+        if additional_fields:
+            fields += additional_fields
+
+        query = f"SELECT {', '.join(fields)} FROM {table}"
         
         condition_strs = []
         if conditions:
-            if 'entity_id' in conditions:
-                entity_id = conditions.pop('entity_id')
-                conditions['id'] = f'{table}:`{str(entity_id)}`'
             condition_strs = [f"{self._build_condition_string(k, v)}" for k, v in conditions.items()]
         if active:
             condition_strs.append("active=true")

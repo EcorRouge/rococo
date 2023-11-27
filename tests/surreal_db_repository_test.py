@@ -5,21 +5,20 @@ Surreal DB repository test
 import json
 import unittest
 from unittest.mock import MagicMock
+from uuid import UUID
 
+from dataclasses import dataclass
 from rococo.models import VersionedModel
 from rococo.repositories import SurrealDbRepository
 
 
+@dataclass
 class VersionedModelHelper(VersionedModel):
     """
     VersionedModelHelper class
     """
+    name: str = None
     __test__ = False
-
-    def __init__(self, data):
-        super().__init__()
-        for key, value in data.items():
-            setattr(self, key, value)
 
 
 class SurrealDbRepositoryTestCase(unittest.TestCase):
@@ -29,8 +28,8 @@ class SurrealDbRepositoryTestCase(unittest.TestCase):
     def setUp(self):
         self.db_adapter_mock = MagicMock()
         self.message_adapter_mock = MagicMock()
-        self.model_data = {"id": 1, "name": "test"}
-        self.model_instance = VersionedModelHelper(self.model_data)
+        self.model_data = {"entity_id": UUID(int=8), "name": "test"}
+        self.model_instance = VersionedModelHelper(**self.model_data)
         self.queue_name = "test_queue"
         self.repository = SurrealDbRepository(
             db_adapter=self.db_adapter_mock,

@@ -117,7 +117,6 @@ class SurrealDbAdapter(DbAdapter):
         if fetch_related:
             query += f" FETCH {', '.join(field for field in fetch_related)}"
 
-        print(query)
         db_response = self.parse_db_response(self.execute_query(query))
 
         return db_response

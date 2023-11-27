@@ -335,34 +335,6 @@ with get_db_connection() as adapter:
 
 ```python
 # Many-to-Many relationships
-# Investor->investswith->Investment
-#         /\     /\    /\
-#         ||     ||    ||
-#         IN    name   OUT
-
-
-@dataclass
-class Investor(VersionedModel):
-    name: str = None
-    # One-to-Many field
-    person: str = field(default=None, metadata={
-        'relationship': {'model': Person, 'type': 'direct'},
-        'field_type': 'record_id'
-    })
-    # Many-to-Many field
-    investments: List[VersionedModel] = field(default=None, metadata={
-        'relationship': {'model': 'Investment', 'type': 'associative', 'name': 'investswith', 'direction': 'out'},
-        'field_type': 'm2m_list'
-    })
-
-@dataclass
-class Investment(VersionedMode):
-    name: str = None
-    # Many-to-Many field
-    investors: List[VersionedModel] = field(default=None, metadata={
-        'relationship': {'model': 'Investor', 'type': 'associative', 'name': 'investswith', 'direction': 'in'},
-        'field_type': 'm2m_list'
-    })
 
 # **Creating and relating objects.**
 # Many-to-Many relationships

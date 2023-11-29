@@ -121,7 +121,7 @@ class SurrealDbRepository(BaseRepository):
                         edge = '<-' if relationship.get('direction') == 'in' else '->'
                         model = relationship.get('model')
                         if not isinstance(model, str):
-                            model = model.__class__.__name__
+                            model = model.__name__
                         additional_fields.append(f"(SELECT * FROM {edge}{name}{edge}{model.lower()}) AS {field.name}")
                         fetch_related.remove(field.name)
 
@@ -203,7 +203,15 @@ class SurrealDbRepository(BaseRepository):
         return [self.model.from_dict(record) for record in records]
 
     def relate(self, in_edge: VersionedModel, association_name: str, out_edge: VersionedModel):
+        query = f"RELATE {in_edge.__class__.__name__.lower()}:`{in_edge.entity_id}`->{association_name}->{out_edge.__class__.__name__.lower()}:`{out_edge.entity_id}`"
         self._execute_within_context(
             self.adapter.execute_query,
-            f"RELATE {in_edge.__class__.__name__.lower()}:`{in_edge.entity_id}`->{association_name}->{out_edge.__class__.__name__.lower()}:`{out_edge.entity_id}`"
+            query            
+        )
+
+    def unrelate(self, in_edge: VersionedModel, association_name: str, out_edge: VersionedModel):
+        query = f"DELETE FROM {association_name} WHERE in={in_edge.__class__.__name__.lower()}:`{in_edge.entity_id}` AND out={out_edge.__class__.__name__.lower()}:`{out_edge.entity_id}`"
+        self._execute_within_context(
+            self.adapter.execute_query,
+            query
         )

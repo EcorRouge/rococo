@@ -2,6 +2,9 @@
 VersionedModel for rococo. Base model
 """
 
+import pkgutil
+import os
+
 from uuid import uuid4, UUID
 from dataclasses import dataclass, field, fields, InitVar
 from datetime import datetime
@@ -14,6 +17,18 @@ def default_datetime():
     Definition for default datetime
     """
     return datetime.utcnow()
+
+
+def import_models_module(current_module, module_name):
+    root_path = os.path.dirname(os.path.abspath(current_module.__file__))
+
+    for root, dirs, _ in os.walk(root_path):
+        for module in pkgutil.iter_modules([os.path.join(root, dir) for dir in dirs]):
+            if module.name == module_name:
+                spec = importlib.util.spec_from_file_location(module_name, os.path.join(module.module_finder.path, module_name, '__init__.py'))
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+                return module
 
 
 @dataclass(kw_only=True)
@@ -34,12 +49,12 @@ class VersionedModel:
         for field in fields(self):
             field_model = field.metadata.get('relationship', {}).get('model')
             if field_model is not None and isinstance(field_model, str):
-                try:
-                    models_module = importlib.import_module('models')
-                except ModuleNotFoundError:
-                    models_module = None
                 current_module = importlib.import_module('__main__')
-                field_model_cls = getattr(current_module, field_model, None) or (getattr(models_module, field_model, None) if models_module else None)
+                models_module = import_models_module(current_module, 'models')
+                rococo_module = importlib.import_module('rococo.models')
+                field_model_cls = getattr(current_module, field_model, None) or  \
+                                    (getattr(models_module, field_model, None) if models_module else None) or \
+                                    (getattr(rococo_module, field_model, None) if rococo_module else None)
                 if not field_model_cls:
                     raise ImportError(f"Unable to import {field_model} class from current module or models module.")
 

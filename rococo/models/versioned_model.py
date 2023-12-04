@@ -23,7 +23,7 @@ def import_models_module(current_module, module_name):
     root_path = os.path.dirname(os.path.abspath(current_module.__file__))
 
     for root, dirs, _ in os.walk(root_path):
-        for module in pkgutil.iter_modules([os.path.join(root, dir) for dir in dirs]):
+        for module in pkgutil.iter_modules([os.path.join(root, dir) for dir in dirs] + [root]):
             if module.name == module_name:
                 spec = importlib.util.spec_from_file_location(module_name, os.path.join(module.module_finder.path, module_name, '__init__.py'))
                 module = importlib.util.module_from_spec(spec)
@@ -116,6 +116,9 @@ class VersionedModel:
         Returns:
             Dict[str, Any]: A dictionary representation of this model.
         """
+        if self._is_partial:
+            return {'entity_id': self.entity_id}
+
         results = self.__dict__
 
         results = {k:v for k,v in results.items() if k in self.fields()}

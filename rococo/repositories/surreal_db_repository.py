@@ -136,8 +136,21 @@ class SurrealDbRepository(BaseRepository):
                     field_model = condition_field.metadata.get('relationship', {}).get('model', None) or self.model
                     if isinstance(value, VersionedModel):
                         conditions[condition_name] = f"{field_model.__name__.lower()}:`{str(value.entity_id)}`"
-                    else:
+                    elif isinstance(value, (str, UUID)):
                         conditions[condition_name] = f"{field_model.__name__.lower()}:`{str(value)}`"
+                    elif isinstance(value, list):
+                        # Handle list
+                        conditions[condition_name] = []
+                        for v in value:
+                            if isinstance(v, VersionedModel):
+                                conditions[condition_name].append(f"{field_model.__name__.lower()}:`{str(v.entity_id)}`")
+                            elif isinstance(v, (str, UUID)):
+                                conditions[condition_name].append(f"{field_model.__name__.lower()}:`{str(v)}`")
+                            else:
+                                raise NotImplementedError
+                    else:
+                        raise NotImplementedError
+
 
         data = self._execute_within_context(
             self.adapter.get_one, self.table_name, conditions, fetch_related=fetch_related, additional_fields=additional_fields
@@ -185,8 +198,20 @@ class SurrealDbRepository(BaseRepository):
                     field_model = condition_field.metadata.get('relationship', {}).get('model', None) or self.model
                     if isinstance(value, VersionedModel):
                         conditions[condition_name] = f"{field_model.__name__.lower()}:`{str(value.entity_id)}`"
-                    else:
+                    elif isinstance(value, (str, UUID)):
                         conditions[condition_name] = f"{field_model.__name__.lower()}:`{str(value)}`"
+                    elif isinstance(value, list):
+                        # Handle list
+                        conditions[condition_name] = []
+                        for v in value:
+                            if isinstance(v, VersionedModel):
+                                conditions[condition_name].append(f"{field_model.__name__.lower()}:`{str(v.entity_id)}`")
+                            elif isinstance(v, (str, UUID)):
+                                conditions[condition_name].append(f"{field_model.__name__.lower()}:`{str(v)}`")
+                            else:
+                                raise NotImplementedError
+                    else:
+                        raise NotImplementedError
 
         records = self._execute_within_context(
             self.adapter.get_many, self.table_name, conditions, sort, limit, fetch_related=fetch_related, additional_fields=additional_fields

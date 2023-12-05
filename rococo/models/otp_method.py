@@ -12,7 +12,7 @@ from . import VersionedModel
 class OtpMethod(VersionedModel):
     """An OTP method model."""
 
-    person: str = field(metadata={
+    person: str = field(default=None, metadata={
         'relationship': {'model': 'Person', 'type': 'direct'},
         'field_type': 'record_id'
     })

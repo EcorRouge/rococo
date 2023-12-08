@@ -6,6 +6,13 @@ from dataclasses import dataclass, field
 
 from . import VersionedModel
 
+# from enum import Enum
+
+# class PersonOrganizationRoleEnum(Enum):
+#     OWNER = "OWNER"
+#     MANAGER = "MANAGER"
+#     MEMBER = "MEMBER"
+
 @dataclass
 class PersonOrganizationRole(VersionedModel):
     """A person organization role model."""
@@ -14,5 +21,11 @@ class PersonOrganizationRole(VersionedModel):
         'relationship': {'model': 'Person', 'type': 'direct'},
         'field_type': 'record_id'
     })
-    organization_id: str
+    organization: str = field(metadata={
+        'relationship': {'model': 'Organization', 'type': 'direct'},
+        'field_type': 'record_id'
+    })
+    
+    # TODO: We would benefit from strictly typed Enum for role, but flexibility would lower
+    # role: PersonOrganizationRoleEnum = PersonOrganizationRoleEnum.MEMBER
     role: str

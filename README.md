@@ -1,4 +1,5 @@
 # rococo
+
 A Python library to help build things the way we want them built.
 
 _Anything worth doing is worth doing well.  Anything worth doing twice is worth doing in rococo._
@@ -27,7 +28,11 @@ someone = Person(first_name="John", last_name="Doe")
 someone.prepare_for_save(changed_by_id=UUID("b30884cb-5127-457c-a633-4a800ad3c44b"))
 
 someone.as_dict()
+```
 
+>>> OUTPUT:
+
+```json
 {
     'active': True,
     'changed_by_id': 'b30884cb-5127-457c-a633-4a800ad3c44b',
@@ -42,8 +47,8 @@ someone.as_dict()
 
 #### Messaging
 
-
 ##### RabbitMQ
+
 ```python
 # Producer
 from rococo.messaging import RabbitMqConnection
@@ -63,6 +68,7 @@ with RabbitMqConnection('host', 'port', 'username', 'password', 'virtual_host') 
 ```
 
 ##### SQS
+
 ```python
 # Producer
 from rococo.messaging import SqsConnection
@@ -87,11 +93,13 @@ conn.consume_messages('queue_name', process_message)
 ```
 
 ##### Processing
-Processing data from messages can be achieved by implementing the abstract class BaseServiceProcessor within messaging/base.py 
+
+Processing data from messages can be achieved by implementing the abstract class `BaseServiceProcessor` within `messaging/base.py`
 
 #### Data
 
 ##### SurrealDB
+
 ```python
 from rococo.data import SurrealDbAdapter
 
@@ -114,8 +122,13 @@ with get_db_connection() as db:
     print(db.execute_query("SELECT * FROM person;", {}))
 ```
 
+<summary>
+
+##### Relationships
+
+</summary>
+
 <details>
-<summary><h5>Relationships</h5></summary>
 
 Consider the following example models:
 
@@ -330,8 +343,7 @@ with get_db_connection() as adapter:
     # }
 ```
 
-
-<h6>Many-to-many relationships</h6>
+###### Many-to-many relationships
 
 ```python
 # Many-to-Many relationships
@@ -423,7 +435,6 @@ with get_db_connection() as adapter:
 
 </details>
 
-
 ### How to use the adapter and base Repository in another projects
 
 ```python
@@ -444,7 +455,8 @@ class LoginMethodRepository(BaseRepository):
             return super().get_many(conditions)
 
 ```
- - The LoginMethodRepository class is a concrete implementation of the BaseRepository class. It is responsible for managing LoginMethod objects in the database.
+
+- The LoginMethodRepository class is a concrete implementation of the BaseRepository class. It is responsible for managing LoginMethod objects in the database.
 
     The __init__() method takes an adapter object as input. This adapter object is responsible for communicating with the database. The adapter object is passed to the super().__init__() method, which initializes the base repository class.
     It also takes in a message adapter and queue name for RabbitMQ and SQS messaging which can later be used in the save() method by passing a boolean.
@@ -474,11 +486,13 @@ class RepositoryFactory:
         return cls._repositories[repo_class]
 
 ```
+
 - The RepositoryFactory class is a singleton class that is responsible for creating and managing repositories. It uses a cache to store the repositories that it has already created. This allows it to avoid creating the same repository multiple times.
 
     The _get_db_connection() method creates a new database connection using the specified endpoint, username, password, namespace, and database name. The get_repository() method takes a repository class as input and returns the corresponding repository object. If the repository object does not already exist in the cache, then the factory will create a new one and add it to the cache.
 
 #### Sample usage
+
 ```python
 sample_data = LoginMethod(
     person_id="asd123123",
@@ -493,34 +507,36 @@ repo = RepositoryFactory.get_repository(LoginMethodRepository)
 result = repo.save(sample_data)
 
 print("Done", repo.get_one({}))
-
 ```
+
 - The above code creates a new LoginMethod object and saves it to the database using the LoginMethodRepository object. It then retrieves the saved object from the database and prints it to the console.
 
     This is just a simple example of how to use the LoginMethodRepository and RepositoryFactory classes. You can use these classes to manage any type of object in a database.
 
-
 ### Deployment
 
-The process described is a Continuous Integration (CI) and Continuous Deployment (CD) pipeline for a Python package using Github Actions. Here's the breakdown:
+The process described is a Continuous Integration (CI) and Continuous Deployment (CD) pipeline for a Python package using _GitHub Actions_. Here's the breakdown:
 
-Development Phase:
+### Development Phase
 
 Developers push their changes directly to the main branch.
 This branch is likely used for ongoing development work.
-Staging/Testing Phase:
+
+### Staging/Testing Phase
 
 When the team is ready to test a potential release, they push the code to a staging branch.
-Once code is pushed to this branch, Github Actions automatically publishes the package to the test PyPi server.
-The package can then be reviewed and tested by visiting https://test.pypi.org/project/rococo/.
+Once the code is pushed to this branch, _GitHub Actions_ automatically publishes the package to the test PyPi server.
+The package can then be reviewed and tested by visiting <https://test.pypi.org/project/rococo/>.
 This step ensures that the package works as expected on the PyPi platform without affecting the live package.
-Release/Publish Phase:
 
-When the team is satisfied with the testing and wants to release the package to the public, they create and publish a release on the Github repository.
-Following this action, Github Actions takes over and automatically publishes the package to the official PyPi server.
-The package can then be accessed and downloaded by the public at https://pypi.org/project/rococo/.
+### Release/Publish Phase
+
+When the team is satisfied with the testing and wants to release the package to the public, they create and publish a release on the GitHub repository.
+Following this action, _GitHub Actions_ takes over and automatically publishes the package to the official PyPi server.
+The package can then be accessed and downloaded by the public at <https://pypi.org/project/rococo/>.
+
 In essence, there are three primary phases:
 
-Development (main branch)
-Testing (staging branch with test PyPi server)
-Release (triggered by a Github release and publishes to official PyPi server).
+1. Development (main branch)
+2. Testing (staging branch with test PyPi server)
+3. Release (triggered by a GitHub release and published to the official PyPi server).

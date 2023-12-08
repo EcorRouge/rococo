@@ -61,5 +61,5 @@ with get_db_connection() as db:
         tags: ['python', 'documentation']
     };""")
     print(db.execute_query("SELECT * FROM person;", {}))
-    print("get_one('person')     ", db.get_one("person"))
-    print("get_one_unconsolidated('person') ", db.get_one_unconsolidated("person", None))
+    print("get_one('person')                ", db.get_one("person"))
+    print("get_one_unconsolidated('person') ", db.get_one_unconsolidated("person", {}))

@@ -18,7 +18,7 @@ class PersonOrganizationRoleRepository(SurrealDbRepository):
         Returns:
             List[PersonOrganizationRole]: found PersonOrganizationRole
         """
-        conditions = {"person.id": member_id}
+        conditions = {"person": member_id}
         fetch_related: List[str] = ["organization", "person"] if get_member else ["organization"]
         return self.get_many(conditions, fetch_related=fetch_related)
     
@@ -34,6 +34,6 @@ class PersonOrganizationRoleRepository(SurrealDbRepository):
         """
         print(f"[find_organizations_by_owner] owner_id: {owner_id}", flush=True)
         OWNER: str = "OWNER"
-        conditions = {"person.id": owner_id, "role": OWNER}
+        conditions = {"person": owner_id, "role": OWNER}
         fetch_related: List[str] = ["organization", "person"] if get_owner else ["organization"]
         return self.get_many(conditions, fetch_related=fetch_related)

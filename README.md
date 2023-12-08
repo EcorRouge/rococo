@@ -122,8 +122,11 @@ with get_db_connection() as db:
     print(db.execute_query("SELECT * FROM person;", {}))
 ```
 
+<summary>
+##### Relationships
+</summary>
+
 <details>
-<summary><h5>Relationships</h5></summary>
 
 Consider the following example models:
 
@@ -338,8 +341,7 @@ with get_db_connection() as adapter:
     # }
 ```
 
-
-<h6>Many-to-many relationships</h6>
+###### Many-to-many relationships
 
 ```python
 # Many-to-Many relationships
@@ -430,7 +432,6 @@ with get_db_connection() as adapter:
 ```
 
 </details>
-
 
 ### How to use the adapter and base Repository in another projects
 

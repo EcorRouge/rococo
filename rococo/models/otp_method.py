@@ -2,7 +2,7 @@
 OtpMethod model
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List
 
 from . import VersionedModel
@@ -12,8 +12,11 @@ from . import VersionedModel
 class OtpMethod(VersionedModel):
     """An OTP method model."""
 
-    person_id: str
-    secret: str
-    name: str
-    enabled: bool
-    recovery_codes: List[str]
+    person: str = field(default=None, metadata={
+        'relationship': {'model': 'Person', 'type': 'direct'},
+        'field_type': 'record_id'
+    })
+    secret: str = None
+    name: str = None
+    enabled: bool = False
+    recovery_codes: List[str] = None

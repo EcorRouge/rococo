@@ -53,18 +53,22 @@ class TestBaseRepository:
         """
         Fixture for BaseRepository
         """
-        return BaseRepository(mock_adapter, TestVersionedModel, _mock_message_adapter, "test_queue_name")
+        return BaseRepository(
+            mock_adapter,
+            TestVersionedModel,
+            _mock_message_adapter,
+            "test_queue_name")
 
     def test_get_one_existing_record(self, repository, mock_adapter):
         """
         Tests getting one existing record from TestVersionedModel
         """
         mock_adapter.get_one.return_value = {'id': 1, 'name': 'Test'}
-        
+
         result = repository.get_one({'id': 1})
 
         assert isinstance(result, TestVersionedModel)
-        mock_adapter.get_one.assert_called_with('testversionedmodel', {'id': 1})
+        mock_adapter.get_one.assert_called_with('testversionedmodel', {'id': 1}, fetch_related=None)
         mock_adapter.__enter__.assert_called()
         mock_adapter.__exit__.assert_called()
 
@@ -73,11 +77,11 @@ class TestBaseRepository:
         Tests getting one non existing record from TestVersionedModel
         """
         mock_adapter.get_one.return_value = None
-        
+
         result = repository.get_one({'id': 2})
 
         assert result is None
-        mock_adapter.get_one.assert_called_with('testversionedmodel', {'id': 2})
+        mock_adapter.get_one.assert_called_with('testversionedmodel', {'id': 2}, fetch_related=None)
         mock_adapter.__enter__.assert_called()
         mock_adapter.__exit__.assert_called()
 
@@ -85,15 +89,18 @@ class TestBaseRepository:
         """
         Test getting many records
         """
-        mock_adapter.get_many.return_value = [{'id': 1, 'name': 'Test1'}, {'id': 2, 'name': 'Test2'}]
-        
+        mock_adapter.get_many.return_value = [
+            {'id': 1, 'name': 'Test1'},
+            {'id': 2, 'name': 'Test2'}
+        ]
+
         result = repository.get_many()
 
         assert isinstance(result, list)
         assert len(result) == 2
         assert isinstance(result[0], TestVersionedModel)
         assert isinstance(result[1], TestVersionedModel)
-        mock_adapter.get_many.assert_called_with('testversionedmodel', None, None, 100)
+        mock_adapter.get_many.assert_called_with('testversionedmodel', None, None, 100, fetch_related=None)
         mock_adapter.__enter__.assert_called()
         mock_adapter.__exit__.assert_called()
 
@@ -102,11 +109,15 @@ class TestBaseRepository:
         Test saving a model instance
         """
         mock_adapter.save.return_value = True
+        mock_adapter.move_entity_to_audit_table.return_value = None
 
         model_instance = TestVersionedModel()
         result = repository.save(model_instance)
 
-        assert result is True
+        assert result is model_instance
+        assert result.entity_id is not None
+        assert result.version is not None
+
         mock_adapter.save.assert_called_with('testversionedmodel', {})
         mock_adapter.__enter__.assert_called()
         mock_adapter.__exit__.assert_called()
@@ -115,13 +126,15 @@ class TestBaseRepository:
         """
         Test deleting by id
         """
-        mock_adapter.delete.return_value = True
+        mock_adapter.save.return_value = True
+        mock_adapter.move_entity_to_audit_table.return_value = None
 
-        conditions = {'id': 1}
-        result = repository.delete(conditions)
+        model_instance = TestVersionedModel()
+        result = repository.delete(model_instance)
 
-        assert result is True
-        mock_adapter.delete.assert_called_with('testversionedmodel', conditions)
+        assert result is model_instance
+        assert model_instance.active == False
+        mock_adapter.save.assert_called_with('testversionedmodel', {})
         mock_adapter.__enter__.assert_called()
         mock_adapter.__exit__.assert_called()
 
@@ -130,15 +143,15 @@ class TestBaseRepository:
         Test saving and sending message
         """
         mock_adapter.save.return_value = True
+        mock_adapter.move_entity_to_audit_table.return_value = None
 
         model_instance = TestVersionedModel()
         result = repository.save(model_instance, True)
 
-        assert result is True
+        assert result is model_instance
         mock_adapter.save.assert_called_with('testversionedmodel', {})
         mock_adapter.__enter__.assert_called()
         mock_adapter.__exit__.assert_called()
-
 
 if __name__ == '__main__':
     pytest.main()

@@ -12,7 +12,9 @@ logger = logging.getLogger(__name__)
 class SqsConnection(MessageAdapter):
     """A connection to AWS SQS that allows sending and receiving messages to and from queues."""
 
-    def __init__(self, aws_access_key_id: str = None, aws_access_key_secret: str = None, region_name: str = None):
+    def __init__(self, aws_access_key_id: str = None,
+                 aws_access_key_secret: str = None,
+                 region_name: str = None):
         """Initializes a new SQS connection.
 
         Args:
@@ -24,8 +26,10 @@ class SqsConnection(MessageAdapter):
         self._aws_access_key_id = aws_access_key_id
         self._aws_access_key_secret = aws_access_key_secret
         self._region_name = region_name
-        self._sqs = boto3.resource('sqs', aws_access_key_id=self._aws_access_key_id,
-                                   aws_secret_access_key=self._aws_access_key_secret, region_name=self._region_name)
+        self._sqs = boto3.resource('sqs',
+                                   aws_access_key_id=self._aws_access_key_id,
+                                   aws_secret_access_key=self._aws_access_key_secret,
+                                   region_name=self._region_name)
         self._queue_map = {}
 
     def __enter__(self):

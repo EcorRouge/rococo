@@ -40,7 +40,7 @@ class BaseConfig():
             logger.warning("Variable %s not found.", var_name)
             return None
 
-    def load_toml(self, toml_folder_dir: str) -> bool:
+    def load_toml(self, toml_folder_dir: str, log_version_string: bool=True) -> bool:
         """
         Loads the toml file for the project
         Args:
@@ -55,7 +55,8 @@ class BaseConfig():
                 version_match = re.search(r'version\s*=\s*[\'"]([^\'"]+)[\'"]', pyproject_content)
                 if version_match:
                     version = version_match.group(1)
-                    logger.info('Project Version: %s', version)
+                    if log_version_string:
+                        logger.info('Project Version: %s', version)
                     self.project_version = version
                     return True
                 else:

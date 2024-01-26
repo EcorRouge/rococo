@@ -15,7 +15,8 @@ setup(
         'surrealdb==0.3.1',
         'boto3==1.28.55',
         'pika==1.3.2',
-        'python-dotenv==1.0.0'
+        'python-dotenv==1.0.0',
+        'PyMySQL==1.1.0'
     ],
     python_requires=">=3.10"
 )

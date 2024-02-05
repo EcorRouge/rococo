@@ -112,19 +112,6 @@ class MysqlRepository(BaseRepository):
     def get_one(self, conditions: Dict[str, Any], fetch_related: List[str] = None) -> Union[VersionedModel, None]:
         """get one"""
         additional_fields = []
-        if fetch_related:
-            for field in fields(self.model):
-                relationship = field.metadata.get('relationship', {})
-                if relationship.get('type') == 'associative':
-                    if field.name in fetch_related:
-                        name = relationship.get('name')
-                        edge = '<-' if relationship.get('direction') == 'in' else '->'
-                        model = relationship.get('model')
-                        if not isinstance(model, str):
-                            model = model.__name__
-                        additional_fields.append(f"(SELECT * FROM {edge}{name}{edge}{model.lower()}) AS {field.name}")
-                        fetch_related.remove(field.name)
-
         if conditions:
             for condition_name, value in conditions.copy().items():
                 condition_field = next((field for field in fields(self.model) if field.name == condition_name), None)
@@ -174,19 +161,6 @@ class MysqlRepository(BaseRepository):
     ) -> List[VersionedModel]:
         """get many"""
         additional_fields = []
-        if fetch_related:
-            for field in fields(self.model):
-                relationship = field.metadata.get('relationship', {})
-                if relationship.get('type') == 'associative':
-                    if field.name in fetch_related:
-                        name = relationship.get('name')
-                        edge = '<-' if relationship.get('direction') == 'in' else '->'
-                        model = relationship.get('model')
-                        if isinstance(model, type):
-                            model = model.__name__
-                        additional_fields.append(f"(SELECT * FROM {edge}{name}{edge}{model.lower()}) AS {field.name}")
-                        fetch_related.remove(field.name)
-
         if conditions:
             for condition_name, value in conditions.copy().items():
                 condition_field = next((field for field in fields(self.model) if field.name == condition_name), None)
@@ -227,21 +201,3 @@ class MysqlRepository(BaseRepository):
 
         return [self.model.from_dict(record) for record in records]
 
-    def relate(self, in_edge: VersionedModel, association_name: str, out_edge: VersionedModel):
-        query = f"""CREATE TABLE {in_edge.__class__.__name__.lower()}_{out_edge.__class__.__name__.lower()}
-                (
-                    entity_id varchar(255) PRIMARY_INDEX UNIQUE NOT NULL,
-                    {in_edge.__class__.__name__.lower()}_id varchar(255)
-                )"""
-        query = f"RELATE {in_edge.__class__.__name__.lower()}:`{in_edge.entity_id}`->{association_name}->{out_edge.__class__.__name__.lower()}:`{out_edge.entity_id}`"
-        self._execute_within_context(
-            self.adapter.execute_query,
-            query            
-        )
-
-    def unrelate(self, in_edge: VersionedModel, association_name: str, out_edge: VersionedModel):
-        query = f"DELETE FROM {association_name} WHERE in={in_edge.__class__.__name__.lower()}:`{in_edge.entity_id}` AND out={out_edge.__class__.__name__.lower()}:`{out_edge.entity_id}`"
-        self._execute_within_context(
-            self.adapter.execute_query,
-            query
-        )

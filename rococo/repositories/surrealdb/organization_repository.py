@@ -1,5 +1,5 @@
 from rococo.models import Organization
-from rococo.repositories import SurrealDbRepository
+from rococo.repositories.surrealdb.surreal_db_repository import SurrealDbRepository
 
 
 class OrganizationRepository(SurrealDbRepository):

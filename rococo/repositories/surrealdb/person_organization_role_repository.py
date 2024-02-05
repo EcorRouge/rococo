@@ -1,6 +1,6 @@
 import copy
 from typing import List, Union
-from .surreal_db_repository import SurrealDbRepository
+from rococo.repositories.surrealdb.surreal_db_repository import SurrealDbRepository
 from rococo.models import PersonOrganizationRole
 
 

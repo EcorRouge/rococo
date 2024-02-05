@@ -147,27 +147,26 @@ class MySqlDbAdapter(DbAdapter):
         query = (
             f'INSERT INTO {table}_audit ('
             f'SELECT *, "{entity_id}" AS entity_id, rand::uuid::v4() AS id '
-            f'FROM {table} WHERE id={table}.`{entity_id}`)'
+            f'FROM {table} WHERE entity_id={table}.`{entity_id}`)'
         )
         self.execute_query(query)
 
-    def save(self, table: str, data: Dict[str, Any],identifier_column_is:str='entity_id'):
+    def save(self, table: str, data: Dict[str, Any]):
         query = f"UPDATE {table} SET "
         for k,v in data.items():
-            if k == identifier_column_is:
+            if k == "entity_id":
                 continue
             update_string = self._build_update_string(key=k,value=v)
             query = query + update_string + ", "
         query = query[:-2] # remove trailing ", "
-        query = query + f" WHERE {identifier_column_is}={data[identifier_column_is]}"
+        query = query + f" WHERE entity_id={data['entity_id']}"
         db_result = self.execute_query(query)
         return db_result
 
-    def delete(self, table: str, data: Dict[str, Any],identifier_column_is:str='entity_id') -> bool:
+    def delete(self, table: str, data: Dict[str, Any]) -> bool:
         # Set active = false
         data['active'] = False
         return self.save(
             table,
-            data,
-            identifier_column_is=identifier_column_is
+            data
         )

@@ -11,7 +11,7 @@ class OrganizationRepository(SurrealDbRepository):
         return self.get_one(conditions)
 
     def update_organization_name(self, organization_id: str, new_name: str):
-        instance = self.get_one({"id": organization_id})
+        instance = self.get_one({"entity_id": organization_id})
         if instance:
             instance.name = new_name
             return self.save(instance)

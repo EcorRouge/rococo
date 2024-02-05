@@ -9,7 +9,7 @@ from uuid import UUID
 
 from dataclasses import dataclass
 from rococo.models import VersionedModel
-from rococo.repositories import SurrealDbRepository
+from rococo.repositories.surrealdb import SurrealDbRepository
 
 
 @dataclass

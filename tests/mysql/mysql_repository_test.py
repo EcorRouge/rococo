@@ -1,5 +1,5 @@
 """
-Surreal DB repository test
+MySQL DB repository test
 """
 
 import json
@@ -21,9 +21,9 @@ class VersionedModelHelper(VersionedModel):
     __test__ = False
 
 
-class SurrealDbRepositoryTestCase(unittest.TestCase):
+class MysqlRepositoryTestCase(unittest.TestCase):
     """
-    SurrealDbRepository Test Case class
+    MysqlRepository Test Case class
     """
     def setUp(self):
         self.db_adapter_mock = MagicMock()

@@ -46,9 +46,9 @@ class VersionedModel:
         # convert changed_on from datetime to isostring
 
         # find all fields that are datetime and convert them to isoformat
-        for field in fields(self):
-            if isinstance(self.__dict__[field.name], datetime):
-                self.__dict__[field.name] = self.__dict__[field.name].isoformat()
+        for field_ in fields(self):
+            if isinstance(self.__dict__[field_.name], datetime):
+                self.__dict__[field_.name] = self.__dict__[field_.name].isoformat()
 
     @classmethod
     def fields(cls) -> List[str]:
@@ -83,7 +83,7 @@ class VersionedModel:
                 results[key] = str(value)
 
         return results
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "VersionedModel":
         """
@@ -118,4 +118,3 @@ class VersionedModel:
         self.changed_on = datetime.utcnow()
         if changed_by_id is not None:
             self.changed_by_id = changed_by_id
-

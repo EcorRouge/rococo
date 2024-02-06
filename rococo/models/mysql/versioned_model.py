@@ -72,6 +72,8 @@ class VersionedModel:
         """
         results = self.__dict__
 
+        results = {k:v for k,v in results.items() if k in self.fields()}
+
         # convert datetime values to isoformat
         for key, value in results.items():
             if convert_datetime_to_iso_string:

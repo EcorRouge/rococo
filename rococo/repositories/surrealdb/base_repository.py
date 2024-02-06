@@ -15,8 +15,12 @@ class BaseRepository:
     """
     BaseRepository class
     """
-    def __init__(self, adapter: DbAdapter, model: Type[VersionedModel], message_adapter: MessageAdapter,
-                 queue_name: str = 'placeholder', user_id: UUID = None):
+    def __init__(self, # pylint: disable=R0913
+                 adapter: DbAdapter,
+                 model: Type[VersionedModel],
+                 message_adapter: MessageAdapter,
+                 queue_name: str = 'placeholder',
+                 user_id: UUID = None):
         self.adapter = adapter
         self.message_adapter = message_adapter
         self.queue_name = queue_name
@@ -36,9 +40,11 @@ class BaseRepository:
 
     def _process_data_from_db(self, data):
         """Method to convert a data dictionary fetched from adapter into a VersionedModel object."""
-        pass
+        pass # pylint: disable=W0107
 
-    def get_one(self, conditions: Dict[str, Any], fetch_related: List[str] = None) -> Union[VersionedModel, None]:
+    def get_one(self,
+                conditions: Dict[str, Any],
+                fetch_related: List[str] = None) -> Union[VersionedModel, None]:
         """get one"""
         data = self._execute_within_context(
             self.adapter.get_one, self.table_name, conditions, fetch_related=fetch_related
@@ -59,7 +65,12 @@ class BaseRepository:
     ) -> List[VersionedModel]:
         """get many"""
         records = self._execute_within_context(
-            self.adapter.get_many, self.table_name, conditions, sort, limit, fetch_related=fetch_related
+            self.adapter.get_many,
+            self.table_name,
+            conditions,
+            sort,
+            limit,
+            fetch_related=fetch_related
         )
 
         # If the adapter returned a single dictionary, wrap it in a list
@@ -73,7 +84,10 @@ class BaseRepository:
     def save(self, instance: VersionedModel, send_message: bool = False):
         """Save func"""
         data = self._process_data_before_save(instance)
-        self._execute_within_context(self.adapter.move_entity_to_audit_table, self.table_name, instance.entity_id)
+        self._execute_within_context(
+            self.adapter.move_entity_to_audit_table,
+            self.table_name,
+            instance.entity_id)
         self._execute_within_context(self.adapter.save, self.table_name, data)
         if send_message:
             # This assumes that the instance is now in post-saved state with all the new DB updates

@@ -1,3 +1,4 @@
+"""Email Service Factory"""
 from typing import Type, Dict, Tuple
 
 from .enums import EmailProvider
@@ -8,10 +9,12 @@ from .config import MailjetConfig, SESConfig, Config
 
 
 class EmailServiceFactory:
+    """Email Service Factory"""
     def __init__(self):
         self._services: Dict[str, Tuple[EmailService, Type[Config]]] = {}
 
     def register_service(self, key: EmailProvider, service: EmailService, config: Type[Config]):
+        """registers the service into the _services dict"""
         self._services[key] = (service, config)
 
     def _create(self, key: EmailProvider, **kwargs):
@@ -24,11 +27,18 @@ class EmailServiceFactory:
         return service_class(config=config)
 
     def get(self, **kwargs):
+        """Gets an email service with built with **kwargs"""
         key = Config(**kwargs).EMAIL_PROVIDER
         return self._create(key, **kwargs)
 
 
 email_factory = EmailServiceFactory()
 
-email_factory.register_service(key=EmailProvider.mailjet, service=MailjetService(), config=MailjetConfig)
-email_factory.register_service(key=EmailProvider.ses, service=SESService(), config=SESConfig)
+email_factory.register_service(
+    key=EmailProvider.mailjet,
+    service=MailjetService(),
+    config=MailjetConfig)
+email_factory.register_service(
+    key=EmailProvider.ses,
+    service=SESService(),
+    config=SESConfig)

@@ -100,7 +100,8 @@ class TestBaseRepository:
         assert len(result) == 2
         assert isinstance(result[0], TestVersionedModel)
         assert isinstance(result[1], TestVersionedModel)
-        mock_adapter.get_many.assert_called_with('testversionedmodel', None, None, 100, fetch_related=None)
+        mock_adapter.get_many.assert_called_with(
+            'testversionedmodel', None, None, 100, fetch_related=None)
         mock_adapter.__enter__.assert_called()
         mock_adapter.__exit__.assert_called()
 
@@ -133,7 +134,7 @@ class TestBaseRepository:
         result = repository.delete(model_instance)
 
         assert result is model_instance
-        assert model_instance.active == False
+        assert model_instance.active is False
         mock_adapter.save.assert_called_with('testversionedmodel', {})
         mock_adapter.__enter__.assert_called()
         mock_adapter.__exit__.assert_called()

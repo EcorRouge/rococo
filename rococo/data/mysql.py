@@ -106,10 +106,6 @@ class MySqlDbAdapter(DbAdapter):
             query += f" ORDER BY {', '.join(sort_strs)}"
         query += " LIMIT 1"
 
-        # TODO
-        # if fetch_related:
-            # query += f" FETCH {', '.join(field for field in fetch_related)}"
-
         db_response = self.parse_db_response(self.execute_query(query),get_one=True)
 
         return db_response
@@ -135,15 +131,12 @@ class MySqlDbAdapter(DbAdapter):
             query += f" ORDER BY {', '.join(sort_strs)}"
         query += f" LIMIT {limit}"
 
-        # TODO
-        # if fetch_related:
-            # query += f" FETCH {', '.join(field for field in fetch_related)}"
-
         db_response = self.parse_db_response(self.execute_query(query),get_one=False)
 
         return db_response
 
     def move_entity_to_audit_table(self, table: str, entity_id: str): # pylint: disable=W0237
+        """Move entity to audit table in database"""
         query = (
             f'INSERT INTO {table}_audit ('
             f'SELECT *, "{entity_id}" AS entity_id, rand::uuid::v4() AS id '
@@ -163,7 +156,7 @@ class MySqlDbAdapter(DbAdapter):
         db_result = self.execute_query(query)
         return db_result
 
-    def delete(self, table: str, data: Dict[str, Any]) -> bool:
+    def delete(self, table: str, data: Dict[str, Any]) -> bool: # pylint: disable=W0237
         # Set active = false
         data['active'] = False
         return self.save(

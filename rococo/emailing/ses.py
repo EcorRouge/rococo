@@ -1,3 +1,4 @@
+"""SES Service"""
 from typing import Any
 
 from .base import EmailService
@@ -5,7 +6,7 @@ from .config import SESConfig
 
 
 class SESService(EmailService):
-
+    """Mailjet Service"""
     def __init__(self):
         pass
 

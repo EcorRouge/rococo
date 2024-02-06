@@ -15,8 +15,12 @@ class BaseRepository:
     """
     BaseRepository class
     """
-    def __init__(self, adapter: DbAdapter, model: Type[VersionedModel], message_adapter: MessageAdapter,
-                 queue_name: str = 'placeholder', user_id: UUID = None):
+    def __init__(self, # pylint: disable=R0913
+                 adapter: DbAdapter,
+                 model: Type[VersionedModel],
+                 message_adapter: MessageAdapter,
+                 queue_name: str = 'placeholder',
+                 user_id: UUID = None):
         self.adapter = adapter
         self.message_adapter = message_adapter
         self.queue_name = queue_name

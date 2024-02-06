@@ -1,3 +1,4 @@
+"""Base Database Adapter class"""
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Tuple, Union
 
@@ -8,45 +9,52 @@ class DbAdapter(ABC):
     @abstractmethod
     def __enter__(self) -> 'DbAdapter':
         """Context manager entry point for preparing DB connection."""
-        pass
+        pass # pylint: disable=W0107
 
     @abstractmethod
     def __exit__(self, exc_type, exc_value, traceback):
         """Context manager exit point for closing DB connection."""
-        pass
+        pass # pylint: disable=W0107
 
     @abstractmethod
     def execute_query(self, sql: str, _vars: Dict[str, Any] = None) -> Any:
         """Executes a raw SQL query against the DB."""
-        pass
+        pass # pylint: disable=W0107
 
     @abstractmethod
     def parse_db_response(self, response: Any) -> Union[Dict[str, Any], List[Dict[str, Any]]]:
         """Parses the raw response from the database and returns structured data."""
-        pass
+        pass # pylint: disable=W0107
 
     @abstractmethod
-    def get_one(self, table: str, conditions: Dict[str, Any], sort: List[Tuple[str, str]] = None) -> Dict[str, Any]:
+    def get_one(self,
+                table: str,
+                conditions: Dict[str, Any],
+                sort: List[Tuple[str, str]] = None
+                ) -> Dict[str, Any]:
         """Fetches a single record from the specified table based on given conditions."""
-        pass
+        pass # pylint: disable=W0107
 
     @abstractmethod
-    def get_many(self, table: str, conditions: Dict[str, Any] = None, sort: List[Tuple[str, str]] = None, 
+    def get_many(self,
+                 table: str,
+                 conditions: Dict[str, Any] = None,
+                 sort: List[Tuple[str, str]] = None,
                  limit: int = 100) -> List[Dict[str, Any]]:
         """Fetches multiple records from the specified table based on given conditions."""
-        pass
+        pass # pylint: disable=W0107
 
     @abstractmethod
     def move_entity_to_audit_table(self, table_name: str, entity_id: str):
         """Inserts the existing entities by entity_id in {table_name}_audit table."""
-        pass
+        pass # pylint: disable=W0107
 
     @abstractmethod
     def save(self, table: str, data: Dict[str, Any]) -> Union[Dict[str, Any], None]:
         """Saves or updates a record in the specified table."""
-        pass
+        pass # pylint: disable=W0107
 
     @abstractmethod
     def delete(self, table: str, data: Dict[str, Any]) -> bool:
         """Deletes a record in the specified table based on given conditions."""
-        pass
+        pass # pylint: disable=W0107

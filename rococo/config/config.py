@@ -78,7 +78,8 @@ class BaseConfig():
         """
         if var_name in self.env_vars.keys():
             try:
-                self.env_vars[var_name] = [env_var.strip() for env_var in self.env_vars[var_name].split(",")]
+                self.env_vars[var_name] = [
+                    env_var.strip() for env_var in self.env_vars[var_name].split(",")]
                 return True
             except ValueError:
                 logger.error(

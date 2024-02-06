@@ -25,7 +25,7 @@ class PersonOrganizationRole(VersionedModel):
         'relationship': {'model': 'Organization', 'type': 'direct'},
         'field_type': 'record_id'
     })
-    
+
     # TODO: We would benefit from strictly typed Enum for role, but flexibility would lower
     # role: PersonOrganizationRoleEnum = PersonOrganizationRoleEnum.MEMBER
     role: str = None

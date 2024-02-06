@@ -1,3 +1,4 @@
+"""Surreal DB adapter"""
 import asyncio
 from typing import Any, Dict, List, Tuple, Union
 from uuid import UUID
@@ -43,27 +44,32 @@ class SurrealDbAdapter(DbAdapter):
         return db
 
     def _call_db(self, function_name, *args, **kwargs):
-        """Calls a function specified by function_name argument in SurrealDB connection passing forward args and kwargs."""
+        """Calls a function specified by
+        function_name argument in SurrealDB connection passing forward args and kwargs."""
         if not self._db:
-            raise Exception("No connection to SurrealDB.")
-        return self._event_loop.run_until_complete(getattr(self._db, function_name)(*args, **kwargs))
+            raise Exception("No connection to SurrealDB.") # pylint: disable=W0719
+        return self._event_loop.run_until_complete(
+            getattr(self._db, function_name)(*args, **kwargs))
 
     def _build_condition_string(self, key, value):
         if isinstance(value, str):
             return f"{key}='{value}'"
-        elif isinstance(value, bool):
+        if isinstance(value, bool):
             return f"{key}={'true' if value is True else 'false'}"
-        elif type(value) in [int, float]:
+        if type(value) in [int, float]:
             return f"{key}={value}"
-        elif isinstance(value, list):
+        if isinstance(value, list):
             return f"""{key} IN [{','.join(f'"{v}"' for v in value)}]"""
-        elif isinstance(value, UUID):
+        if isinstance(value, UUID):
             return f"{key}='{str(value)}'"
-        else:
-            raise Exception(f"Unsuppported type {type(value)} for condition key: {key}, value: {value}")
+        raise Exception(f"Unsuppported type {type(value)} for condition key: {key}, value: {value}") # pylint: disable=W0719
 
     def move_entity_to_audit_table(self, table, entity_id):
-        query = f'INSERT INTO {table}_audit (SELECT *, "{entity_id}" AS entity_id, rand::uuid::v4() AS id FROM {table} WHERE id={table}:`{entity_id}`)'
+        """Move entity to audit table in database"""
+        query = (
+            f'INSERT INTO {table}_audit (SELECT *, "{entity_id}" AS entity_id, '
+            f'rand::uuid::v4() AS id FROM {table} WHERE id={table}:`{entity_id}`)'
+        )
         self._call_db('query', query)
 
     def execute_query(self, sql, _vars=None):
@@ -73,7 +79,10 @@ class SurrealDbAdapter(DbAdapter):
 
         return self._call_db('query', sql, _vars)
 
-    def parse_db_response(self, response: List[Dict[str, Any]]) -> Union[Dict[str, Any], List[Dict[str, Any]]]:
+    def parse_db_response(
+            self,
+            response: List[Dict[str, Any]]
+            ) -> Union[Dict[str, Any], List[Dict[str, Any]]]:
         """
         Parse the response from SurrealDB.
 
@@ -102,10 +111,11 @@ class SurrealDbAdapter(DbAdapter):
             fields += additional_fields
 
         query = f"SELECT {', '.join(fields)} FROM {table}"
-        
+
         condition_strs = []
         if conditions:
-            condition_strs = [f"{self._build_condition_string(k, v)}" for k, v in conditions.items()]
+            condition_strs = [
+                f"{self._build_condition_string(k, v)}" for k, v in conditions.items()]
         condition_strs.append("active=true")
         query += f" WHERE {' AND '.join(condition_strs)}"
 
@@ -113,7 +123,7 @@ class SurrealDbAdapter(DbAdapter):
             sort_strs = [f"{column} {direction}" for column, direction in sort]
             query += f" ORDER BY {', '.join(sort_strs)}"
         query += " LIMIT 1"
-        
+
         if fetch_related:
             query += f" FETCH {', '.join(field for field in fetch_related)}"
 
@@ -131,16 +141,17 @@ class SurrealDbAdapter(DbAdapter):
         fetch_related: list = None,
         additional_fields: list = None
     ) -> List[Dict[str, Any]]:
-        
+
         fields = ['*']
         if additional_fields:
             fields += additional_fields
 
         query = f"SELECT {', '.join(fields)} FROM {table}"
-        
+
         condition_strs = []
         if conditions:
-            condition_strs = [f"{self._build_condition_string(k, v)}" for k, v in conditions.items()]
+            condition_strs = [
+                f"{self._build_condition_string(k, v)}" for k, v in conditions.items()]
         if active:
             condition_strs.append("active=true")
         if condition_strs:
@@ -161,7 +172,7 @@ class SurrealDbAdapter(DbAdapter):
         db_result = self._call_db('update', data['id'], data)
         return db_result
 
-    def delete(self, table: str, data: Dict[str, Any]) -> bool:
+    def delete(self, table: str, data: Dict[str, Any]) -> bool: # pylint: disable=W0237
         # Set active = false
         data['active'] = False
         return self.save(table, data)

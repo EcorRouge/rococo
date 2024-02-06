@@ -90,4 +90,3 @@ class MysqlRepository(BaseRepository):
         self._process_data_from_db(records)
 
         return [self.model.from_dict(record) for record in records]
-

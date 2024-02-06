@@ -1,3 +1,4 @@
+"""Mysql models"""
 from .versioned_model import VersionedModel
 from .login_method import LoginMethod
 from .organization import Organization

@@ -1,3 +1,4 @@
+"""Mailjet Service"""
 import re
 from typing import Any
 
@@ -8,9 +9,10 @@ from .config import MailjetConfig
 
 
 class MailjetService(EmailService):
-
+    """Mailjet Service"""
     def __init__(self):
-        pass
+        self.from_address = None
+        self.client = None
 
     def __call__(self, config: MailjetConfig, *args, **kwargs):
         super().__call__(config)

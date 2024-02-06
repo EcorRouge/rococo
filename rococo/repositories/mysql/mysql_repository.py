@@ -28,55 +28,12 @@ class MysqlRepository(BaseRepository):
         except Exception: # pylint: disable=W0718
             return string
 
-    def _process_data_before_save(self, instance: VersionedModel):
-        """Method to convert VersionedModel instance to a data dictionary that can be inserted in SurrealDB"""
-        data = super()._process_data_before_save(instance)
-
-        for field in fields(instance):
-            if data.get(field.name) is None:
-                continue
-            if field.metadata.get('field_type') == 'record_id':
-                field_model_class = field.metadata.get('relationship', {}).get('model') or self.model
-                field_table = field_model_class.__name__.lower()
-                field_value = data[field.name]
-                adapter_field_name = 'id' if field.name == 'entity_id' else field.name
-                if isinstance(field_value, VersionedModel):
-                    field_value = field_value.entity_id
-                elif isinstance(field_value, dict):
-                    field_value = field_value.get('entity_id')
-                data[adapter_field_name] = f'{field_table}:`{field_value}`' if field_value else None
-
-        data.pop('entity_id', None)
-        return data
-
     def _process_data_from_db(self, data):
         """Method to convert data dictionary fetched from MySQL to a VersionedModel instance."""
 
         def _process_record(data: dict, model):
             model()
-            for field in fields(model):
-                if data.get(field.name) is None:
-                    continue
-
-                if field.metadata.get('field_type') == 'record_id':
-                    field_model_class = field.metadata.get('relationship', {}).get('model') or model
-                    field_value = data[field.name]
-
-                    if isinstance(field_value, list):
-                        data[field.name] = [_process_record(obj, field_model_class) for obj in field_value]
-                    if isinstance(field_value, dict):
-                        data[field.name] = _process_record(field_value, field_model_class)
-                    elif isinstance(field_value, str):
-                        field_uuid = self._extract_uuid_from_str(field_value)
-                        if field.name == 'entity_id':
-                            data[field.name] = field_uuid
-                        else:
-                            field_value = field_model_class(entity_id=field_uuid, _is_partial=True)
-                            data[field.name] = field_value
-                    else:
-                        raise NotImplementedError
             return model.from_dict(data)
-
 
         if data is None:
             return None
@@ -94,33 +51,6 @@ class MysqlRepository(BaseRepository):
                 ) -> Union[VersionedModel, None]:
         """get one"""
         additional_fields = []
-        if conditions:
-            for condition_name, value in conditions.copy().items():
-                condition_field = next((field for field in fields(self.model) if field.name == condition_name), None)
-                if condition_field and condition_field.metadata.get('field_type') == 'record_id':
-                    if condition_name == 'entity_id':
-                        condition_name = 'id'
-                        conditions[condition_name] = conditions.pop('entity_id')
-
-                    field_model = condition_field.metadata.get('relationship', {}).get('model', None) or self.model
-                    if isinstance(value, VersionedModel):
-                        conditions[condition_name] = f"{field_model.__name__.lower()}:`{str(value.entity_id)}`"
-                    elif isinstance(value, (str, UUID)):
-                        conditions[condition_name] = f"{field_model.__name__.lower()}:`{str(value)}`"
-                    elif isinstance(value, list):
-                        # Handle list
-                        conditions[condition_name] = []
-                        for v in value:
-                            if isinstance(v, VersionedModel):
-                                conditions[condition_name].append(f"{field_model.__name__.lower()}:`{str(v.entity_id)}`")
-                            elif isinstance(v, (str, UUID)):
-                                conditions[condition_name].append(f"{field_model.__name__.lower()}:`{str(v)}`")
-                            else:
-                                raise NotImplementedError
-                    else:
-                        raise NotImplementedError
-
-
         data = self._execute_within_context(
             self.adapter.get_one, self.table_name, conditions, additional_fields=additional_fields
         )
@@ -139,36 +69,9 @@ class MysqlRepository(BaseRepository):
         conditions: Dict[str, Any] = None,
         sort: List[tuple] = None,
         limit: int = 100,
-        fetch_related: List[str] = None,
     ) -> List[VersionedModel]:
         """get many"""
         additional_fields = []
-        if conditions:
-            for condition_name, value in conditions.copy().items():
-                condition_field = next((field for field in fields(self.model) if field.name == condition_name), None)
-                if condition_field and condition_field.metadata.get('field_type') == 'record_id':
-                    if condition_name == 'entity_id':
-                        condition_name = 'id'
-                        conditions[condition_name] = conditions.pop('entity_id')
-
-                    field_model = condition_field.metadata.get('relationship', {}).get('model', None) or self.model
-                    if isinstance(value, VersionedModel):
-                        conditions[condition_name] = f"{field_model.__name__.lower()}:`{str(value.entity_id)}`"
-                    elif isinstance(value, (str, UUID)):
-                        conditions[condition_name] = f"{field_model.__name__.lower()}:`{str(value)}`"
-                    elif isinstance(value, list):
-                        # Handle list
-                        conditions[condition_name] = []
-                        for v in value:
-                            if isinstance(v, VersionedModel):
-                                conditions[condition_name].append(f"{field_model.__name__.lower()}:`{str(v.entity_id)}`")
-                            elif isinstance(v, (str, UUID)):
-                                conditions[condition_name].append(f"{field_model.__name__.lower()}:`{str(v)}`")
-                            else:
-                                raise NotImplementedError
-                    else:
-                        raise NotImplementedError
-
         records = self._execute_within_context(
             self.adapter.get_many,
             self.table_name,

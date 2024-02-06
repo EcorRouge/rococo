@@ -19,7 +19,7 @@ class PersonOrganizationRole(VersionedModel):
 
     person_id: str = None
     organization_id: str = None
-    
+
     # TODO: We would benefit from strictly typed Enum for role, but flexibility would lower
     # role: PersonOrganizationRoleEnum = PersonOrganizationRoleEnum.MEMBER
     role: str = None

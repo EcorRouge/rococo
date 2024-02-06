@@ -52,12 +52,15 @@ class SurrealDbRepositoryTestCase(unittest.TestCase):
         surrealdb_dict['id'] = surrealdb_dict.pop('entity_id')
         # Assert the save method on the adapter was called once with the correct arguments
         self.db_adapter_mock.save.assert_called_once_with(
-            "versionedmodelhelper", {**surrealdb_dict, 'id': f'{self.model_instance.__class__.__name__.lower()}:`{surrealdb_dict["id"]}`'}
+            "versionedmodelhelper", {**surrealdb_dict, 'id': 
+             f'{self.model_instance.__class__.__name__.lower()}:`{surrealdb_dict["id"]}`'}
         )
 
         # Assert the send_message method was called once with the correct arguments
         self.message_adapter_mock.send_message.assert_called_once_with(
-            self.queue_name, json.dumps(self.model_instance.as_dict(convert_datetime_to_iso_string=True))
+            self.queue_name, json.dumps(
+                self.model_instance.as_dict(convert_datetime_to_iso_string=True)
+                )
         )
 
     def test_save_without_message(self):

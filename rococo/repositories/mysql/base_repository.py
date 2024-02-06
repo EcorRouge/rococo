@@ -36,7 +36,7 @@ class BaseRepository:
 
     def _process_data_from_db(self, data):
         """Method to convert a data dictionary fetched from adapter into a VersionedModel object."""
-        pass
+        pass # pylint: disable=W0107
 
     def get_one(self, conditions: Dict[str, Any]) -> Union[VersionedModel, None]:
         """get one"""
@@ -72,7 +72,10 @@ class BaseRepository:
     def save(self, instance: VersionedModel, send_message: bool = False):
         """Save func"""
         data = self._process_data_before_save(instance)
-        self._execute_within_context(self.adapter.move_entity_to_audit_table, self.table_name, instance.entity_id)
+        self._execute_within_context(
+            self.adapter.move_entity_to_audit_table,
+            self.table_name,
+            instance.entity_id)
         self._execute_within_context(self.adapter.save, self.table_name, data)
         if send_message:
             # This assumes that the instance is now in post-saved state with all the new DB updates

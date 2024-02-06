@@ -1,6 +1,5 @@
-"""SurrealDbRepository class"""
+"""MysqlRepository class"""
 
-from dataclasses import fields
 from typing import Any, Dict, List, Type, Union
 from uuid import UUID
 
@@ -12,7 +11,7 @@ from rococo.repositories.mysql import BaseRepository
 
 class MysqlRepository(BaseRepository):
     """MysqlRepository class"""
-    def __init__(
+    def __init__( # pylint: disable=R0913
             self,
             db_adapter: MySqlDbAdapter,
             model: Type[VersionedModel],
@@ -26,7 +25,7 @@ class MysqlRepository(BaseRepository):
     def _extract_uuid_from_str(self,string):
         try:
             return UUID(string)
-        except Exception:
+        except Exception: # pylint: disable=W0718
             return string
 
     def _process_data_before_save(self, instance: VersionedModel):
@@ -81,7 +80,7 @@ class MysqlRepository(BaseRepository):
 
         if data is None:
             return None
-        elif isinstance(data, list):
+        if isinstance(data, list):
             for record in data:
                 _process_record(record, self.model)
         elif isinstance(data, dict):
@@ -90,7 +89,9 @@ class MysqlRepository(BaseRepository):
             raise NotImplementedError
 
 
-    def get_one(self, conditions: Dict[str, Any], fetch_related: List[str] = None) -> Union[VersionedModel, None]:
+    def get_one(self,
+                conditions: Dict[str, Any]
+                ) -> Union[VersionedModel, None]:
         """get one"""
         additional_fields = []
         if conditions:
@@ -121,7 +122,7 @@ class MysqlRepository(BaseRepository):
 
 
         data = self._execute_within_context(
-            self.adapter.get_one, self.table_name, conditions, fetch_related=fetch_related, additional_fields=additional_fields
+            self.adapter.get_one, self.table_name, conditions, additional_fields=additional_fields
         )
 
         self.model()  # Calls __post_init__ of model to import related models and update fields.
@@ -169,7 +170,12 @@ class MysqlRepository(BaseRepository):
                         raise NotImplementedError
 
         records = self._execute_within_context(
-            self.adapter.get_many, self.table_name, conditions, sort, limit, fetch_related=fetch_related, additional_fields=additional_fields
+            self.adapter.get_many,
+            self.table_name,
+            conditions,
+            sort,
+            limit,
+            additional_fields=additional_fields
         )
 
         # If the adapter returned a single dictionary, wrap it in a list

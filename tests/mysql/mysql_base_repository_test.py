@@ -133,7 +133,7 @@ class TestBaseRepository:
         result = repository.delete(model_instance)
 
         assert result is model_instance
-        assert model_instance.active == False
+        assert model_instance.active is False
         mock_adapter.save.assert_called_with('testversionedmodel', {})
         mock_adapter.__enter__.assert_called()
         mock_adapter.__exit__.assert_called()

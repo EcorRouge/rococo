@@ -6,8 +6,8 @@ from uuid import UUID
 
 from rococo.data import SurrealDbAdapter
 from rococo.messaging import MessageAdapter
-from rococo.models import VersionedModel
-from rococo.repositories import BaseRepository
+from rococo.models.surrealdb import VersionedModel
+from rococo.repositories.surrealdb import BaseRepository
 
 
 class SurrealDbRepository(BaseRepository):

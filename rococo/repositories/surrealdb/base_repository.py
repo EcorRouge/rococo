@@ -8,7 +8,7 @@ import json
 
 from rococo.data.base import DbAdapter
 from rococo.messaging.base import MessageAdapter
-from rococo.models.versioned_model import VersionedModel
+from rococo.models.surrealdb import VersionedModel
 
 
 class BaseRepository:

@@ -4,7 +4,7 @@ Test VersionedModel
 from datetime import datetime, timedelta
 from uuid import UUID
 from dataclasses import dataclass
-from rococo.models import VersionedModel
+from rococo.models.surrealdb import VersionedModel
 
 def test_prepare_for_save():
     """

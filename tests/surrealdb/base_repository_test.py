@@ -7,8 +7,8 @@ from unittest.mock import Mock
 import pytest
 
 from rococo.data.base import DbAdapter
-from rococo.models.versioned_model import VersionedModel
-from rococo.repositories.base_repository import BaseRepository
+from rococo.models.surrealdb import VersionedModel
+from rococo.repositories.surrealdb import BaseRepository
 from rococo.messaging.base import MessageAdapter
 
 

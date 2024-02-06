@@ -8,7 +8,7 @@ from unittest.mock import MagicMock
 from uuid import UUID
 
 from dataclasses import dataclass
-from rococo.models import VersionedModel
+from rococo.models.surrealdb import VersionedModel
 from rococo.repositories.surrealdb import SurrealDbRepository
 
 

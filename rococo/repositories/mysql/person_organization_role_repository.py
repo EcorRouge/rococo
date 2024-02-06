@@ -1,10 +1,9 @@
-import copy
-from typing import List, Union
-from rococo.repositories.surrealdb.surreal_db_repository import SurrealDbRepository
-from rococo.models import PersonOrganizationRole
+from typing import List
+from rococo.repositories.mysql import MysqlRepository
+from rococo.models.mysql import PersonOrganizationRole
 
 
-class PersonOrganizationRoleRepository(SurrealDbRepository):
+class PersonOrganizationRoleRepository(MysqlRepository):
     def __init__(self, adapter, message_adapter, message_queue_name):
         super().__init__(adapter, PersonOrganizationRole, message_adapter, message_queue_name)
 

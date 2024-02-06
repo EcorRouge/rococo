@@ -1,8 +1,8 @@
-from rococo.models import Organization
-from rococo.repositories.surrealdb.surreal_db_repository import SurrealDbRepository
+from rococo.models.mysql import Organization
+from rococo.repositories.mysql import MysqlRepository
 
 
-class OrganizationRepository(SurrealDbRepository):
+class OrganizationRepository(MysqlRepository):
     def __init__(self, adapter, message_adapter, message_queue_name):
         super().__init__(adapter, Organization, message_adapter, message_queue_name)
 

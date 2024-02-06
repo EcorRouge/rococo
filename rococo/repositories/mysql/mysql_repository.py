@@ -6,12 +6,12 @@ from uuid import UUID
 
 from rococo.data import MySqlDbAdapter
 from rococo.messaging import MessageAdapter
-from rococo.models import VersionedModel
-from rococo.repositories import BaseRepository
+from rococo.models.mysql import VersionedModel
+from rococo.repositories.mysql import BaseRepository
 
 
 class MysqlRepository(BaseRepository):
-    """SurrealDbRepository class"""
+    """MysqlRepository class"""
     def __init__(
             self,
             db_adapter: MySqlDbAdapter,
@@ -23,19 +23,11 @@ class MysqlRepository(BaseRepository):
         super().__init__(db_adapter, model, message_adapter, queue_name, user_id=user_id)
         self.model()
 
-    def _extract_uuid_from_surreal_id(self, surreal_id, table_name):
-        """
-        Converts a SurrealDB ID to a UUID
-        Example: 'organization:⟨c87616ac-e6ca-4d3e-9177-27db7d2ebca8⟩' -> UUID('c87616ac-e6ca-4d3e-9177-27db7d2ebca8')
-        """
-        prefix = f"{table_name}:⟨"
-        suffix = "⟩"
-        if surreal_id.startswith(prefix) and surreal_id.endswith(suffix):
-            uuid_str = surreal_id[len(prefix):-len(suffix)]
-            formatted_uuid = UUID(uuid_str)
-            return formatted_uuid
-        else:
-            raise ValueError(f"Invalid input format or no UUID found in the input string: {surreal_id}")
+    def _extract_uuid_from_str(self,string):
+        try:
+            return UUID(string)
+        except Exception:
+            return string
 
     def _process_data_before_save(self, instance: VersionedModel):
         """Method to convert VersionedModel instance to a data dictionary that can be inserted in SurrealDB"""
@@ -59,27 +51,16 @@ class MysqlRepository(BaseRepository):
         return data
 
     def _process_data_from_db(self, data):
-        """Method to convert data dictionary fetched from SurrealDB to a VersionedModel instance."""
+        """Method to convert data dictionary fetched from MySQL to a VersionedModel instance."""
 
         def _process_record(data: dict, model):
-            data['entity_id'] = data.pop('id')
             model()
             for field in fields(model):
                 if data.get(field.name) is None:
                     continue
 
-                if field.metadata.get('field_type') == 'm2m_list':
-                    field_model_class = field.metadata.get('relationship', {}).get('model') or model
-                    field_table = field_model_class.__name__.lower()
-                    field_value = data[field.name]
-                    if isinstance(field_value, list):
-                        data[field.name] = [_process_record(obj, field_model_class) for obj in field_value]
-                    else:
-                        raise NotImplementedError
-
                 if field.metadata.get('field_type') == 'record_id':
                     field_model_class = field.metadata.get('relationship', {}).get('model') or model
-                    field_table = field_model_class.__name__.lower()
                     field_value = data[field.name]
 
                     if isinstance(field_value, list):
@@ -87,7 +68,7 @@ class MysqlRepository(BaseRepository):
                     if isinstance(field_value, dict):
                         data[field.name] = _process_record(field_value, field_model_class)
                     elif isinstance(field_value, str):
-                        field_uuid = self._extract_uuid_from_surreal_id(field_value, field_table)
+                        field_uuid = self._extract_uuid_from_str(field_value)
                         if field.name == 'entity_id':
                             data[field.name] = field_uuid
                         else:

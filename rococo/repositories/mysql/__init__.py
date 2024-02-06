@@ -1,3 +1,4 @@
+from .base_repository import BaseRepository
 from .mysql_repository import MysqlRepository
 from .organization_repository import OrganizationRepository
 from .person_organization_role_repository import PersonOrganizationRoleRepository

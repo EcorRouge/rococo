@@ -2,15 +2,10 @@
 VersionedModel for rococo. Base model
 """
 
-import pkgutil
-import os
-
 from uuid import uuid4, UUID
-from dataclasses import dataclass, field, fields, InitVar
+from dataclasses import dataclass, field, fields
 from datetime import datetime
-import json
 from typing import Any, Dict, List
-import importlib
 
 
 def default_datetime():
@@ -18,19 +13,6 @@ def default_datetime():
     Definition for default datetime
     """
     return datetime.utcnow()
-
-
-def import_models_module(current_module, module_name):
-    root_path = os.path.dirname(os.path.abspath(current_module.__file__))
-
-    for root, dirs, _ in os.walk(root_path):
-        for module in pkgutil.iter_modules([os.path.join(root, dir) for dir in dirs] + [root]):
-            if module.name == module_name:
-                spec = importlib.util.spec_from_file_location(module_name, os.path.join(module.module_finder.path, module_name, '__init__.py'))
-                module = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(module)
-                return module
-
 
 @dataclass(kw_only=True)
 class VersionedModel:

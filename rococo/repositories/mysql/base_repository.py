@@ -38,10 +38,10 @@ class BaseRepository:
         """Method to convert a data dictionary fetched from adapter into a VersionedModel object."""
         pass
 
-    def get_one(self, conditions: Dict[str, Any], fetch_related: List[str] = None) -> Union[VersionedModel, None]:
+    def get_one(self, conditions: Dict[str, Any]) -> Union[VersionedModel, None]:
         """get one"""
         data = self._execute_within_context(
-            self.adapter.get_one, self.table_name, conditions, fetch_related=fetch_related
+            self.adapter.get_one, self.table_name, conditions
         )
 
         self._process_data_from_db(data)
@@ -55,11 +55,10 @@ class BaseRepository:
         conditions: Dict[str, Any] = None,
         sort: List[tuple] = None,
         limit: int = 100,
-        fetch_related: List[str] = None
     ) -> List[VersionedModel]:
         """get many"""
         records = self._execute_within_context(
-            self.adapter.get_many, self.table_name, conditions, sort, limit, fetch_related=fetch_related
+            self.adapter.get_many, self.table_name, conditions, sort, limit
         )
 
         # If the adapter returned a single dictionary, wrap it in a list

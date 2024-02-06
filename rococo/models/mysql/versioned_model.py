@@ -47,8 +47,8 @@ class VersionedModel:
 
         # find all fields that are datetime and convert them to isoformat
         for field in fields(self):
-            if isinstance(self.__dict__[field], datetime):
-                self.__dict__[field] = self.__dict__[field].isoformat()
+            if isinstance(self.__dict__[field.name], datetime):
+                self.__dict__[field.name] = self.__dict__[field.name].isoformat()
 
     @classmethod
     def fields(cls) -> List[str]:

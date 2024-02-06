@@ -5,7 +5,7 @@ Email model
 from dataclasses import dataclass, field
 from typing import Optional
 
-from . import VersionedModel
+from rococo.models.surrealdb import VersionedModel
 
 @dataclass
 class Email(VersionedModel):

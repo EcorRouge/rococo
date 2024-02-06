@@ -5,7 +5,7 @@ OtpMethod model
 from dataclasses import dataclass, field
 from typing import List
 
-from . import VersionedModel
+from rococo.models.surrealdb import VersionedModel
 
 
 @dataclass

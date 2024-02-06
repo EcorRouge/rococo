@@ -4,7 +4,7 @@ Organization model
 
 from dataclasses import dataclass
 
-from . import VersionedModel
+from rococo.models.surrealdb import VersionedModel
 
 
 @dataclass

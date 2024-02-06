@@ -4,7 +4,7 @@ PersonOrganizationRole model
 
 from dataclasses import dataclass, field
 
-from . import VersionedModel
+from rococo.models.surrealdb import VersionedModel
 
 # from enum import Enum
 

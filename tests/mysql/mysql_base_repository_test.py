@@ -7,12 +7,12 @@ from unittest.mock import Mock
 import pytest
 
 from rococo.data.base import DbAdapter
-from rococo.models.mysql import VersionedModel
-from rococo.repositories.mysql import BaseRepository
+from rococo.models import BaseVersionedModel
+from rococo.repositories import BaseRepository
 from rococo.messaging.base import MessageAdapter
 
 
-class TestVersionedModel(VersionedModel):
+class TestVersionedModel(BaseVersionedModel):
     """
     Test Class for VersionedModel
     """

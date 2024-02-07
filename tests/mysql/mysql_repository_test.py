@@ -8,12 +8,12 @@ from unittest.mock import MagicMock
 from uuid import UUID
 
 from dataclasses import dataclass
-from rococo.models.mysql import VersionedModel
+from rococo.models import BaseVersionedModel
 from rococo.repositories.mysql import MysqlRepository
 
 
 @dataclass
-class VersionedModelHelper(VersionedModel):
+class VersionedModelHelper(BaseVersionedModel):
     """
     VersionedModelHelper class
     """

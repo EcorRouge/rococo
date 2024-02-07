@@ -4,13 +4,13 @@ Test VersionedModel
 from datetime import datetime, timedelta
 from uuid import UUID
 from dataclasses import dataclass
-from rococo.models.mysql import VersionedModel
+from rococo.models import BaseVersionedModel
 
 def test_prepare_for_save():
     """
     Test model's prepare_for_save func
     """
-    model = VersionedModel()
+    model = BaseVersionedModel()
     version = model.version
     changed_by_id = 'test'
 
@@ -25,7 +25,7 @@ def test_as_dict():
     """
     Test converting model to dict
     """
-    model = VersionedModel()
+    model = BaseVersionedModel()
 
     model.attribute_that_should_not_exist = "SomeValue"
 
@@ -41,9 +41,9 @@ def test_from_dict():
     """
     model_dict = {"entity_id": UUID(int=0), "version": UUID(int=0)}
 
-    dict_as_model = VersionedModel.from_dict(model_dict)
+    dict_as_model = BaseVersionedModel.from_dict(model_dict)
 
-    assert isinstance(dict_as_model, VersionedModel)
+    assert isinstance(dict_as_model, BaseVersionedModel)
     assert hasattr(dict_as_model, "entity_id")
     assert hasattr(dict_as_model, "version")
     assert hasattr(dict_as_model, "previous_version")
@@ -56,7 +56,7 @@ def test_sublass_from_dict():
     """
 
     @dataclass
-    class TestModel(VersionedModel):
+    class TestModel(BaseVersionedModel):
         """TestModel for VersionedModel"""
         test_attribute: int = 0
 

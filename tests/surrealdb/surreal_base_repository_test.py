@@ -8,7 +8,7 @@ import pytest
 
 from rococo.data.base import DbAdapter
 from rococo.models.surrealdb import VersionedModel
-from rococo.repositories.surrealdb import BaseRepository
+from rococo.repositories.surrealdb import SurrealDbRepository
 from rococo.messaging.base import MessageAdapter
 
 
@@ -53,7 +53,7 @@ class TestBaseRepository:
         """
         Fixture for BaseRepository
         """
-        return BaseRepository(
+        return SurrealDbRepository(
             mock_adapter,
             TestVersionedModel,
             _mock_message_adapter,
@@ -81,7 +81,8 @@ class TestBaseRepository:
         result = repository.get_one({'id': 2})
 
         assert result is None
-        mock_adapter.get_one.assert_called_with('testversionedmodel', {'id': 2}, fetch_related=None)
+        mock_adapter.get_one.assert_called_with(
+            'testversionedmodel', {'id': 2}, fetch_related=None, additional_fields=[])
         mock_adapter.__enter__.assert_called()
         mock_adapter.__exit__.assert_called()
 

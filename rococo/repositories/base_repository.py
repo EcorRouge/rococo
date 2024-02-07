@@ -8,7 +8,7 @@ import json
 
 from rococo.data.base import DbAdapter
 from rococo.messaging.base import MessageAdapter
-from rococo.models.surrealdb import VersionedModel
+from rococo.models import BaseVersionedModel
 
 
 class BaseRepository:
@@ -17,7 +17,7 @@ class BaseRepository:
     """
     def __init__(self, # pylint: disable=R0913
                  adapter: DbAdapter,
-                 model: Type[VersionedModel],
+                 model: Type[BaseVersionedModel],
                  message_adapter: MessageAdapter,
                  queue_name: str = 'placeholder',
                  user_id: UUID = None):
@@ -33,7 +33,7 @@ class BaseRepository:
         with self.adapter:
             return func(*args, **kwargs)
 
-    def _process_data_before_save(self, instance: VersionedModel):
+    def _process_data_before_save(self, instance: BaseVersionedModel):
         """Method to convert a VersionedModel instance to data dictionary to be sent to adapter."""
         instance.prepare_for_save(changed_by_id=self.user_id)
         return instance.as_dict(convert_datetime_to_iso_string=True)
@@ -42,12 +42,10 @@ class BaseRepository:
         """Method to convert a data dictionary fetched from adapter into a VersionedModel object."""
         pass # pylint: disable=W0107
 
-    def get_one(self,
-                conditions: Dict[str, Any],
-                fetch_related: List[str] = None) -> Union[VersionedModel, None]:
+    def get_one(self, conditions: Dict[str, Any]) -> Union[BaseVersionedModel, None]:
         """get one"""
         data = self._execute_within_context(
-            self.adapter.get_one, self.table_name, conditions, fetch_related=fetch_related
+            self.adapter.get_one, self.table_name, conditions
         )
 
         self._process_data_from_db(data)
@@ -61,16 +59,10 @@ class BaseRepository:
         conditions: Dict[str, Any] = None,
         sort: List[tuple] = None,
         limit: int = 100,
-        fetch_related: List[str] = None
-    ) -> List[VersionedModel]:
+    ) -> List[BaseVersionedModel]:
         """get many"""
         records = self._execute_within_context(
-            self.adapter.get_many,
-            self.table_name,
-            conditions,
-            sort,
-            limit,
-            fetch_related=fetch_related
+            self.adapter.get_many, self.table_name, conditions, sort, limit
         )
 
         # If the adapter returned a single dictionary, wrap it in a list
@@ -81,7 +73,7 @@ class BaseRepository:
 
         return [self.model.from_dict(record) for record in records]
 
-    def save(self, instance: VersionedModel, send_message: bool = False):
+    def save(self, instance: BaseVersionedModel, send_message: bool = False):
         """Save func"""
         data = self._process_data_before_save(instance)
         self._execute_within_context(
@@ -96,7 +88,7 @@ class BaseRepository:
 
         return instance
 
-    def delete(self, instance: VersionedModel):
+    def delete(self, instance: BaseVersionedModel):
         """delete func"""
         instance.active = False
         return self.save(instance)

@@ -7,12 +7,12 @@ from unittest.mock import Mock
 import pytest
 
 from rococo.data.base import DbAdapter
-from rococo.models.surrealdb import VersionedModel
+from rococo.models import BaseVersionedModel
 from rococo.repositories.surrealdb import SurrealDbRepository
 from rococo.messaging.base import MessageAdapter
 
 
-class TestVersionedModel(VersionedModel):
+class TestVersionedModel(BaseVersionedModel):
     """
     Test Class for VersionedModel
     """
@@ -65,10 +65,10 @@ class TestBaseRepository:
         """
         mock_adapter.get_one.return_value = {'id': 1, 'name': 'Test'}
 
-        result = repository.get_one({'id': 1})
+        result = repository.get_one({'entity_id': 1})
 
         assert isinstance(result, TestVersionedModel)
-        mock_adapter.get_one.assert_called_with('testversionedmodel', {'id': 1}, fetch_related=None)
+        mock_adapter.get_one.assert_called_with('testversionedmodel', {'entity_id': 1}, fetch_related=None, additional_fields=[])
         mock_adapter.__enter__.assert_called()
         mock_adapter.__exit__.assert_called()
 
@@ -78,11 +78,11 @@ class TestBaseRepository:
         """
         mock_adapter.get_one.return_value = None
 
-        result = repository.get_one({'id': 2})
+        result = repository.get_one({'entity_id': 2})
 
         assert result is None
         mock_adapter.get_one.assert_called_with(
-            'testversionedmodel', {'id': 2}, fetch_related=None, additional_fields=[])
+            'testversionedmodel', {'entity_id': 2}, fetch_related=None, additional_fields=[])
         mock_adapter.__enter__.assert_called()
         mock_adapter.__exit__.assert_called()
 
@@ -102,7 +102,7 @@ class TestBaseRepository:
         assert isinstance(result[0], TestVersionedModel)
         assert isinstance(result[1], TestVersionedModel)
         mock_adapter.get_many.assert_called_with(
-            'testversionedmodel', None, None, 100, fetch_related=None)
+            'testversionedmodel', None, None, 100, fetch_related=None, additional_fields=[])
         mock_adapter.__enter__.assert_called()
         mock_adapter.__exit__.assert_called()
 

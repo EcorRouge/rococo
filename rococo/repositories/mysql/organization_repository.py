@@ -1,12 +1,12 @@
 """OrganizationRepo class"""
-from rococo.models.mysql import Organization
+from rococo.models import BaseOrganization
 from rococo.repositories.mysql import MysqlRepository
 
 
 class OrganizationRepository(MysqlRepository):
     """OrganizationRepo class"""
     def __init__(self, adapter, message_adapter, message_queue_name):
-        super().__init__(adapter, Organization, message_adapter, message_queue_name)
+        super().__init__(adapter, BaseOrganization, message_adapter, message_queue_name)
 
     def find_by_name(self, name: str):
         """Find organization by name"""

@@ -5,16 +5,16 @@ from uuid import UUID
 
 from rococo.data import MySqlDbAdapter
 from rococo.messaging import MessageAdapter
-from rococo.models.mysql import VersionedModel
-from rococo.repositories.mysql import BaseRepository
+from rococo.models import BaseVersionedModel
+from rococo.repositories import BaseRepository
 
 
 class MysqlRepository(BaseRepository):
     """MysqlRepository class"""
-    def __init__( # pylint: disable=R0913
+    def __init__(
             self,
             db_adapter: MySqlDbAdapter,
-            model: Type[VersionedModel],
+            model: Type[BaseVersionedModel],
             message_adapter: MessageAdapter,
             queue_name: str,
             user_id: UUID = None
@@ -48,7 +48,7 @@ class MysqlRepository(BaseRepository):
 
     def get_one(self,
                 conditions: Dict[str, Any]
-                ) -> Union[VersionedModel, None]:
+                ) -> Union[BaseVersionedModel, None]:
         """get one"""
         additional_fields = []
         data = self._execute_within_context(
@@ -69,7 +69,7 @@ class MysqlRepository(BaseRepository):
         conditions: Dict[str, Any] = None,
         sort: List[tuple] = None,
         limit: int = 100,
-    ) -> List[VersionedModel]:
+    ) -> List[BaseVersionedModel]:
         """get many"""
         additional_fields = []
         records = self._execute_within_context(

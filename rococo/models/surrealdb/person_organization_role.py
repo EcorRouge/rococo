@@ -4,6 +4,7 @@ PersonOrganizationRole model
 
 from dataclasses import dataclass, field
 
+from rococo.models import BasePersonOrganizationRole
 from rococo.models.surrealdb import VersionedModel
 
 # from enum import Enum
@@ -14,7 +15,7 @@ from rococo.models.surrealdb import VersionedModel
 #     MEMBER = "MEMBER"
 
 @dataclass
-class PersonOrganizationRole(VersionedModel):
+class PersonOrganizationRole(VersionedModel, BasePersonOrganizationRole):
     """A person organization role model."""
 
     person: str = field(default=None, metadata={
@@ -25,7 +26,3 @@ class PersonOrganizationRole(VersionedModel):
         'relationship': {'model': 'Organization', 'type': 'direct'},
         'field_type': 'record_id'
     })
-
-    # TODO: We would benefit from strictly typed Enum for role, but flexibility would lower
-    # role: PersonOrganizationRoleEnum = PersonOrganizationRoleEnum.MEMBER
-    role: str = None

@@ -4,11 +4,11 @@ Organization model
 
 from dataclasses import dataclass
 
-from rococo.models.mysql import VersionedModel
+from rococo.models import BaseVersionedModel
 
 
 @dataclass
-class Organization(VersionedModel):
+class BaseOrganization(BaseVersionedModel):
     """An organization model."""
 
     name: str = None

@@ -4,11 +4,11 @@ Person model
 
 from dataclasses import dataclass
 
-from rococo.models.mysql import VersionedModel
+from rococo.models import BaseVersionedModel
 
 
 @dataclass
-class Person(VersionedModel):
+class BasePerson(BaseVersionedModel):
     """A person model."""
 
     first_name: str = None

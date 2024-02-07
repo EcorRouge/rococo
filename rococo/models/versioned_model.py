@@ -1,5 +1,5 @@
 """
-VersionedModel for rococo. Base model
+BaseVersionedModel for rococo. Base model
 """
 
 from uuid import uuid4, UUID
@@ -15,7 +15,7 @@ def default_datetime():
     return datetime.utcnow()
 
 @dataclass(kw_only=True)
-class VersionedModel:
+class BaseVersionedModel:
     """A base class for versioned models with common (Big 6) attributes."""
     entity_id: UUID = field(default_factory=uuid4)
     version: UUID = UUID('00000000-0000-4000-8000-000000000000')
@@ -67,9 +67,9 @@ class VersionedModel:
         return results
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "VersionedModel":
+    def from_dict(cls, data: Dict[str, Any]) -> "BaseVersionedModel":
         """
-        Load VersionedModel from dict
+        Load BaseVersionedModel from dict
         """
         filtered_data = {k: v for k, v in data.items() if k in cls.fields()}
         for k,v in filtered_data.items():

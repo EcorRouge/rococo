@@ -4,12 +4,11 @@ Person model
 
 from dataclasses import dataclass
 
+from rococo.models import BasePerson
 from rococo.models.surrealdb import VersionedModel
 
 
 @dataclass
-class Person(VersionedModel):
+class Person(VersionedModel, BasePerson):
     """A person model."""
-
-    first_name: str = None
-    last_name: str = None
+    pass # pylint: disable=W0107

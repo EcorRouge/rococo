@@ -4,7 +4,7 @@ PersonOrganizationRole model
 
 from dataclasses import dataclass
 
-from rococo.models.mysql import VersionedModel
+from rococo.models import BaseVersionedModel
 
 # from enum import Enum
 
@@ -14,7 +14,7 @@ from rococo.models.mysql import VersionedModel
 #     MEMBER = "MEMBER"
 
 @dataclass
-class PersonOrganizationRole(VersionedModel):
+class BasePersonOrganizationRole(BaseVersionedModel):
     """A person organization role model."""
 
     person_id: str = None

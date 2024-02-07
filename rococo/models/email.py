@@ -5,10 +5,10 @@ Email model
 from dataclasses import dataclass
 from typing import Optional
 
-from rococo.models.mysql import VersionedModel
+from rococo.models import BaseVersionedModel
 
 @dataclass
-class Email(VersionedModel):
+class BaseEmail(BaseVersionedModel):
     """A email method model."""
 
     person_id: str = None

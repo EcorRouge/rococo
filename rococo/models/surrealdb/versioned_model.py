@@ -1,5 +1,5 @@
 """
-VersionedModel for rococo. Base model
+VersionedModel for rococo. Extends BaseVersionedModel
 """
 
 import pkgutil
@@ -8,8 +8,9 @@ import os
 from uuid import uuid4, UUID
 from dataclasses import dataclass, field, fields, InitVar
 from datetime import datetime
-from typing import Any, Dict, List
+from typing import Any, Dict
 import importlib
+from rococo.models import BaseVersionedModel
 
 
 def default_datetime():
@@ -35,19 +36,14 @@ def import_models_module(current_module, module_name):
 
 
 @dataclass(kw_only=True)
-class VersionedModel:
+class VersionedModel(BaseVersionedModel):
     """A base class for versioned models with common (Big 6) attributes."""
 
     entity_id: UUID = field(default_factory=uuid4, metadata={'field_type': 'record_id'})
-    version: UUID = UUID('00000000-0000-4000-8000-000000000000')
-    previous_version: UUID = None
-    active: bool = True
-    changed_by_id: UUID = UUID('00000000-0000-4000-8000-000000000000')
-    changed_on: datetime = field(default_factory=default_datetime)
 
     _is_partial: InitVar[bool] = False
 
-    def __post_init__(self, _is_partial):
+    def __post_init__(self, _is_partial): # pylint: disable=W0221
         self._is_partial = _is_partial
         for field_ in fields(self):
             field_model = field_.metadata.get('relationship', {}).get('model')
@@ -110,15 +106,6 @@ class VersionedModel:
         repr_string += ", ".join(repr_fields) + ")"
         return repr_string
 
-    @classmethod
-    def fields(cls) -> List[str]:
-        """Get a list of field names for this model.
-        
-        Returns:
-            List[str]: A list of field names.
-        """
-        return [f.name for f in fields(cls)]
-
     def as_dict(self, convert_datetime_to_iso_string: bool = False) -> Dict[str, Any]:
         """Convert this model to a dictionary.
 
@@ -174,38 +161,3 @@ class VersionedModel:
         for key in keys_to_pop:
             results.pop(key, None)
         return results
-
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "VersionedModel":
-        """
-        Load VersionedModel from dict
-        """
-        filtered_data = {k: v for k, v in data.items() if k in cls.fields()}
-        for k,v in filtered_data.items():
-            if k in ["entity_id", "version", "previous_version", "changed_by_id"]:
-                if v is not None and not isinstance(v, UUID):
-                    try:
-                        # Attempt to cast the string to a UUID
-                        filtered_data[k] = UUID(v)
-                    except ValueError:
-                        # Handle the case where the string is not a valid UUID
-                        print(f"'{v}' is not a valid UUID.")
-        return cls(**filtered_data)
-
-    def prepare_for_save(self, changed_by_id: UUID):
-        """
-        Prepare this model for saving to the database.
-
-        Args:
-            changed_by_id (str): The ID of the user making the change.
-        """
-        if not self.entity_id:
-            self.entity_id = uuid4()
-        if self.version:
-            self.previous_version = self.version
-        else:
-            self.previous_version = UUID('00000000-0000-4000-8000-000000000000')
-        self.version = uuid4()
-        self.changed_on = datetime.utcnow()
-        if changed_by_id is not None:
-            self.changed_by_id = changed_by_id

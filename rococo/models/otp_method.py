@@ -5,11 +5,11 @@ OtpMethod model
 from dataclasses import dataclass
 from typing import List
 
-from rococo.models.mysql import VersionedModel
+from rococo.models import BaseVersionedModel
 
 
 @dataclass
-class OtpMethod(VersionedModel):
+class BaseOtpMethod(BaseVersionedModel):
     """An OTP method model."""
 
     person_id: str = None

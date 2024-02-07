@@ -7,7 +7,7 @@ from uuid import UUID
 from rococo.data import SurrealDbAdapter
 from rococo.messaging import MessageAdapter
 from rococo.models.surrealdb import VersionedModel
-from rococo.repositories.surrealdb import BaseRepository
+from rococo.repositories import BaseRepository
 
 
 class SurrealDbRepository(BaseRepository):
@@ -101,7 +101,7 @@ class SurrealDbRepository(BaseRepository):
                             field_value = field_model_class(entity_id=field_uuid, _is_partial=True)
                             data[field.name] = field_value
                     else:
-                        raise NotImplementedError
+                        raise NotImplementedError(f"field: {field}")
             return model.from_dict(data)
 
 

@@ -124,7 +124,7 @@ with get_db_connection() as db:
 
 <summary>
 
-##### Relationships
+##### Relationships in Surreal DB
 
 </summary>
 
@@ -434,6 +434,248 @@ with get_db_connection() as adapter:
 ```
 
 </details>
+
+<summary>
+
+##### Relationships in MySQL
+
+</summary>
+
+<details>
+
+Consider the following example models:
+
+```python
+# Models
+from dataclasses import field, dataclass
+from rococo.repositories.mysql import MySqlRepository
+from rococo.models import VersionedModel
+from rococo.data import MySqlAdapter
+
+@dataclass
+class Email(VersionedModel):
+    email_address: str = None
+
+@dataclass
+class LoginMethod(VersionedModel):
+    email: str = field(default=None, metadata={
+        'relationship': {'model': Email},
+        'field_type': 'entity_id'
+    })
+    method_type: str = None
+
+@dataclass
+class Person(VersionedModel):
+    login_method: str = field(default=None, metadata={
+        'relationship': {'model': LoginMethod},
+        'field_type': 'entity_id'
+    })
+    name: str = None
+    
+
+@dataclass
+class Organization(VersionedModel):
+    person: str = field(default=None, metadata={
+        'relationship': {'model': Person},
+        'field_type': 'entity_id'
+    })
+    name: str = None
+
+
+def get_db_connection():
+    return MySqlAdapter('localhost', 3306, 'root', 'ransomsnare_root_pass', 'testdb')
+
+
+# **Creating and relating objects.**
+email = Email(email_address="test@example.com")
+
+# Create a LoginMethod that references Email object
+login_method = LoginMethod(
+    method_type="email-password",
+    email=email  # Can be referenced by object
+)
+
+# Create a Person that references LoginMethod object
+person = Person(
+    name="Person1",
+    login_method=login_method.entity_id  # Can be referenced by UUID object.
+)
+
+# Create an Organization that references Person object
+organization = Organization(
+    name="Organization1",
+    person=str(person.entity_id)  # Can be referenced by UUID string.
+)
+
+
+with get_db_connection() as adapter:
+    # **Create repositories**
+    person_repo = MySqlRepository(adapter, Person, None, None)
+    organization_repo = MySqlRepository(adapter, Organization, None, None)
+    login_method_repo = MySqlRepository(adapter, LoginMethod, None, None)
+    email_repo = MySqlRepository(adapter, Email, None, None)
+
+    # ** Save objects.
+    organization_repo.save(organization)
+    # Saves to MySQL:
+    # {
+    #     "active": true,
+    #     "changed_by_id": "00000000000040008000000000000000",
+    #     "changed_on": "2024-03-11 00:03:21",
+    #     "entity_id": "5bb0a0dc004345a39dacd514b5ef7669",
+    #     "name": "Organization1",
+    #     "person": "7a3f4e8cfd4643dbb6195b2129bbcc37",
+    #     "previous_version": "00000000000040008000000000000000",
+    #     "version": "b49010adbc64487ebd414cdf20ff7aab"
+    # }
+
+    person_repo.save(person)
+    # Saves to MySQL:
+    # {
+    #     "active": true,
+    #     "changed_by_id": "00000000000040008000000000000000",
+    #     "changed_on": "2024-03-11 00:03:21",
+    #     "id": "7a3f4e8cfd4643dbb6195b2129bbcc37",
+    #     "login_method": "0e1ef122e4aa435fad97bd75ef6d1eb8",
+    #     "name": "Person1",
+    #     "previous_version": "00000000000040008000000000000000",
+    #     "version": "9504903080bd45cda39f09139fe67343"
+    # }
+
+    login_method_repo.save(login_method)
+    # Saves to MySQL:
+    # {
+    #     "active": true,
+    #     "changed_by_id": "00000000000040008000000000000000",
+    #     "changed_on": "2024-03-11 00:03:21",
+    #     "email": "3e65462847fa4a0ebd4279fda124149e",
+    #     "id": "0e1ef122e4aa435fad97bd75ef6d1eb8",
+    #     "method_type": "email-password",
+    #     "previous_version": "00000000000040008000000000000000",
+    #     "version": "9e20a1dcbcb145c2bdf864e441a79758"
+    # }
+
+    email_repo.save(email)
+    # Saves to MySQL:
+    # {
+    #     "active": true,
+    #     "changed_by_id": "00000000000040008000000000000000",
+    #     "changed_on": "2024-03-11 00:03:21",
+    #     "email_address": "test@example.com",
+    #     "id": "3e65462847fa4a0ebd4279fda124149e",
+    #     "previous_version": "00000000000040008000000000000000",
+    #     "version": "0f693d94a9124b0abc963e558f7e13d5"
+    # }
+
+
+    # **Fetching related objects
+    organization = organization_repo.get_one({"entity_id": organization.entity_id}, join_fields=['person'])
+    # Roughly evaluates to "SELECT * FROM organization INNER JOIN person ON organization.person=person.entity_id WHERE organization.entity_id=<Specified entity ID>;"
+
+    print(organization.person.entity_id)  # Prints entity_id of related person
+    print(organization.person.name)  # Prints name of related person
+
+    organization = organization_repo.get_one({"entity_id": organization.entity_id})
+    # Roughly evaluates to "SELECT * FROM organization WHERE entity_id=<Specified entity ID>;"
+
+    print(organization.person.entity_id)  # Prints entity_id of related person
+    try:
+        print(organization.person.name)  # raises AttributeError
+    except AttributeError:
+        pass
+
+    print(organization.as_dict(True))
+    # prints 
+    # {
+    #     "entity_id":"fb5a9d0e-4bac-467f-9318-4063811e51b6",
+    #     "version":"6fb045ef-1428-4a0c-b5a6-37c18e6711ab",
+    #     "previous_version":"00000000-0000-4000-8000-000000000000",
+    #     "active":1,
+    #     "changed_by_id":"00000000-0000-4000-8000-000000000000",
+    #     "changed_on":"2024-03-11T00:03:21",
+    #     "person":{
+    #         "entity_id":"582ecaad-e30f-40bc-8e6c-c4675a4bc178"
+    #     },
+    #     "name":"Organization1"
+    # }
+
+    # JOIN chaining
+    organization = organization_repo.get_one({"entity_id": organization.entity_id}, join_fields=['person', 'person.login_method', 'person.login_method.email'])
+    # Roughly evaluates to:
+    # SELECT * FROM organization 
+    #   INNER JOIN person ON organization.person=person.entity_id 
+    #   INNER JOIN login_method ON person.login_method=login_method.entity_id 
+    #   INNER JOIN email ON lgin_method.email=email.entity_id
+    # WHERE organization.entity_id=<Specified entity ID>;
+
+    print(organization.entity_id)  # Prints entity_id of organization
+    print(organization.person.entity_id)  # Prints entity_id of organization.person
+    print(organization.person.login_method.entity_id)  # Prints entity_id of organization.person.login_method
+    print(organization.person.login_method.email.entity_id)  # Prints entity_id of organization.person.login_method.email
+    print(organization.person.login_method.email.email_address)  # Prints email address of organization.person.login_method.email
+    print(organization.as_dict(True))
+    # prints
+    # {
+    #     "entity_id":"846f0756-20ab-44d3-8899-07e10b698ccd",
+    #     "version":"578ca4c7-311a-4508-85ec-00ba264cd741",
+    #     "previous_version":"00000000-0000-4000-8000-000000000000",
+    #     "active": True,
+    #     "changed_by_id":"00000000-0000-4000-8000-000000000000",
+    #     "changed_on":"2023-11-25T12:19:46.541387",
+    #     "person":{
+    #         "entity_id":"ef99b93c-e1bb-4f37-96d5-e4e560dbdda0",
+    #         "version":"b3ce7b8a-223e-4a63-a842-042178c9645c",
+    #         "previous_version":"00000000-0000-4000-8000-000000000000",
+    #         "active": True,
+    #         "changed_by_id":"00000000-0000-4000-8000-000000000000",
+    #         "changed_on":"2023-11-25T12:19:46.623192",
+    #         "login_method":{
+    #             "entity_id":"a7efa334-ea92-4e59-95d5-c8d51a976c1b",
+    #             "version":"4d1a9a1b-81fb-433f-8b43-1bf1c3b696da",
+    #             "previous_version":"00000000-0000-4000-8000-000000000000",
+    #             "active": True,
+    #             "changed_by_id":"00000000-0000-4000-8000-000000000000",
+    #             "changed_on":"2023-11-25T12:19:46.706244",
+    #             "email":{
+    #                 "entity_id":"76e95956-0404-4c06-916b-89927b73d26d",
+    #                 "version":"d59a91a4-26ef-4a88-bee2-b5c0d651bd77",
+    #                 "previous_version":"00000000-0000-4000-8000-000000000000",
+    #                 "active":True,
+    #                 "changed_by_id":"00000000-0000-4000-8000-000000000000",
+    #                 "changed_on":"2023-11-25T12:19:46.775098",
+    #                 "email_address":"test@example.com"
+    #             },
+    #             "method_type":"email-password"
+    #         },
+    #         "name":"Person1"
+    #     },
+    #     "name":"Organization1"
+    # }
+
+    # Get all organizations by person
+    person_orgs = organization_repo.get_many({
+        "person": person.entity_id
+    })
+    for org in person_orgs:
+        print(org.as_dict(True))
+    # Prints:
+    # {
+    #     "entity_id":"0af9964d-0fc7-4128-ba7f-a66a51a87231",
+    #     "version":"ce694166-5ca6-43dc-936d-078011469465",
+    #     "previous_version":"00000000-0000-4000-8000-000000000000",
+    #     "active":1,
+    #     "changed_by_id":"00000000-0000-4000-8000-000000000000",
+    #     "changed_on":"2024-03-11T00:14:07",
+    #     "person":{
+    #         "entity_id":"5b10a75a-23d7-4b98-b35e-0f1a59ec5b6d"
+    #     },
+    #     "name":"Organization1"
+    # }
+
+```
+
+</details>
+
 
 ### How to use the adapter and base Repository in another projects
 

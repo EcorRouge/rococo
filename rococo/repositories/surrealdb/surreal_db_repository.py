@@ -6,7 +6,7 @@ from uuid import UUID
 
 from rococo.data import SurrealDbAdapter
 from rococo.messaging import MessageAdapter
-from rococo.models import VersionedModel
+from rococo.models.surrealdb import SurrealVersionedModel
 from rococo.repositories import BaseRepository
 
 
@@ -15,7 +15,7 @@ class SurrealDbRepository(BaseRepository):
     def __init__(
             self,
             db_adapter: SurrealDbAdapter,
-            model: Type[VersionedModel],
+            model: Type[SurrealVersionedModel],
             message_adapter: MessageAdapter,
             queue_name: str,
             user_id: UUID = None
@@ -37,9 +37,10 @@ class SurrealDbRepository(BaseRepository):
         else:
             raise ValueError(f"Invalid input format or no UUID found in the input string: {surreal_id}")
 
-    def _process_data_before_save(self, instance: VersionedModel):
+    def _process_data_before_save(self, instance: SurrealVersionedModel):
         """Method to convert VersionedModel instance to a data dictionary that can be inserted in SurrealDB"""
-        data = super()._process_data_before_save(instance)
+        super()._process_data_before_save(instance)
+        data = instance.as_dict(convert_datetime_to_iso_string=True, convert_uuids=True)
 
         for field in fields(instance):
             if data.get(field.name) is None:
@@ -49,17 +50,19 @@ class SurrealDbRepository(BaseRepository):
                 field_table = field_model_class.__name__.lower()
                 field_value = data[field.name]
                 adapter_field_name = 'id' if field.name == 'entity_id' else field.name
-                if isinstance(field_value, VersionedModel):
+                if isinstance(field_value, SurrealVersionedModel):
                     field_value = field_value.entity_id
                 elif isinstance(field_value, dict):
                     field_value = field_value.get('entity_id')
+                elif isinstance(field_value, UUID):
+                    field_value = str(field_value)
                 data[adapter_field_name] = f'{field_table}:`{field_value}`' if field_value else None
 
         data.pop('entity_id', None)
         return data
 
     def _process_data_from_db(self, data):
-        """Method to convert data dictionary fetched from SurrealDB to a VersionedModel instance."""
+        """Method to convert data dictionary fetched from SurrealDB to a SurrealVersionedModel instance."""
 
         def _process_record(data: dict, model):
             data['entity_id'] = data.pop('id')
@@ -109,7 +112,7 @@ class SurrealDbRepository(BaseRepository):
             raise NotImplementedError
 
 
-    def get_one(self, conditions: Dict[str, Any], fetch_related: List[str] = None) -> Union[VersionedModel, None]:
+    def get_one(self, conditions: Dict[str, Any], fetch_related: List[str] = None) -> Union[SurrealVersionedModel, None]:
         """get one"""
         additional_fields = []
         if fetch_related:
@@ -134,7 +137,7 @@ class SurrealDbRepository(BaseRepository):
                         conditions[condition_name] = conditions.pop('entity_id')
 
                     field_model = condition_field.metadata.get('relationship', {}).get('model', None) or self.model
-                    if isinstance(value, VersionedModel):
+                    if isinstance(value, SurrealVersionedModel):
                         conditions[condition_name] = f"{field_model.__name__.lower()}:`{str(value.entity_id)}`"
                     elif isinstance(value, (str, UUID)):
                         conditions[condition_name] = f"{field_model.__name__.lower()}:`{str(value)}`"
@@ -142,7 +145,7 @@ class SurrealDbRepository(BaseRepository):
                         # Handle list
                         conditions[condition_name] = []
                         for v in value:
-                            if isinstance(v, VersionedModel):
+                            if isinstance(v, SurrealVersionedModel):
                                 conditions[condition_name].append(f"{field_model.__name__.lower()}:`{str(v.entity_id)}`")
                             elif isinstance(v, (str, UUID)):
                                 conditions[condition_name].append(f"{field_model.__name__.lower()}:`{str(v)}`")
@@ -171,7 +174,7 @@ class SurrealDbRepository(BaseRepository):
         sort: List[tuple] = None,
         limit: int = 100,
         fetch_related: List[str] = None,
-    ) -> List[VersionedModel]:
+    ) -> List[SurrealVersionedModel]:
         """get many"""
         additional_fields = []
         if fetch_related:
@@ -196,7 +199,7 @@ class SurrealDbRepository(BaseRepository):
                         conditions[condition_name] = conditions.pop('entity_id')
 
                     field_model = condition_field.metadata.get('relationship', {}).get('model', None) or self.model
-                    if isinstance(value, VersionedModel):
+                    if isinstance(value, SurrealVersionedModel):
                         conditions[condition_name] = f"{field_model.__name__.lower()}:`{str(value.entity_id)}`"
                     elif isinstance(value, (str, UUID)):
                         conditions[condition_name] = f"{field_model.__name__.lower()}:`{str(value)}`"
@@ -204,7 +207,7 @@ class SurrealDbRepository(BaseRepository):
                         # Handle list
                         conditions[condition_name] = []
                         for v in value:
-                            if isinstance(v, VersionedModel):
+                            if isinstance(v, SurrealVersionedModel):
                                 conditions[condition_name].append(f"{field_model.__name__.lower()}:`{str(v.entity_id)}`")
                             elif isinstance(v, (str, UUID)):
                                 conditions[condition_name].append(f"{field_model.__name__.lower()}:`{str(v)}`")
@@ -227,14 +230,14 @@ class SurrealDbRepository(BaseRepository):
 
         return [self.model.from_dict(record) for record in records]
 
-    def relate(self, in_edge: VersionedModel, association_name: str, out_edge: VersionedModel):
+    def relate(self, in_edge: SurrealVersionedModel, association_name: str, out_edge: SurrealVersionedModel):
         query = f"RELATE {in_edge.__class__.__name__.lower()}:`{in_edge.entity_id}`->{association_name}->{out_edge.__class__.__name__.lower()}:`{out_edge.entity_id}`"
         self._execute_within_context(
             self.adapter.execute_query,
             query            
         )
 
-    def unrelate(self, in_edge: VersionedModel, association_name: str, out_edge: VersionedModel):
+    def unrelate(self, in_edge: SurrealVersionedModel, association_name: str, out_edge: SurrealVersionedModel):
         query = f"DELETE FROM {association_name} WHERE in={in_edge.__class__.__name__.lower()}:`{in_edge.entity_id}` AND out={out_edge.__class__.__name__.lower()}:`{out_edge.entity_id}`"
         self._execute_within_context(
             self.adapter.execute_query,

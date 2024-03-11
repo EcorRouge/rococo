@@ -1,7 +1,7 @@
 import copy
 from typing import List, Union
-from .surreal_db_repository import SurrealDbRepository
-from rococo.models import PersonOrganizationRole
+from rococo.repositories.surrealdb import SurrealDbRepository
+from rococo.models.surrealdb import PersonOrganizationRole
 
 
 class PersonOrganizationRoleRepository(SurrealDbRepository):

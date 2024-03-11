@@ -32,7 +32,7 @@ class BaseRepository:
     def _process_data_before_save(self, instance: VersionedModel):
         """Method to convert a VersionedModel instance to data dictionary to be sent to adapter."""
         instance.prepare_for_save(changed_by_id=self.user_id)
-        return instance.as_dict(convert_datetime_to_iso_string=True)
+        return instance.as_dict(True)
 
     def _process_data_from_db(self, data):
         """Method to convert a data dictionary fetched from adapter into a VersionedModel object."""

@@ -4,11 +4,11 @@ Person model
 
 from dataclasses import dataclass
 
-from . import VersionedModel
+from . import SurrealVersionedModel
 
 
 @dataclass(repr=False)
-class Person(VersionedModel):
+class Person(SurrealVersionedModel):
     """A person model."""
 
     first_name: str = None

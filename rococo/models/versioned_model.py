@@ -35,7 +35,7 @@ def import_models_module(current_module, module_name):
 class VersionedModel:
     """A base class for versioned models with common (Big 6) attributes."""
 
-    entity_id: UUID = field(default_factory=uuid4, metadata={'field_type': 'record_id'})
+    entity_id: UUID = field(default_factory=uuid4, metadata={'field_type': 'entity_id'})
     version: UUID = UUID('00000000-0000-4000-8000-000000000000')
     previous_version: UUID = None
     active: bool = True
@@ -105,7 +105,7 @@ class VersionedModel:
         """
         return [f.name for f in fields(cls)]
 
-    def as_dict(self, convert_datetime_to_iso_string: bool = False) -> Dict[str, Any]:
+    def as_dict(self, convert_datetime_to_iso_string: bool = False, convert_uuids: bool = True) -> Dict[str, Any]:
         """Convert this model to a dictionary.
 
         Args:
@@ -134,16 +134,17 @@ class VersionedModel:
                 else:
                     raise NotImplementedError
             
-            if _field.metadata.get('field_type') == 'record_id':
+            if _field.metadata.get('field_type') in ['record_id', 'entity_id']:
                 if value is None:
                     results[key] = None
                 elif isinstance(value, VersionedModel):
                     if value._is_partial:
-                        results[key] = {'entity_id': str(value.entity_id)}
+                        results[key] = {'entity_id': str(value.entity_id) if convert_uuids else value.entity_id}
                     else:
                         results[key] = value.as_dict(convert_datetime_to_iso_string)
                 elif isinstance(value, UUID):
-                    results[key] = str(value)
+                    if convert_uuids:
+                        results[key] = str(value)
                 elif isinstance(value, str):
                     results[key] = value
                 else:
@@ -152,8 +153,9 @@ class VersionedModel:
             if convert_datetime_to_iso_string:
                 if isinstance(value, datetime):
                     results[key] = value.isoformat()
-            if isinstance(value,UUID):
-                results[key] = str(value)
+            if convert_uuids:
+                if isinstance(value,UUID):
+                    results[key] = str(value)
 
         for key in keys_to_pop:
             results.pop(key, None)

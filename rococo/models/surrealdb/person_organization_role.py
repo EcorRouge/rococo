@@ -4,7 +4,7 @@ PersonOrganizationRole model
 
 from dataclasses import dataclass, field
 
-from . import VersionedModel
+from . import SurrealVersionedModel
 
 # from enum import Enum
 
@@ -14,16 +14,16 @@ from . import VersionedModel
 #     MEMBER = "MEMBER"
 
 @dataclass
-class PersonOrganizationRole(VersionedModel):
+class PersonOrganizationRole(SurrealVersionedModel):
     """A person organization role model."""
 
     person: str = field(default=None, metadata={
-        'relationship': {'model': 'Person'},
-        'field_type': 'entity_id'
+        'relationship': {'model': 'Person', 'type': 'direct'},
+        'field_type': 'record_id'
     })
     organization: str = field(default=None, metadata={
-        'relationship': {'model': 'Organization'},
-        'field_type': 'entity_id'
+        'relationship': {'model': 'Organization', 'type': 'direct'},
+        'field_type': 'record_id'
     })
     
     # TODO: We would benefit from strictly typed Enum for role, but flexibility would lower

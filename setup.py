@@ -2,7 +2,7 @@ from setuptools import find_packages, setup
 
 setup(
     name='rococo',
-    version='0.1.51',
+    version='1.0.0',
     packages=find_packages(),
     url='https://github.com/EcorRouge/rococo',
     license='MIT',

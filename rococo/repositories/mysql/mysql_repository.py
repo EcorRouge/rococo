@@ -37,7 +37,7 @@ class MySqlRepository(BaseRepository):
                 
             field_value = data[field.name]
 
-            if field.metadata.get('field_type') == 'entity_id':
+            if field.metadata.get('field_type') in ['entity_id', 'uuid']:
                 if isinstance(field_value, VersionedModel):
                     field_value = str(field_value.entity_id).replace('-', '')
                 elif isinstance(field_value, dict):

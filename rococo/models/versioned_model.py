@@ -36,10 +36,10 @@ class VersionedModel:
     """A base class for versioned models with common (Big 6) attributes."""
 
     entity_id: UUID = field(default_factory=uuid4, metadata={'field_type': 'entity_id'})
-    version: UUID = UUID('00000000-0000-4000-8000-000000000000')
-    previous_version: UUID = None
+    version: UUID = field(default_factory=lambda: UUID('00000000-0000-4000-8000-000000000000'), metadata={'field_type': 'uuid'})
+    previous_version: UUID = field(default_factory=lambda: None, metadata={'field_type': 'uuid'})
     active: bool = True
-    changed_by_id: UUID = UUID('00000000-0000-4000-8000-000000000000')
+    changed_by_id: UUID = field(default_factory=lambda: UUID('00000000-0000-4000-8000-000000000000'), metadata={'field_type': 'uuid'})
     changed_on: datetime = field(default_factory=default_datetime)
 
     _is_partial: InitVar[bool] = False

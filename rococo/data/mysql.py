@@ -148,7 +148,8 @@ class MySqlAdapter(DbAdapter):
         table: str,
         conditions: Dict[str, Any] = None,
         sort: List[Tuple[str, str]] = None,
-        limit: int = 100,
+        limit: int = None,
+        offset: int = None,
         active: bool = True,
         join_statements: list = None,
         additional_fields: list = None
@@ -172,7 +173,12 @@ class MySqlAdapter(DbAdapter):
         if sort:
             sort_strs = [f"{column} {direction}" for column, direction in sort]
             query += f" ORDER BY {', '.join(sort_strs)}"
-        query += f" LIMIT {limit}"
+        if limit is not None:
+            query += f" LIMIT {limit}"
+        if offset is not None:
+            query += f" OFFSET {offset}"
+
+        print(query)
 
         db_response = self.parse_db_response(self.execute_query(query))
         if not db_response:

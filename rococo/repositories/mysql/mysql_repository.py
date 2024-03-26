@@ -174,7 +174,8 @@ class MySqlRepository(BaseRepository):
         join_fields: List[str] = None,
         additional_fields: List[str] = None,
         sort: List[tuple] = None,
-        limit: int = 100
+        limit: int = None,
+        offset: int = None
     ) -> List[VersionedModel]:
         """get many"""
         if additional_fields is None:
@@ -230,7 +231,7 @@ class MySqlRepository(BaseRepository):
                         raise NotImplementedError
 
         records = self._execute_within_context(
-            self.adapter.get_many, self.table_name, conditions, sort, limit, join_statements=join_stmt_list, additional_fields=additional_fields
+            self.adapter.get_many, self.table_name, conditions, sort, limit, offset, join_statements=join_stmt_list, additional_fields=additional_fields
         )
 
         # If the adapter returned a single dictionary, wrap it in a list

@@ -7,6 +7,7 @@ import threading
 import logging
 from typing import Callable
 import pika
+from dotenv import dotenv_values
 
 from . import MessageAdapter
 
@@ -16,7 +17,7 @@ logger = logging.getLogger(__name__)
 class RabbitMqConnection(MessageAdapter):
     """A connection to a RabbitMQ message queue that allows to send and receive messages."""
 
-    def __init__(self, host: str, port: int, username: str, password: str, virtual_host: str = ''):
+    def __init__(self, host: str, port: int, username: str, password: str, virtual_host: str = '', consume_config_file_path: str = None):
         """
         Initializes a new RabbitMQ connection.
 
@@ -32,10 +33,11 @@ class RabbitMqConnection(MessageAdapter):
         self._username = username
         self._password = password
         self._virtual_host = virtual_host
+        self._consume_config_file_path = consume_config_file_path
 
         self._connection = None
         self._channel = None
-        self._threads = []
+        self._threads = {}
 
     def __enter__(self):
         """
@@ -62,6 +64,11 @@ class RabbitMqConnection(MessageAdapter):
         self._connection.close()
         self._connection = None
         self._channel = None
+
+    def _read_consume_config(self):
+        if self._consume_config_file_path is None:
+            return {}
+        return dotenv_values(self._consume_config_file_path)
 
     def send_message(self, queue_name: str, message: dict):
         """
@@ -114,6 +121,7 @@ class RabbitMqConnection(MessageAdapter):
             cb = functools.partial(_ack_message, ch, delivery_tag)
             logger.info("Sent ack for Delivery tag %s...", delivery_tag)
             self._connection.add_callback_threadsafe(cb)
+            self._threads.pop(delivery_tag, None)
 
         def _on_message(ch, method_frame, _header_frame, body, args):
             """Called when a message is received."""
@@ -125,27 +133,29 @@ class RabbitMqConnection(MessageAdapter):
                 target=_do_work, args=(ch, delivery_tag, body, callback)
             )
             t.start()
-            self._threads.append(t)
+            self._threads[delivery_tag] = t
 
         self._channel.queue_declare(queue=queue_name, durable=True)
 
-        self._threads = []
+        self._threads = {}
         self._channel.basic_qos(prefetch_count=num_threads)
 
         on_message_callback = functools.partial(_on_message, args=(callback_function,))
-        self._channel.basic_consume(
-            queue=queue_name, on_message_callback=on_message_callback
-        )
 
         try:
             logger.info('Listening to RabbitMQ queue %s on %s:%s with %s threads...', queue_name,
                         self._host, self._port, num_threads)
-            self._channel.start_consuming()
+            for method, properties, body in self._channel.consume(queue=queue_name, inactivity_timeout=5):
+                if (method, properties, body) == (None, None, None):
+                    if len(self._threads) == 0 and self._read_consume_config().get('EXIT_WHEN_FINISHED') == '1':
+                        logger.info("Reached inactivity timeout. No threads are running and EXIT_WHEN_FINISHED=1, exiting!")
+                        break
+                else:
+                    on_message_callback(self._channel, method, properties, body)
         except KeyboardInterrupt:
             logger.info("Exiting gracefully...")
-            self._channel.stop_consuming()
         finally:
             # Wait for all to complete
-            for thread in self._threads:
+            for thread in self._threads.values():
                 thread.join()
             self._connection.close()

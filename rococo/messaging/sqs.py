@@ -48,7 +48,7 @@ class SqsConnection(MessageAdapter):
         if queue_name in self._queue_map:
             queue = self._queue_map[queue_name]
         else:
-            queue = self._sqs.get_queue_by_name(QueueName=queue_name)
+            queue = self._sqs.create_queue(QueueName=queue_name)
 
         queue.send_message(QueueUrl=queue_name, MessageBody=json.dumps(message))
 
@@ -72,7 +72,7 @@ class SqsConnection(MessageAdapter):
             )
 
         logger.info("Connecting to SQS queue: %s...", queue_name)
-        queue = self._sqs.get_queue_by_name(QueueName=queue_name)
+        queue = self._sqs.create_queue(QueueName=queue_name)
 
         while True:
             logger.info("Fetching messages from SQS queue: %s...", queue_name)

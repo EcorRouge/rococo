@@ -3,6 +3,7 @@ import json
 import logging
 import uuid
 import boto3
+from dotenv import dotenv_values
 
 from . import MessageAdapter
 
@@ -14,7 +15,8 @@ class SqsConnection(MessageAdapter):
 
     def __init__(self, aws_access_key_id: str = None,
                  aws_access_key_secret: str = None,
-                 region_name: str = None):
+                 region_name: str = None,
+                 consume_config_file_path: str = None):
         """Initializes a new SQS connection.
 
         Args:
@@ -26,6 +28,7 @@ class SqsConnection(MessageAdapter):
         self._aws_access_key_id = aws_access_key_id
         self._aws_access_key_secret = aws_access_key_secret
         self._region_name = region_name
+        self._consume_config_file_path = consume_config_file_path
         self._sqs = boto3.resource('sqs',
                                    aws_access_key_id=self._aws_access_key_id,
                                    aws_secret_access_key=self._aws_access_key_secret,
@@ -37,6 +40,11 @@ class SqsConnection(MessageAdapter):
 
     def __exit__(self, exc_type, exc_value, traceback):
         pass
+
+    def _read_consume_config(self):
+        if self._consume_config_file_path is None:
+            return {}
+        return dotenv_values(self._consume_config_file_path)
 
     def send_message(self, queue_name: str, message: dict):
         """Sends a message to the specified SQS queue.
@@ -83,6 +91,9 @@ class SqsConnection(MessageAdapter):
             )
             if not responses:
                 logger.info("No messages left in queue.")
+                if self._read_consume_config().get('EXIT_WHEN_FINISHED') == '1':
+                    logger.info("EXIT_WHEN_FINISHED=1 and no messages left in queue. Exiting...")
+                    return
                 continue
 
             response = {}

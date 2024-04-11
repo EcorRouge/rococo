@@ -1,6 +1,7 @@
 import logging
-from typing import Any, Dict, List, Tuple, Union
+from typing import Any, Dict, List, Tuple, Union, Optional
 from uuid import UUID
+
 import pymysql
 
 from rococo.data.base import DbAdapter
@@ -19,7 +20,6 @@ class MySqlAdapter(DbAdapter):
         self._connection = None
         self._cursor = None
 
-
     def __enter__(self):
         """Context manager entry point for creating DB connection."""
         self._connection = pymysql.connect(
@@ -34,7 +34,6 @@ class MySqlAdapter(DbAdapter):
 
         return self
 
-
     def __exit__(self, exc_type, exc_value, traceback):
         """Context manager exit point for closing DB connection."""
 
@@ -45,7 +44,6 @@ class MySqlAdapter(DbAdapter):
         if self._connection is not None:
             self._connection.close()
             self._connection = None
-
 
     @property
     def connect(self):
@@ -80,10 +78,16 @@ class MySqlAdapter(DbAdapter):
         elif isinstance(value, type(None)):
             return f"{key} IS NULL"
         else:
-            raise Exception(f"Unsuppported type {type(value)} for condition key: {key}, value: {value}")
+            raise Exception(f"Unsupported type {type(value)} for condition key: {key}, value: {value}")
 
     def move_entity_to_audit_table(self, table, entity_id):
-        query = f"""INSERT INTO {table}_audit (SELECT * FROM {table} WHERE entity_id="{str(entity_id).replace('-', '')}")"""
+        # Get the column names from the table
+        self._call_cursor('execute', f"SHOW COLUMNS FROM {table}")
+
+        column_list = ", ".join(column.get('Field') for column in self._cursor.fetchall())
+
+        query = f"""INSERT INTO {table}_audit ({column_list}) (SELECT {column_list} FROM {table} WHERE entity_id="{str(entity_id).replace('-', '')}");"""
+
         self._call_cursor('execute', query)
         self._connection.commit()
 
@@ -109,13 +113,13 @@ class MySqlAdapter(DbAdapter):
         return response
 
     def get_one(
-        self,
-        table: str,
-        conditions: Dict[str, Any],
-        sort: List[Tuple[str, str]] = None,
-        join_statements: list = None,
-        additional_fields: list = None
-    ) -> Dict[str, Any]:
+            self,
+            table: str,
+            conditions: Dict[str, Any],
+            sort: List[Tuple[str, str]] = None,
+            join_statements: list = None,
+            additional_fields: list = None
+    ) -> Optional[Dict[str, Any]]:
         fields = [f'{table}.*']
         if additional_fields:
             fields += additional_fields
@@ -123,7 +127,7 @@ class MySqlAdapter(DbAdapter):
         query = f"SELECT {', '.join(fields)} FROM {table}"
         for join_stmt in join_statements:
             query += f"""\n{join_stmt}\n"""
-        
+
         condition_strs = []
         if conditions:
             condition_strs = [f"{self._build_condition_string(table, k, v)}" for k, v in conditions.items()]
@@ -144,15 +148,15 @@ class MySqlAdapter(DbAdapter):
             return db_response
 
     def get_many(
-        self,
-        table: str,
-        conditions: Dict[str, Any] = None,
-        sort: List[Tuple[str, str]] = None,
-        limit: int = None,
-        offset: int = None,
-        active: bool = True,
-        join_statements: list = None,
-        additional_fields: list = None
+            self,
+            table: str,
+            conditions: Dict[str, Any] = None,
+            sort: List[Tuple[str, str]] = None,
+            limit: int = None,
+            offset: int = None,
+            active: bool = True,
+            join_statements: list = None,
+            additional_fields: list = None
     ) -> List[Dict[str, Any]]:
 
         fields = [f'{table}.*']
@@ -177,8 +181,6 @@ class MySqlAdapter(DbAdapter):
             query += f" LIMIT {limit}"
         if offset is not None:
             query += f" OFFSET {offset}"
-
-        print(query)
 
         db_response = self.parse_db_response(self.execute_query(query))
         if not db_response:
@@ -209,4 +211,5 @@ class MySqlAdapter(DbAdapter):
     def delete(self, table: str, data: Dict[str, Any]) -> bool:
         # Set active = false
         data['active'] = False
-        return self.save(table, data)
+        self.save(table, data)
+        return True

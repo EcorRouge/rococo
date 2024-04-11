@@ -1,12 +1,12 @@
-"""SurrealDbRepository class"""
+"""MySqlDbRepository class"""
 
+import re
 from dataclasses import fields
+from datetime import datetime
 from typing import Any, Dict, List, Type, Union
 from uuid import UUID
-import re
-from datetime import datetime
 
-from rococo.data import SurrealDbAdapter
+from rococo.data import MySqlAdapter
 from rococo.messaging import MessageAdapter
 from rococo.models import VersionedModel
 from rococo.repositories import BaseRepository
@@ -17,7 +17,7 @@ class MySqlRepository(BaseRepository):
 
     def __init__(
             self,
-            db_adapter: SurrealDbAdapter,
+            db_adapter: MySqlAdapter,
             model: Type[VersionedModel],
             message_adapter: MessageAdapter,
             queue_name: str,
@@ -34,7 +34,7 @@ class MySqlRepository(BaseRepository):
         for field in fields(instance):
             if data.get(field.name) is None:
                 continue
-                
+
             field_value = data[field.name]
 
             if field.metadata.get('field_type') in ['entity_id', 'uuid']:
@@ -49,7 +49,7 @@ class MySqlRepository(BaseRepository):
                 field_value = str(field_value).replace('-', '')
             if isinstance(field_value, datetime):
                 field_value = field_value.strftime('%Y-%m-%d %H:%M:%S')
-            
+
             data[field.name] = field_value
         return data
 
@@ -60,7 +60,7 @@ class MySqlRepository(BaseRepository):
             model()
             is_partial = not all(_field.name in data for _field in fields(model))
             for field in fields(model):
-                if data.get(field.name) is None: 
+                if data.get(field.name) is None:
                     continue
 
                 if field.metadata.get('field_type') == 'entity_id':
@@ -80,7 +80,8 @@ class MySqlRepository(BaseRepository):
                             field_data = {'entity_id': field_value}
                             for _field in fields(field_model_class):
                                 if f'joined_{field.name}_{field_table_name}_{_field.name}' in data:
-                                    field_data[_field.name] = data[f'joined_{field.name}_{field_table_name}_{_field.name}']
+                                    field_data[_field.name] = data[
+                                        f'joined_{field.name}_{field_table_name}_{_field.name}']
                             for data_field, data_value in data.items():
                                 if data_field.startswith('joined_'):
                                     field_data[data_field] = data_value
@@ -104,8 +105,8 @@ class MySqlRepository(BaseRepository):
         else:
             raise NotImplementedError
 
-
-    def get_one(self, conditions: Dict[str, Any] = None, join_fields: List[str] = None, additional_fields: List[str] = None) -> Union[VersionedModel, None]:
+    def get_one(self, conditions: Dict[str, Any] = None, join_fields: List[str] = None,
+                additional_fields: List[str] = None) -> Union[VersionedModel, None]:
         """get one"""
 
         if additional_fields is None:
@@ -118,7 +119,8 @@ class MySqlRepository(BaseRepository):
                 if '.' in field_name:
                     parent_field, child_field = field_name.rsplit('.', 1)
                     if parent_field not in joined_fields:
-                        raise Exception(f"Parent field {parent_field} needs to be joined before joining {child_field} field. Raised while joining {field_name} for model {self.model.__name__}.")
+                        raise Exception(
+                            f"Parent field {parent_field} needs to be joined before joining {child_field} field. Raised while joining {field_name} for model {self.model.__name__}.")
                     parent_model = joined_fields[parent_field]
                 else:
                     parent_model = self.model
@@ -129,8 +131,11 @@ class MySqlRepository(BaseRepository):
                     raise Exception(f"Invalid join field {child_field} specified for model {parent_model.__name__}.")
                 join_model = join_field.metadata.get('relationship').get('model')
                 join_table_name = re.sub(r'(?<!^)(?=[A-Z])', '_', join_model.__name__).lower()
-                join_stmt_list.append(f'INNER JOIN {join_table_name} ON {parent_table_name}.{child_field}={join_table_name}.entity_id AND {join_table_name}.active=true')
-                join_field_list = [f'{join_table_name}.{_field.name} AS joined_{child_field}_{join_table_name}_{_field.name}' for _field in fields(join_model)]
+                join_stmt_list.append(
+                    f'INNER JOIN {join_table_name} ON {parent_table_name}.{child_field}={join_table_name}.entity_id AND {join_table_name}.active=true')
+                join_field_list = [
+                    f'{join_table_name}.{_field.name} AS joined_{child_field}_{join_table_name}_{_field.name}' for
+                    _field in fields(join_model)]
                 additional_fields += join_field_list
                 joined_fields[field_name] = join_model
 
@@ -156,7 +161,8 @@ class MySqlRepository(BaseRepository):
                         raise NotImplementedError
 
         data = self._execute_within_context(
-            self.adapter.get_one, self.table_name, conditions, join_statements=join_stmt_list, additional_fields=additional_fields
+            self.adapter.get_one, self.table_name, conditions, join_statements=join_stmt_list,
+            additional_fields=additional_fields
         )
 
         self.model()  # Calls __post_init__ of model to import related models and update fields.
@@ -167,15 +173,14 @@ class MySqlRepository(BaseRepository):
             return None
         return self.model.from_dict(data)
 
-
     def get_many(
-        self,
-        conditions: Dict[str, Any] = None,
-        join_fields: List[str] = None,
-        additional_fields: List[str] = None,
-        sort: List[tuple] = None,
-        limit: int = None,
-        offset: int = None
+            self,
+            conditions: Dict[str, Any] = None,
+            join_fields: List[str] = None,
+            additional_fields: List[str] = None,
+            sort: List[tuple] = None,
+            limit: int = None,
+            offset: int = None
     ) -> List[VersionedModel]:
         """get many"""
         if additional_fields is None:
@@ -188,7 +193,8 @@ class MySqlRepository(BaseRepository):
                 if '.' in field_name:
                     parent_field, child_field = field_name.rsplit('.', 1)
                     if parent_field not in joined_fields:
-                        raise Exception(f"Parent field {parent_field} needs to be joined before joining {child_field} field. Raised while joining {field_name} for model {self.model.__name__}.")
+                        raise Exception(
+                            f"Parent field {parent_field} needs to be joined before joining {child_field} field. Raised while joining {field_name} for model {self.model.__name__}.")
                     parent_model = joined_fields[parent_field]
                 else:
                     parent_model = self.model
@@ -199,11 +205,13 @@ class MySqlRepository(BaseRepository):
                     raise Exception(f"Invalid join field {child_field} specified for model {parent_model.__name__}.")
                 join_model = join_field.metadata.get('relationship').get('model')
                 join_table_name = re.sub(r'(?<!^)(?=[A-Z])', '_', join_model.__name__).lower()
-                join_stmt_list.append(f'INNER JOIN {join_table_name} ON {parent_table_name}.{child_field}={join_table_name}.entity_id AND {join_table_name}.active=true')
-                join_field_list = [f'{join_table_name}.{_field.name} AS joined_{child_field}_{join_table_name}_{_field.name}' for _field in fields(join_model)]
+                join_stmt_list.append(
+                    f'INNER JOIN {join_table_name} ON {parent_table_name}.{child_field}={join_table_name}.entity_id AND {join_table_name}.active=true')
+                join_field_list = [
+                    f'{join_table_name}.{_field.name} AS joined_{child_field}_{join_table_name}_{_field.name}' for
+                    _field in fields(join_model)]
                 additional_fields += join_field_list
                 joined_fields[field_name] = join_model
-
 
         if conditions:
             for condition_name, value in conditions.copy().items():
@@ -231,7 +239,8 @@ class MySqlRepository(BaseRepository):
                         raise NotImplementedError
 
         records = self._execute_within_context(
-            self.adapter.get_many, self.table_name, conditions, sort, limit, offset, join_statements=join_stmt_list, additional_fields=additional_fields
+            self.adapter.get_many, self.table_name, conditions, sort, limit, offset, join_statements=join_stmt_list,
+            additional_fields=additional_fields
         )
 
         # If the adapter returned a single dictionary, wrap it in a list

@@ -1,21 +1,23 @@
 """
 Config class that allows to load from a .toml file, and/or use a .env file.
 """
+import json
+import logging
 import os
 import re
-import json
 from abc import abstractmethod
-from typing import Optional
-import logging
+from typing import List, Optional
+
 from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
 
 
-class BaseConfig():
+class BaseConfig:
     """
     Config class that allows to load from a .toml file, and/or use a .env file.
     """
+
     def __init__(self):
         load_dotenv()
         self.project_version = None
@@ -40,7 +42,7 @@ class BaseConfig():
             logger.warning("Variable %s not found.", var_name)
             return None
 
-    def load_toml(self, toml_folder_dir: str, log_version_string: bool=True) -> bool:
+    def load_toml(self, toml_folder_dir: str, log_version_string: bool = True) -> bool:
         """
         Loads the toml file for the project
         Args:
@@ -87,19 +89,18 @@ class BaseConfig():
         logger.warning("Warning: var %s not found.", var_name)
         return False
 
-    def get_var_as_list(self, var_name: str) -> bool:
+    def get_var_as_list(self, var_name: str) -> Optional[List]:
         """
         Returns a comma-delimited var as list
         """
-        if var_name in self.env_vars.keys():
-            try:
-                return [env_var.strip() for env_var in self.env_vars[var_name].split(",")]
-            except ValueError:
-                logger.error(
-                    "Error: Invalid input format. Please provide a comma-delimited string.")
-        logger.warning("Warning: var %s not found.", var_name)
-        return None
+        if var_name not in self.env_vars.keys():
+            logger.warning("Warning: var %s not found.", var_name)
+            return None
 
+        try:
+            return [env_var.strip() for env_var in self.env_vars[var_name].split(",")]
+        except ValueError:
+            logger.error("Error: Invalid input format. Please provide a comma-delimited string.")
 
     def convert_var_from_json_string(self, var_name: str) -> bool:
         """
@@ -120,3 +121,4 @@ class BaseConfig():
         """
         Abstract method for validation of the env vars.
         """
+        pass

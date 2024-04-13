@@ -81,13 +81,7 @@ class MySqlAdapter(DbAdapter):
             raise Exception(f"Unsupported type {type(value)} for condition key: {key}, value: {value}")
 
     def move_entity_to_audit_table(self, table, entity_id):
-        # Get the column names from the table
-        self._call_cursor('execute', f"SHOW COLUMNS FROM {table}")
-
-        column_list = ", ".join(column.get('Field') for column in self._cursor.fetchall())
-
-        query = f"""INSERT INTO {table}_audit ({column_list}) (SELECT {column_list} FROM {table} WHERE entity_id="{str(entity_id).replace('-', '')}");"""
-
+        query = f"""INSERT INTO {table}_audit (SELECT * FROM {table} WHERE entity_id="{str(entity_id).replace('-', '')}")"""
         self._call_cursor('execute', query)
         self._connection.commit()
 

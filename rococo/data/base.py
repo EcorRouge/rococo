@@ -16,6 +16,11 @@ class DbAdapter(ABC):
         pass
 
     @abstractmethod
+    def run_transaction(self, operations_list: List[Any]):
+        """Execute a list of queries / operations as a transaction."""
+        pass
+
+    @abstractmethod
     def execute_query(self, sql: str, _vars: Dict[str, Any] = None) -> Any:
         """Executes a raw SQL query against the DB."""
         pass
@@ -37,8 +42,18 @@ class DbAdapter(ABC):
         pass
 
     @abstractmethod
+    def get_move_entity_to_audit_table_query(self, table, entity_id):
+        """Returns query to move entity by entity_id to audit table."""
+        pass
+
+    @abstractmethod
     def move_entity_to_audit_table(self, table_name: str, entity_id: str):
         """Inserts the existing entities by entity_id in {table_name}_audit table."""
+        pass
+
+    @abstractmethod
+    def get_save_query(self, table: str, data: Dict[str, Any]):
+        """Returns query to save a data record in the table."""
         pass
 
     @abstractmethod

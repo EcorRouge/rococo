@@ -43,7 +43,9 @@ class SurrealDbRepositoryTestCase(unittest.TestCase):
         test that saving sends the message
         """
         # Set up the mock to return a successful save
-        self.db_adapter_mock.save.return_value = True
+        self.db_adapter_mock.get_save_query.return_value = "", ()
+        self.db_adapter_mock.get_move_entity_to_audit_table_query.return_value = "", ()
+        self.db_adapter_mock.run_transaction.return_value = True
 
         # Call the save method
         saved_instance = self.repository.save(self.model_instance, send_message=True)
@@ -51,9 +53,7 @@ class SurrealDbRepositoryTestCase(unittest.TestCase):
         surrealdb_dict = saved_instance.as_dict(convert_datetime_to_iso_string=True)
         surrealdb_dict['id'] = surrealdb_dict.pop('entity_id')
         # Assert the save method on the adapter was called once with the correct arguments
-        self.db_adapter_mock.save.assert_called_once_with(
-            "versionedmodelhelper", {**surrealdb_dict, 'id': f'{self.model_instance.__class__.__name__.lower()}:`{surrealdb_dict["id"]}`'}
-        )
+        self.db_adapter_mock.run_transaction.assert_called_once_with([("", ()), ("", ())])
 
         # Assert the send_message method was called once with the correct arguments
         self.message_adapter_mock.send_message.assert_called_once_with(
@@ -65,13 +65,15 @@ class SurrealDbRepositoryTestCase(unittest.TestCase):
         Test save without sending message
         """
         # Set up the mock to return a successful save
-        self.db_adapter_mock.save.return_value = True
+        self.db_adapter_mock.get_save_query.return_value = "", ()
+        self.db_adapter_mock.get_move_entity_to_audit_table_query.return_value = "", ()
+        self.db_adapter_mock.run_transaction.return_value = True
 
         # Call the save method with send_message as False
         self.repository.save(self.model_instance, send_message=False)
 
         # Assert the save method on the adapter was called
-        self.db_adapter_mock.save.assert_called_once()
+        self.db_adapter_mock.run_transaction.assert_called_once_with([("", ()), ("", ())])
 
         # Assert the send_message method was not called
         self.message_adapter_mock.send_message.assert_not_called()

@@ -80,9 +80,14 @@ class MySqlAdapter(DbAdapter):
         else:
             raise Exception(f"Unsupported type {type(value)} for condition key: {key}, value: {value}")
 
+    def get_move_entity_to_audit_table_query(self, table, entity_id):
+        """Returns the query to move an entity to audit table."""
+        return f"""INSERT INTO {table}_audit (SELECT * FROM {table} WHERE entity_id=%s)""", (str(entity_id).replace('-', ''),)
+
     def move_entity_to_audit_table(self, table, entity_id):
-        query = f"""INSERT INTO {table}_audit (SELECT * FROM {table} WHERE entity_id="{str(entity_id).replace('-', '')}")"""
-        self._call_cursor('execute', query)
+        """Executes the query to move an entity to audit table."""
+        query, values = self.get_move_entity_to_audit_table_query(table, entity_id)
+        self._cursor.execute(query, values)
         self._connection.commit()
 
     def execute_query(self, sql, _vars=None):
@@ -92,6 +97,16 @@ class MySqlAdapter(DbAdapter):
 
         self._call_cursor('execute', sql, _vars)
         return self._call_cursor('fetchall')
+
+    def run_transaction(self, queries_list):
+        """Executes a list of queries in a single transaction against the database."""
+        for query in queries_list:
+            if type(query) is tuple:
+                query, values = query
+            else:
+                values = ()
+            self._cursor.execute(query, values)
+        self._connection.commit()
 
     def parse_db_response(self, response: List[Dict[str, Any]]) -> Union[Dict[str, Any], List[Dict[str, Any]]]:
         """
@@ -184,14 +199,20 @@ class MySqlAdapter(DbAdapter):
         else:
             return db_response
 
+    def get_save_query(self, table_name, data):
+        """Returns a query to save an entity in database."""
+        columns = ', '.join(data.keys())
+        placeholders = ', '.join(['%s'] * len(data))
+
+        values = tuple(data.values())
+        query = f"REPLACE INTO {table_name} ({columns}) VALUES ({placeholders})"
+
+        return query, values
+
     def _create_in_database(self, table_name, data):
         try:
-            columns = ', '.join(data.keys())
-            placeholders = ', '.join(['%s'] * len(data))
-            values = tuple(data.values())
-
-            sql = f"REPLACE INTO {table_name} ({columns}) VALUES ({placeholders})"
-            self._cursor.execute(sql, values)
+            query, values = self.get_save_query(table_name, data)
+            self._cursor.execute(query, values)
             self._connection.commit()
             return True
         except Exception as e:

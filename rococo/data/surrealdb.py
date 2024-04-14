@@ -62,9 +62,20 @@ class SurrealDbAdapter(DbAdapter):
         else:
             raise Exception(f"Unsuppported type {type(value)} for condition key: {key}, value: {value}")
 
+    def run_transaction(self, operations_list: List[Any]):
+        """Executes a list of operations against the database as a transaction."""
+        # TODO: Update this method when SurrealDB Python SDK supports transactions.
+        for operation in operations_list:
+            self._call_db(*operation)
+
+    def get_move_entity_to_audit_table_query(self, table, entity_id):
+        """Returns the operation to move entity to an audit table."""
+        return ('query', f'INSERT INTO {table}_audit (SELECT *, "{entity_id}" AS entity_id, rand::uuid::v4() AS id FROM {table} WHERE id={table}:`{entity_id}`)')
+
     def move_entity_to_audit_table(self, table, entity_id):
-        query = f'INSERT INTO {table}_audit (SELECT *, "{entity_id}" AS entity_id, rand::uuid::v4() AS id FROM {table} WHERE id={table}:`{entity_id}`)'
-        self._call_db('query', query)
+        """Executes a query to move entity to audit table."""
+        move_entity_op = self.get_move_entity_to_audit_table_query(table, entity_id)
+        self._call_db(*move_entity_op)
 
     def execute_query(self, sql, _vars=None):
         """Executes a query against the DB."""
@@ -157,8 +168,13 @@ class SurrealDbAdapter(DbAdapter):
 
         return db_response
 
+    def get_save_query(self, table: str, data: Dict[str, Any]):
+        """Returns operation to save a data record in the table."""
+        return 'update', data['id'], data
+
     def save(self, table: str, data: Dict[str, Any]):
-        db_result = self._call_db('update', data['id'], data)
+        save_op = self.get_save_query(table, data)
+        db_result = self._call_db(*save_op)
         return db_result
 
     def delete(self, table: str, data: Dict[str, Any]) -> bool:

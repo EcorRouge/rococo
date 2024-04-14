@@ -73,8 +73,10 @@ class BaseRepository:
     def save(self, instance: VersionedModel, send_message: bool = False):
         """Save func"""
         data = self._process_data_before_save(instance)
-        self._execute_within_context(self.adapter.move_entity_to_audit_table, self.table_name, instance.entity_id)
-        self._execute_within_context(self.adapter.save, self.table_name, data)
+        with self.adapter:
+            move_entity_query = self.adapter.get_move_entity_to_audit_table_query(self.table_name, instance.entity_id)
+            save_entity_query = self.adapter.get_save_query(self.table_name, data)
+            self.adapter.run_transaction([move_entity_query, save_entity_query])
         if send_message:
             # This assumes that the instance is now in post-saved state with all the new DB updates
             message = json.dumps(instance.as_dict(convert_datetime_to_iso_string=True))

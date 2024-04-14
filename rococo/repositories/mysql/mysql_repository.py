@@ -1,8 +1,9 @@
 """MySqlDbRepository class"""
 
-import re
 from dataclasses import fields
 from datetime import datetime
+import json
+import re
 from typing import Any, Dict, List, Type, Union
 from uuid import UUID
 

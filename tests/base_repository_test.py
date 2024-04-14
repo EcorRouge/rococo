@@ -108,8 +108,9 @@ class TestBaseRepository:
         """
         Test saving a model instance
         """
-        mock_adapter.save.return_value = True
-        mock_adapter.move_entity_to_audit_table.return_value = None
+        mock_adapter.get_save_query.return_value = "", ()
+        mock_adapter.get_move_entity_to_audit_table_query.return_value = "", ()
+        mock_adapter.run_transaction.return_value = True
 
         model_instance = TestVersionedModel()
         result = repository.save(model_instance)
@@ -118,7 +119,7 @@ class TestBaseRepository:
         assert result.entity_id is not None
         assert result.version is not None
 
-        mock_adapter.save.assert_called_with('testversionedmodel', {})
+        mock_adapter.run_transaction.assert_called_with([("", ()), ("", ())])
         mock_adapter.__enter__.assert_called()
         mock_adapter.__exit__.assert_called()
 
@@ -126,15 +127,17 @@ class TestBaseRepository:
         """
         Test deleting by id
         """
-        mock_adapter.save.return_value = True
-        mock_adapter.move_entity_to_audit_table.return_value = None
+        mock_adapter.get_save_query.return_value = "", ()
+        mock_adapter.get_move_entity_to_audit_table_query.return_value = "", ()
+        mock_adapter.run_transaction.return_value = True
 
         model_instance = TestVersionedModel()
         result = repository.delete(model_instance)
 
         assert result is model_instance
         assert model_instance.active == False
-        mock_adapter.save.assert_called_with('testversionedmodel', {})
+
+        mock_adapter.run_transaction.assert_called_with([("", ()), ("", ())])
         mock_adapter.__enter__.assert_called()
         mock_adapter.__exit__.assert_called()
 
@@ -142,14 +145,15 @@ class TestBaseRepository:
         """
         Test saving and sending message
         """
-        mock_adapter.save.return_value = True
-        mock_adapter.move_entity_to_audit_table.return_value = None
+        mock_adapter.get_save_query.return_value = "", ()
+        mock_adapter.get_move_entity_to_audit_table_query.return_value = "", ()
+        mock_adapter.run_transaction.return_value = True
 
         model_instance = TestVersionedModel()
         result = repository.save(model_instance, True)
 
         assert result is model_instance
-        mock_adapter.save.assert_called_with('testversionedmodel', {})
+        mock_adapter.run_transaction.assert_called_with([("", ()), ("", ())])
         mock_adapter.__enter__.assert_called()
         mock_adapter.__exit__.assert_called()
 

@@ -147,6 +147,8 @@ class VersionedModel:
                         results[key] = str(value)
                 elif isinstance(value, str):
                     results[key] = value
+                elif isinstance(value, dict):
+                    results[key] = str(value.get('entity_id')) if convert_uuids else value.get('entity_id')
                 else:
                     raise NotImplementedError
 

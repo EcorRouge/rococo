@@ -3,7 +3,7 @@ import os.path
 from pprint import pprint
 from typing import Any
 
-from pydantic import BaseSettings, Extra
+from pydantic.v1 import BaseSettings, Extra
 
 from .enums import EmailProvider
 

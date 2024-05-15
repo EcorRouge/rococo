@@ -1,4 +1,4 @@
-"""SurrealDbRepository class"""
+"""MongoDbRepository class"""
 
 from dataclasses import fields
 from datetime import datetime
@@ -57,16 +57,21 @@ class MongoDbRepository(BaseRepository):
             data[field.name] = field_value
         return data
 
+    def get_move_entity_to_audit_table_query(self, data):
+        instance = self.get_one(self.table_name, "entity_id", {'entity_id': data.get('entity_id')})
+        self.db[f"{self.table_name}_audit"].insert_one(instance)
+    
+    def get_save_query(self, data):
+        self.db[f"{self.table_name}"].get_one_and_update(
+            {'entity_id': data.get("entity_id")},
+            {'$set': data},
+        )
+    
     def save(self, instance: VersionedModel, send_message: bool = False):
         """Save func"""
         data = self._process_data_before_save(instance)
         with self.adapter:
-            inst = self.get_one(self.table_name, "entity_id", {'entity_id': data.get('entity_id')})
-            self.db[f"{self.table_name}_audit"].insert_one(inst)
-            self.db[f"{self.table_name}"].get_one_and_update(
-                {'entity_id': data.get("entity_id")},
-                {'$set': data},
-            )
+            self.adapter.run_transaction([lambda: self.get_move_entity_to_audit_table_query(data), lambda: self.get_save_query(data)])
             if send_message:
                 # This assumes that the instance is now in post-saved state with all the new DB updates
                 message = json.dumps(instance.as_dict(convert_datetime_to_iso_string=True))
@@ -105,7 +110,6 @@ class MongoDbRepository(BaseRepository):
                     self._insert(data, collection_name)
                     return data
                 except Exception as ex:
-                    session.abort_transaction()
                     raise ex
 
     def delete(self, data: Dict, collection_name: str):

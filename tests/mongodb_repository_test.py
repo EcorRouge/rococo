@@ -1,15 +1,13 @@
 """
-Surreal DB repository test
+Mongo DB repository test
 """
 
 import json
 import unittest
 from unittest.mock import MagicMock
 from uuid import UUID
-
 from .base_repository_test import TestVersionedModel
 from rococo.repositories.mongodb.mongodb_repository import MongoDbRepository
-
 
 
 class MongoDbRepositoryTestCase(unittest.TestCase):

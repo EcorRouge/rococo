@@ -1,3 +1,4 @@
+from typing import Any, List
 from rococo.data.base import DbAdapter
 from pymongo import MongoClient
 
@@ -15,3 +16,10 @@ class MongoDBAdapter(DbAdapter):
         entity = self.get_one(table, "entity_id", {"entity_id": entity_id})
         self.db[f"{table}_audit"].insert_one(entity)
         return entity
+
+    def run_transaction(self, operations_list: List[Any]):
+        """Executes a list of operations against the database as a transaction."""
+        with self.client.start_session() as session:
+            with session.start_transaction():
+                for operation in operations_list:
+                    operation()

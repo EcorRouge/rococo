@@ -29,7 +29,6 @@ class MongoDbRepository(BaseRepository):
     ):
         super().__init__(db_adapter, model, message_adapter, queue_name, user_id=user_id)
         self.db = db_adapter.db
-        self.model()
 
 
     def _process_data_before_save(self, instance: VersionedModel):
@@ -57,12 +56,13 @@ class MongoDbRepository(BaseRepository):
             data[field.name] = field_value
         return data
 
-    def get_move_entity_to_audit_table_query(self, data):
-        instance = self.get_one(self.table_name, "entity_id", {'entity_id': data.get('entity_id')})
-        self.db[f"{self.table_name}_audit"].insert_one(instance)
+    def get_move_entity_to_audit_table_query(self, table, entity_id):
+        instance = self.get_one(table, "", {'entity_id': entity_id})
+        if instance:
+            self.db[f"{table}_audit"].insert_one(instance)
     
-    def get_save_query(self, data):
-        self.db[f"{self.table_name}"].get_one_and_update(
+    def get_save_query(self, table, data):
+        self.db[table].find_one_and_update(
             {'entity_id': data.get("entity_id")},
             {'$set': data},
         )
@@ -71,7 +71,7 @@ class MongoDbRepository(BaseRepository):
         """Save func"""
         data = self._process_data_before_save(instance)
         with self.adapter:
-            self.adapter.run_transaction([lambda: self.get_move_entity_to_audit_table_query(data), lambda: self.get_save_query(data)])
+            self.adapter.run_transaction([lambda: self.get_move_entity_to_audit_table_query(self.table_name, data.get("entity_id")), lambda: self.get_save_query(self.table_name, data)])
             if send_message:
                 # This assumes that the instance is now in post-saved state with all the new DB updates
                 message = json.dumps(instance.as_dict(convert_datetime_to_iso_string=True))
@@ -96,21 +96,15 @@ class MongoDbRepository(BaseRepository):
     def create_many(self, data: List[Dict], collection_name: str):
         self.db[collection_name].insert_many(documents=data)
 
-    def update(self, data: Dict, collection_name: str):
+    def update(self, data: Dict, collection_name: str, changed_by_id=None):
         with self.client.start_session() as session:
             with session.start_transaction():
-                try:
-                    updated_doc = self._outdate(data, collection_name)
-                    if updated_doc:
-                        data.update({
-                            'previous_version': updated_doc.get('version'),
-                            'version': get_uuid4_hex(),
-                            'changed_on': datetime.utcnow().isoformat()
-                        })
-                    self._insert(data, collection_name)
-                    return data
-                except Exception as ex:
-                    raise ex
+                updated_doc = self._outdate(data, collection_name)
+                if updated_doc:
+                    instance = self.model.from_dict(data)
+                    instance.prepare_for_save(changed_by_id)
+                self._insert(instance.as_dict(), collection_name)
+                return data
 
     def delete(self, data: Dict, collection_name: str):
         data.update({'active': False})
@@ -121,7 +115,8 @@ class MongoDbRepository(BaseRepository):
         if query:
             base_query.update(query)
 
-        data = self.db[collection_name].find_one(base_query, hint=index)
+        kwargs = {"hint": index} if index else {}
+        data = self.db[collection_name].find_one(base_query, **kwargs)
         if data:
             return data
             
@@ -132,8 +127,7 @@ class MongoDbRepository(BaseRepository):
             base_query.update(query)
 
         data = self.db[collection_name].find(
-            base_query,
-            hint=index
+            base_query, hint=index
         )
         if data:
             return data

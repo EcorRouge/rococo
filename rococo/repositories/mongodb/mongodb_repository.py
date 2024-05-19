@@ -6,7 +6,6 @@ import json
 from typing import Dict, List, Type
 from uuid import UUID
 import uuid
-from pymongo import ReturnDocument
 
 from rococo.data import MongoDBAdapter
 from rococo.messaging import MessageAdapter
@@ -28,7 +27,6 @@ class MongoDbRepository(BaseRepository):
             user_id: UUID = None
     ):
         super().__init__(db_adapter, model, message_adapter, queue_name, user_id=user_id)
-        self.db = db_adapter.db
 
 
     def _process_data_before_save(self, instance: VersionedModel):
@@ -59,7 +57,7 @@ class MongoDbRepository(BaseRepository):
     def get_move_entity_to_audit_table_query(self, table, entity_id):
         instance = self.get_one(table, "", {'entity_id': entity_id})
         if instance:
-            self.db[f"{table}_audit"].insert_one(instance)
+            self._insert(instance, f"{table}_audit")
     
     def get_save_query(self, table, data):
         self.db[table].find_one_and_update(
@@ -79,31 +77,31 @@ class MongoDbRepository(BaseRepository):
         return instance
 
     def _insert(self, data: Dict, collection_name: str):
-        self.db[collection_name].insert_one(data)
-
-    def _outdate(self, data: Dict, collection_name: str):
-        collection = self.db[collection_name]
-        return collection.find_one_and_update(
-            {'entity_id': data.get("entity_id"), 'latest': True, 'active': True},
-            {'$set': {'latest': False}},
-            upsert=False,
-            return_document=ReturnDocument.AFTER
-        )
+        with self.adapter:
+            self.db[collection_name].insert_one(data)
 
     def create(self, data: Dict, collection_name: str):
         return self.update(data, collection_name)
 
     def create_many(self, data: List[Dict], collection_name: str):
+        # TODO:
+        # documents = []
+        # for item in data:
+        #     instance = self.model.from_dict(item)
+        #     data = self._process_data_before_save(instance)
+        #     documents.append(data)
         self.db[collection_name].insert_many(documents=data)
 
     def update(self, data: Dict, collection_name: str, changed_by_id=None):
         with self.client.start_session() as session:
             with session.start_transaction():
-                updated_doc = self._outdate(data, collection_name)
-                if updated_doc:
-                    instance = self.model.from_dict(data)
-                    instance.prepare_for_save(changed_by_id)
-                self._insert(instance.as_dict(), collection_name)
+                if data:
+                    data.update({
+                        'previous_version': data.get('version'),
+                        'version': get_uuid4_hex(),
+                        'changed_on': datetime.utcnow().isoformat()
+                    })
+                self._insert(data, collection_name)
                 return data
 
     def delete(self, data: Dict, collection_name: str):
@@ -116,21 +114,22 @@ class MongoDbRepository(BaseRepository):
             base_query.update(query)
 
         kwargs = {"hint": index} if index else {}
-        data = self.db[collection_name].find_one(base_query, **kwargs)
-        if data:
-            return data
+        with self.adapter:
+            data = self.db[collection_name].find_one(base_query, **kwargs)
+            if data:
+                return data
             
 
     def get_all(self, collection_name: str, index: str, query: Dict = None):
         base_query = {'latest': True, 'active': True}
         if query:
             base_query.update(query)
-
-        data = self.db[collection_name].find(
-            base_query, hint=index
-        )
-        if data:
-            return data
+        with self.adapter:
+            data = self.db[collection_name].find(
+                base_query, hint=index
+            )
+            if data:
+                return data
         return []
 
     def get_count(self, collection_name: str, index: str, query: Dict):

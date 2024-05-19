@@ -9,14 +9,14 @@ class MongoDBAdapter(DbAdapter):
     def __init__(self, mongo_uri: str, mongo_database: str):
         self.client = MongoClient(mongo_uri)
         self.db_name = mongo_database
-        self.db = self.client.get_database(mongo_database)
 
     def __enter__(self):
         """Context manager entry point for preparing DB connection."""
+        self.db = self.client.get_database(self.db_name)
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
-        self.db = None
+        self.client.close()
 
     def move_entity_to_audit_table(self, table, entity_id):
         """Executes a query to move entity to audit table."""
@@ -26,9 +26,7 @@ class MongoDBAdapter(DbAdapter):
 
     def _call_db(self, function_name, *args, **kwargs):
         """Calls a function specified by function_name argument in MongoDB connection passing forward args and kwargs."""
-        if not self._db:
-            raise Exception("No connection to MongoDB.")
-        return self._event_loop.run_until_complete(getattr(self._db, function_name)(*args, **kwargs))
+        pass
 
     def run_transaction(self, operations_list: List[Any]):
         """Executes a list of operations against the database as a transaction."""

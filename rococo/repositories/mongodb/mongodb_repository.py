@@ -80,32 +80,27 @@ class MongoDbRepository(BaseRepository):
         with self.adapter:
             self.db[collection_name].insert_one(data)
 
-    def create(self, data: Dict, collection_name: str):
+    def create(self, data: VersionedModel, collection_name: str):
         return self.update(data, collection_name)
 
-    def create_many(self, data: List[Dict], collection_name: str):
-        # TODO:
-        # documents = []
-        # for item in data:
-        #     instance = self.model.from_dict(item)
-        #     data = self._process_data_before_save(instance)
-        #     documents.append(data)
-        self.db[collection_name].insert_many(documents=data)
+    def create_many(self, data: List[VersionedModel], collection_name: str):
+        documents = []
+        for instance in data:
+            data = self._process_data_before_save(instance)
+            documents.append(data)
+        self.db[collection_name].insert_many(documents=documents)
 
-    def update(self, data: Dict, collection_name: str, changed_by_id=None):
+    def update(self, data: VersionedModel, collection_name: str, updated_by=None):
         with self.client.start_session() as session:
             with session.start_transaction():
                 if data:
-                    data.update({
-                        'previous_version': data.get('version'),
-                        'version': get_uuid4_hex(),
-                        'changed_on': datetime.utcnow().isoformat()
-                    })
-                self._insert(data, collection_name)
-                return data
+                    data.prepare_for_save(changed_by_id=updated_by)
+                    doc = self._process_data_before_save(data)
+                    self._insert(doc, collection_name)
+                    return doc
 
-    def delete(self, data: Dict, collection_name: str):
-        data.update({'active': False})
+    def delete(self, data: VersionedModel, collection_name: str):
+        data.active = False
         return self.update(data, collection_name)
 
     def get_one(self, collection_name: str, index: str, query: Dict):

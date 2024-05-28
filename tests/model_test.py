@@ -39,7 +39,7 @@ def test_from_dict():
     """
     Test converting model to dict
     """
-    model_dict = {"entity_id": UUID(int=0), "version": UUID(int=0)}
+    model_dict = {"entity_id": UUID(int=0).hex, "version": UUID(int=0).hex}
 
     dict_as_model = VersionedModel.from_dict(model_dict)
 
@@ -60,7 +60,7 @@ def test_sublass_from_dict():
         """TestModel for VersionedModel"""
         test_attribute: int = 0
 
-    model_dict = {"entity_id": UUID(int=0), "version": UUID(int=0), "test_attribute": 5}
+    model_dict = {"entity_id": UUID(int=0).hex, "version": UUID(int=0).hex, "test_attribute": 5}
     dict_as_model = TestModel.from_dict(model_dict)
 
     assert isinstance(dict_as_model, TestModel)
@@ -70,6 +70,6 @@ def test_sublass_from_dict():
     assert hasattr(dict_as_model, "changed_by_id")
     assert hasattr(dict_as_model, "changed_on")
 
-    assert dict_as_model.entity_id == UUID(int=0)
-    assert dict_as_model.version == UUID(int=0)
+    assert dict_as_model.entity_id == UUID(int=0).hex
+    assert dict_as_model.version == UUID(int=0).hex
     assert dict_as_model.test_attribute == 5

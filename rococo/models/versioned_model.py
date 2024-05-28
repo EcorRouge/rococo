@@ -19,6 +19,13 @@ def default_datetime():
     return datetime.utcnow()
 
 
+def get_uuid_hex(_int=None):
+    if _int is None:
+        return uuid4().hex
+    else:
+        return UUID(int=_int, version=4).hex
+
+
 def import_models_module(current_module, module_name):
     root_path = os.path.dirname(os.path.abspath(current_module.__file__))
 
@@ -35,11 +42,11 @@ def import_models_module(current_module, module_name):
 class VersionedModel:
     """A base class for versioned models with common (Big 6) attributes."""
 
-    entity_id: UUID = field(default_factory=uuid4, metadata={'field_type': 'entity_id'})
-    version: UUID = field(default_factory=lambda: UUID('00000000-0000-4000-8000-000000000000'), metadata={'field_type': 'uuid'})
+    entity_id: UUID = field(default_factory=get_uuid_hex, metadata={'field_type': 'entity_id'})
+    version: UUID = field(default_factory=lambda: get_uuid_hex(0), metadata={'field_type': 'uuid'})
     previous_version: UUID = field(default_factory=lambda: None, metadata={'field_type': 'uuid'})
     active: bool = True
-    changed_by_id: UUID = field(default_factory=lambda: UUID('00000000-0000-4000-8000-000000000000'), metadata={'field_type': 'uuid'})
+    changed_by_id: UUID = field(default_factory=lambda: get_uuid_hex(0), metadata={'field_type': 'uuid'})
     changed_on: datetime = field(default_factory=default_datetime)
 
     _is_partial: InitVar[bool] = False
@@ -174,7 +181,7 @@ class VersionedModel:
                 if v is not None and not isinstance(v, UUID):
                     try:
                         # Attempt to cast the string to a UUID
-                        filtered_data[k] = UUID(v)
+                        filtered_data[k] = UUID(v).hex
                     except ValueError:
                         # Handle the case where the string is not a valid UUID
                         print(f"'{v}' is not a valid UUID.")
@@ -192,7 +199,7 @@ class VersionedModel:
         if self.version:
             self.previous_version = self.version
         else:
-            self.previous_version = UUID('00000000-0000-4000-8000-000000000000')
+            self.previous_version = get_uuid_hex(0)
         self.version = uuid4()
         self.changed_on = datetime.utcnow()
         if changed_by_id is not None:

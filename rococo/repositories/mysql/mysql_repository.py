@@ -76,7 +76,7 @@ class MySqlRepository(BaseRepository):
                         data[field.name] = _process_record(field_value, field_model_class)
                     elif isinstance(field_value, str):
                         if field.name == 'entity_id':
-                            data[field.name] = UUID(field_value)
+                            data[field.name] = UUID(field_value).hex
                         else:
                             field_data = {'entity_id': field_value}
                             for _field in fields(field_model_class):

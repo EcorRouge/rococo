@@ -23,7 +23,7 @@ def get_uuid_hex(_int=None):
     if _int is None:
         return uuid4().hex
     else:
-        return UUID(int=_int).hex
+        return UUID(int=_int, version=4).hex
 
 
 def import_models_module(current_module, module_name):

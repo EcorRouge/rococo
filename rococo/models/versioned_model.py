@@ -195,12 +195,12 @@ class VersionedModel:
             changed_by_id (str): The ID of the user making the change.
         """
         if not self.entity_id:
-            self.entity_id = uuid4()
+            self.entity_id = get_uuid_hex()
         if self.version:
             self.previous_version = self.version
         else:
             self.previous_version = get_uuid_hex(0)
-        self.version = uuid4()
+        self.version = get_uuid_hex()
         self.changed_on = datetime.utcnow()
         if changed_by_id is not None:
             self.changed_by_id = changed_by_id

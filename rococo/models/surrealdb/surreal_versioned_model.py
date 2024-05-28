@@ -1,9 +1,10 @@
 import os
 import pkgutil
 import importlib
-from uuid import uuid4, UUID
+from uuid import UUID
 from dataclasses import dataclass, field, fields
 from rococo.models import VersionedModel
+from rococo.models.versioned_model import get_uuid_hex
 
 
 def import_models_module(current_module, module_name):
@@ -21,7 +22,7 @@ def import_models_module(current_module, module_name):
 class SurrealVersionedModel(VersionedModel):
     """A base class for versioned models with common (Big 6) attributes specific to SurrealDB."""
 
-    entity_id: UUID = field(default_factory=uuid4, metadata={'field_type': 'record_id'})
+    entity_id: UUID = field(default_factory=get_uuid_hex, metadata={'field_type': 'record_id'})
 
     def __post_init__(self, _is_partial):
         self._is_partial = _is_partial

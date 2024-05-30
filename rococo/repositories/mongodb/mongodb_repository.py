@@ -63,6 +63,7 @@ class MongoDbRepository(BaseRepository):
         self.db[table].find_one_and_update(
             {'entity_id': data.get("entity_id")},
             {'$set': data},
+            upsert=True
         )
     
     def save(self, instance: VersionedModel, send_message: bool = False):
@@ -70,22 +71,26 @@ class MongoDbRepository(BaseRepository):
         data = self._process_data_before_save(instance)
         with self.adapter:
             self.adapter.run_transaction([lambda: self.get_move_entity_to_audit_table_query(self.table_name, data.get("entity_id")), lambda: self.get_save_query(self.table_name, data)])
-            if send_message:
+            if send_message and self.message_adapter:
                 # This assumes that the instance is now in post-saved state with all the new DB updates
                 message = json.dumps(instance.as_dict(convert_datetime_to_iso_string=True))
                 self.message_adapter.send_message(self.queue_name, message)
-        return instance
+        return data
 
     def _insert(self, data: Dict, collection_name: str):
         with self.adapter:
             self.db[collection_name].insert_one(data)
 
     def create(self, data: VersionedModel, collection_name: str):
+        data.active = True
+        data.latest = True
         return self.update(data, collection_name)
 
     def create_many(self, data: List[VersionedModel], collection_name: str):
         documents = []
         for instance in data:
+            instance.active = True
+            instance.latest = True
             data = self._process_data_before_save(instance)
             documents.append(data)
         self.db[collection_name].insert_many(documents=documents)
@@ -95,9 +100,7 @@ class MongoDbRepository(BaseRepository):
             with session.start_transaction():
                 if data:
                     data.prepare_for_save(changed_by_id=updated_by)
-                    doc = self._process_data_before_save(data)
-                    self._insert(doc, collection_name)
-                    return doc
+                    return self.save(data)
 
     def delete(self, data: VersionedModel, collection_name: str):
         data.active = False

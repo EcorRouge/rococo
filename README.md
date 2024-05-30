@@ -782,3 +782,14 @@ In essence, there are three primary phases:
 1. Development (main branch)
 2. Testing (staging branch with test PyPi server)
 3. Release (triggered by a GitHub release and published to the official PyPi server).
+
+
+### Local Development
+
+To install local Rococo version in other project, upload to your PyPi:
+1) Run command "python setup.py sdist" to generate tar.gz file that will be uploaded to PyPi
+2) create ./pypirc file in the root of the directory and add:
+[pypi]
+    username = __token__
+    password = THE_TOKEN_PROVIDED_BY_PYPI
+3) run the command: twine upload --config-file=./.pypirc dist/*  

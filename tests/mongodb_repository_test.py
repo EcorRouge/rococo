@@ -39,7 +39,7 @@ class MongoDbRepositoryTestCase(unittest.TestCase):
         # Call the save method
         saved_instance = self.repository.save(self.model_instance, send_message=True)
 
-        mongo_dict = saved_instance.as_dict(convert_datetime_to_iso_string=True)
+        mongo_dict = saved_instance
         mongo_dict['id'] = mongo_dict.pop('entity_id')
 
         # Assert the send_message method was called once with the correct arguments

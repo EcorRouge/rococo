@@ -32,7 +32,7 @@ class SurrealDbRepository(BaseRepository):
         suffix = "⟩"
         if surreal_id.startswith(prefix) and surreal_id.endswith(suffix):
             uuid_str = surreal_id[len(prefix):-len(suffix)]
-            formatted_uuid = UUID(uuid_str)
+            formatted_uuid = UUID(uuid_str).hex
             return formatted_uuid
         else:
             raise ValueError(f"Invalid input format or no UUID found in the input string: {surreal_id}")

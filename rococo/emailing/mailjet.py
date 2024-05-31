@@ -30,6 +30,8 @@ class MailjetService(EmailService):
         event_name = message.get('event')
         event_data = message.get('data')
         to_addresses = message.get('to_emails')
+        cc_addresses = message.get('cc_emails') or []
+        bcc_addresses = message.get('bcc_emails') or []
 
         event_mapping = self.config.get_event(event_name)
         data = {
@@ -37,6 +39,8 @@ class MailjetService(EmailService):
                 {
                     "From": self.from_address,
                     "To": [{'Email': email} for email in to_addresses],
+                    "Cc": [{'Email': email} for email in cc_addresses],
+                    "Bcc": [{'Email': email} for email in bcc_addresses],
                     "TemplateLanguage": True,
                     "TemplateID": event_mapping['id'][self.config.EMAIL_PROVIDER],
                     "Variables": event_data

@@ -28,7 +28,7 @@ class SurrealDbRepositoryTestCase(unittest.TestCase):
     def setUp(self):
         self.db_adapter_mock = MagicMock()
         self.message_adapter_mock = MagicMock()
-        self.model_data = {"entity_id": UUID(int=8), "name": "test"}
+        self.model_data = {"entity_id": UUID(int=8).hex, "name": "test"}
         self.model_instance = VersionedModelHelper(**self.model_data)
         self.queue_name = "test_queue"
         self.repository = SurrealDbRepository(

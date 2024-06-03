@@ -40,7 +40,7 @@ class MongoDbRepositoryTestCase(unittest.TestCase):
         saved_instance = self.repository.save(self.model_instance, send_message=True)
 
         mongo_dict = saved_instance
-        mongo_dict['id'] = mongo_dict.entity_id
+        mongo_dict._id = mongo_dict.entity_id
 
         # Assert the send_message method was called once with the correct arguments
         self.message_adapter_mock.send_message.assert_called_once_with(

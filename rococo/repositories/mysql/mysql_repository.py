@@ -150,6 +150,8 @@ class MySqlRepository(BaseRepository):
                         conditions[condition_name] = str(value).replace('-', '')
                     elif isinstance(value, list):
                         # Handle list
+                        if len(value) == 0:
+                            raise NotImplementedError("Filtering an attribute with an empty list is not supported.")
                         conditions[condition_name] = []
                         for v in value:
                             if isinstance(v, VersionedModel):
@@ -158,6 +160,8 @@ class MySqlRepository(BaseRepository):
                                 conditions[condition_name].append(str(v).replace('-', ''))
                             else:
                                 raise NotImplementedError
+                    elif value is None:
+                        conditions[condition_name] = None
                     else:
                         raise NotImplementedError
 
@@ -228,6 +232,8 @@ class MySqlRepository(BaseRepository):
                         conditions[condition_name] = str(value).replace('-', '')
                     elif isinstance(value, list):
                         # Handle list
+                        if len(value) == 0:
+                            raise NotImplementedError("Filtering an attribute with an empty list is not supported.")
                         conditions[condition_name] = []
                         for v in value:
                             if isinstance(v, VersionedModel):
@@ -236,6 +242,8 @@ class MySqlRepository(BaseRepository):
                                 conditions[condition_name].append(str(v).replace('-', ''))
                             else:
                                 raise NotImplementedError
+                    elif value is None:
+                        conditions[condition_name] = None
                     else:
                         raise NotImplementedError
 

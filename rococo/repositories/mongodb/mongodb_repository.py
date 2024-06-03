@@ -57,25 +57,25 @@ class MongoDbRepository(BaseRepository):
     def get_move_entity_to_audit_table_query(self, table, entity_id):
         instance = self.get_one(table, "", {'entity_id': entity_id})
         if instance:
-            self._insert(instance, f"{table}_audit")
+            self._insert({k:v for k,v in instance.items() if k != "_id"}, f"{table}_audit")
     
     def get_save_query(self, table, data):
         self.db[table].find_one_and_update(
             {'entity_id': data.get("entity_id")},
-            {'$set': data},
+            {'$set': {k:v for k,v in data.items() if k != "_id"}},
             upsert=True
         )
-    
+
     def save(self, instance: VersionedModel, send_message: bool = False):
         """Save func"""
         data = self._process_data_before_save(instance)
         with self.adapter:
             self.adapter.run_transaction([lambda: self.get_move_entity_to_audit_table_query(self.table_name, data.get("entity_id")), lambda: self.get_save_query(self.table_name, data)])
-            if send_message and self.message_adapter:
+            if send_message:
                 # This assumes that the instance is now in post-saved state with all the new DB updates
                 message = json.dumps(instance.as_dict(convert_datetime_to_iso_string=True))
                 self.message_adapter.send_message(self.queue_name, message)
-        return data
+        return instance
 
     def _insert(self, data: Dict, collection_name: str):
         with self.adapter:
@@ -96,10 +96,11 @@ class MongoDbRepository(BaseRepository):
         self.db[collection_name].insert_many(documents=documents)
 
     def update(self, data: VersionedModel, collection_name: str, updated_by=None):
+        self.table_name = collection_name
         with self.client.start_session() as session:
             with session.start_transaction():
                 if data:
-                    data.prepare_for_save(changed_by_id=updated_by)
+                    self.user_id = updated_by
                     return self.save(data)
 
     def delete(self, data: VersionedModel, collection_name: str):

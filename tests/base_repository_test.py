@@ -20,8 +20,10 @@ class TestVersionedModel(VersionedModel):
     def from_dict(cls, data):
         return TestVersionedModel()
 
-    def as_dict(self, convert_datetime_to_iso_string=False):
-        return {}
+    def as_dict(self, convert_uuids=True, convert_datetime_to_iso_string=False):
+        return {
+            "entity_id": str(self.entity_id),
+        }
 
 
 class TestBaseRepository:

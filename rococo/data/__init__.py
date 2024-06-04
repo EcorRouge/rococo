@@ -3,3 +3,4 @@
 from .base import DbAdapter
 from .surrealdb import SurrealDbAdapter
 from .mysql import MySqlAdapter
+from .mongodb import MongoDBAdapter

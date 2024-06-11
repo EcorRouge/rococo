@@ -1,6 +1,6 @@
 # Architecture Decision Records
 
-ADRs are automatically published to our Log4brains architecture knowledge base:
+ADRs are automatically published to our decision log:
 
 🔗 **<https://ecorrouge.github.io/rococo/>**
 
@@ -26,6 +26,12 @@ To create a new ADR interactively, run:
 
 ```bash
 log4brains adr new
+```
+
+To build static website, run:
+
+```bash
+NODE_OPTIONS=--openssl-legacy-provider log4brains build
 ```
 
 ## More information

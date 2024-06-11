@@ -1,7 +1,7 @@
 <!-- This file is the homepage of your Log4brains knowledge base. You are free to edit it as you want -->
 
 # Decision log
-
+[![Rococo Decisions](https://ecorrouge.github.io/rococo/badge.svg)](https://ecorrouge.github.io/rococo)
 Welcome 👋 to the decision log of Rococo platform.
 
 ## Definition and purpose

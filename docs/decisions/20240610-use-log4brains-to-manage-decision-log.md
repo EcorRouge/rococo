@@ -1,6 +1,6 @@
 # Use Log4Brains to manage decision log
 
-- Status: proposed
+- Status: accepted
 - Date: 2024-10-06
 
 Technical Story: [ROC-51](https://freelancedevelopercoach.atlassian.net/browse/ROC-51)

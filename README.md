@@ -5,6 +5,7 @@ A Python library to help build things the way we want them built.
 _Anything worth doing is worth doing well.  Anything worth doing twice is worth doing in rococo._
 
 [Decision Log](https://ecorrouge.github.io/rococo) - [![Rococo Decisions](https://ecorrouge.github.io/rococo/badge.svg)](https://ecorrouge.github.io/rococo)  
+[How to document new decision](https://github.com/EcorRouge/rococo/tree/main/docs/decision-log-overview.md#how-to-add-new-decision)  
 
 ## Basic Usage
 

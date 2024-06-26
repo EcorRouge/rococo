@@ -1,0 +1,5 @@
+---
+project:
+  name: Rococo
+  tz: UTC
+  adrFolder: ./docs/decisions

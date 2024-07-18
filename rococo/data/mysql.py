@@ -1,4 +1,5 @@
 import logging
+import time
 from typing import Any, Dict, List, Tuple, Union, Optional
 from uuid import UUID
 
@@ -209,15 +210,23 @@ class MySqlAdapter(DbAdapter):
 
         return query, values
 
-    def _create_in_database(self, table_name, data):
+    def _create_in_database(self, table_name, data, retry_count=0):
         try:
             query, values = self.get_save_query(table_name, data)
             self._cursor.execute(query, values)
             self._connection.commit()
             return True
-        except Exception as e:
-            logging.error("Error in SQL:\n%s", e)
-            raise e
+        except pymysql.MySQLError as ex:
+            self._connection.rollback()
+            if retry_count < 3 and ex.args[0] == 1213:
+                # Deadlock detected
+                logging.warning("Deadlock detected on table %s. Retrying in %d seconds. Attempt %d",
+                            table_name, 2**retry_count, retry_count+1)
+                time.sleep(2**retry_count)
+                return self._create_in_database(table_name, data, retry_count=retry_count+1)
+            else:
+                logging.error("Error in SQL:\n%s", ex)
+                raise ex
 
     def save(self, table: str, data: Dict[str, Any]):
         self._create_in_database(table, data)

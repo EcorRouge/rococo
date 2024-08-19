@@ -8,6 +8,7 @@ import logging
 from typing import Callable
 import pika
 from dotenv import dotenv_values
+import time
 
 from . import MessageAdapter
 
@@ -46,24 +47,44 @@ class RabbitMqConnection(MessageAdapter):
         Returns:
             RabbitMqConnection: The connection to the RabbitMQ server.
         """
-        self._connection = pika.BlockingConnection(
-            pika.ConnectionParameters(host=self._host, port=self._port,
-                                      credentials=pika.PlainCredentials(
-                                          self._username,
-                                          self._password
-                                          ),
-                                      virtual_host=self._virtual_host))
-        self._channel = self._connection.channel()
+        return self._connect()
 
-        return self
-
+        
     def __exit__(self, exc_type, exc_value, traceback):
         """
         Closes the connection to the RabbitMQ server.
         """
-        self._connection.close()
+        if self._connection.is_open:
+            self._connection.close()
         self._connection = None
         self._channel = None
+
+
+    def _connect(self, retry_interval=5):
+        """
+        Connects to the RabbitMQ server.
+        """
+
+        retry_count = 0
+        while True:
+            try:
+                self._connection = pika.BlockingConnection(
+                    pika.ConnectionParameters(host=self._host, port=self._port,
+                                            credentials=pika.PlainCredentials(
+                                                self._username,
+                                                self._password
+                                                ),
+                                            virtual_host=self._virtual_host))
+                self._channel = self._connection.channel()
+                return self
+            except (pika.exceptions.AMQPConnectionError, pika.exceptions.AMQPChannelError) as e:
+                retry_count += 1
+                if retry_count % 10 == 0:
+                    logger.warning("Unable to connect to RabbitMQ after %s retries...", retry_count)
+                    logger.exception(e)
+                logging.info("Unable to connect to RabbitMQ after %s retries... Retrying in 5 seconds...", retry_count)
+                time.sleep(retry_interval)
+
 
     def _read_consume_config(self):
         if self._consume_config_file_path is None:
@@ -135,27 +156,33 @@ class RabbitMqConnection(MessageAdapter):
             t.start()
             self._threads[delivery_tag] = t
 
-        self._channel.queue_declare(queue=queue_name, durable=True)
-
         self._threads = {}
         self._channel.basic_qos(prefetch_count=num_threads)
 
         on_message_callback = functools.partial(_on_message, args=(callback_function,))
 
-        try:
-            logger.info('Listening to RabbitMQ queue %s on %s:%s with %s threads...', queue_name,
-                        self._host, self._port, num_threads)
-            for method, properties, body in self._channel.consume(queue=queue_name, inactivity_timeout=5):
-                if (method, properties, body) == (None, None, None):
-                    if len(self._threads) == 0 and self._read_consume_config().get('EXIT_WHEN_FINISHED') == '1':
-                        logger.info("Reached inactivity timeout. No threads are running and EXIT_WHEN_FINISHED=1, exiting!")
-                        break
-                else:
-                    on_message_callback(self._channel, method, properties, body)
-        except KeyboardInterrupt:
-            logger.info("Exiting gracefully...")
-        finally:
-            # Wait for all to complete
-            for thread in self._threads.values():
-                thread.join()
-            self._connection.close()
+        while True:
+            try:
+                if not self._channel.is_open or not self._connection.is_open:
+                    logging.info("Reconnecting...")
+                    self._connect()
+                self._channel.queue_declare(queue=queue_name, durable=True)
+                logging.info("Listening to RabbitMQ queue %s on %s:%s with %s threads...", queue_name,
+                            self._host, self._port, num_threads)
+                for method, properties, body in self._channel.consume(queue=queue_name, inactivity_timeout=5):
+                    if (method, properties, body) == (None, None, None):
+                        if len(self._threads) == 0 and self._read_consume_config().get('EXIT_WHEN_FINISHED') == '1':
+                            logging.info("Reached inactivity timeout. No threads are running and EXIT_WHEN_FINISHED=1, exiting!")
+                            break
+                    else:
+                        on_message_callback(self._channel, method, properties, body)
+            except (pika.exceptions.AMQPConnectionError, pika.exceptions.ChannelClosedByBroker) as _:
+                continue
+            except KeyboardInterrupt:
+                logging.info("Exiting gracefully...")
+                break
+            finally:
+                # Wait for all to complete
+                for thread in self._threads.values():
+                    thread.join()
+

@@ -8,7 +8,7 @@ import os
 from uuid import uuid4, UUID
 from dataclasses import dataclass, field, fields, InitVar
 from datetime import datetime
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Union, get_type_hints, get_origin, get_args
 import importlib
 
 
@@ -36,6 +36,34 @@ def import_models_module(current_module, module_name):
                 module = importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(module)
                 return module
+
+
+class ModelValidationError(Exception):
+    """
+    Exception raised when one or more validation errors occur in the model.
+
+    Attributes:
+        errors (list): A list of error messages returned from validation methods.
+    """
+    def __init__(self, errors):
+        # Ensure errors is a list of messages
+        if isinstance(errors, str):
+            errors = [errors]  # Convert a single string to a list
+        elif not isinstance(errors, list):
+            raise ValueError("Errors should be a string or a list of strings")
+        
+        self.errors = errors
+        # Call the base class constructor with a formatted error message
+        super().__init__(self.format_errors())
+
+    def format_errors(self):
+        # Format the error messages as a single string
+        return "\n".join(self.errors)
+
+    def __str__(self):
+        # Return the formatted error messages
+        return self.format_errors()
+
 
 
 @dataclass(kw_only=True)
@@ -187,6 +215,98 @@ class VersionedModel:
                         print(f"'{v}' is not a valid UUID.")
         return cls(**filtered_data)
 
+
+    def validate(self): 
+        """
+        Validate all fields by calling corresponding `validate_<field_name>` methods if defined,
+        and validate the type of each field. Raise `ModelValidationError` if any validations fail.
+        """
+        errors = []
+
+        # Get the type hints for the current model (fields and their types)
+        type_hints = get_type_hints(self.__class__)
+
+        # Iterate through all fields of the class
+        for field_name in self.fields():
+            expected_type = type_hints[field_name]
+
+            # Dynamically construct the method name to validate the field
+            validation_method_name = f"validate_{field_name}"
+
+            # Check if the validation method exists in the class
+            validation_method = getattr(self, validation_method_name, None)
+
+            # Call the validation method if it exists
+            if callable(validation_method):
+                error_message = validation_method()
+                if error_message:
+                    errors.append(error_message)
+
+            if getattr(self.__class__, 'use_type_checking', False):
+                # Validate the type of the field
+                field_value = getattr(self, field_name)
+                origin = get_origin(expected_type)
+
+                castable_types = {int, str, float, bool, UUID}
+
+                # Handle Union types (e.g., Optional[int])
+                if origin is Union:
+                    args = get_args(expected_type)
+                    # Sort such that castable types are tried first
+                    args = sorted(args, key=lambda x: 0 if x in castable_types else 1)
+
+                    if field_value is None:
+                        if type(None) in args:
+                            pass  # None is acceptable
+                        else:
+                            errors.append(
+                                f"Invalid type for field '{field_name}': Expected one of {args}, got {type(field_value).__name__}"
+                            )
+                    else:
+                        # Flag to track casting success
+                        cast_successful = False
+                        for arg_type in args:
+                            if isinstance(field_value, arg_type):
+                                cast_successful = True
+                                break
+                            elif arg_type in castable_types:
+                                try:
+                                    # Special handling for UUID
+                                    new_value = arg_type(field_value)
+                                    setattr(self, field_name, new_value)
+                                    cast_successful = True
+                                    break
+                                except (TypeError, ValueError):
+                                    continue
+                        if not cast_successful:
+                            errors.append(
+                                f"Invalid type for field '{field_name}': Expected one of {[t.__name__ for t in args]}, got {type(field_value).__name__}"
+                            )
+                else:
+                    # Non-Union types
+                    if field_value is None:
+                        errors.append(
+                            f"Invalid type for field '{field_name}': Expected {expected_type.__name__}, got NoneType"
+                        )
+                    if not isinstance(field_value, expected_type):
+                        if expected_type in castable_types:
+                            try:
+                                new_value = expected_type(field_value)
+                                setattr(self, field_name, new_value)
+                            except (TypeError, ValueError):
+                                errors.append(
+                                    f"Invalid type for field '{field_name}': Expected {expected_type.__name__}, got {type(field_value).__name__}"
+                                )
+                        else:
+                            errors.append(
+                                f"Invalid type for field '{field_name}': Expected {expected_type.__name__}, got {type(field_value).__name__}"
+                            )
+
+        # If there are validation errors, raise ModelValidationError
+        if errors:
+            raise ModelValidationError(errors)
+
+
     def prepare_for_save(self, changed_by_id: UUID):
         """
         Prepare this model for saving to the database.
@@ -204,3 +324,4 @@ class VersionedModel:
         self.changed_on = datetime.utcnow()
         if changed_by_id is not None:
             self.changed_by_id = changed_by_id
+        self.validate()

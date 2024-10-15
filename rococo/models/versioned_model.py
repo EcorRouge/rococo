@@ -10,6 +10,7 @@ from dataclasses import dataclass, field, fields, InitVar
 from datetime import datetime
 from typing import Any, Dict, List, Union, get_type_hints, get_origin, get_args
 import importlib
+from enum import Enum
 
 
 def default_datetime():
@@ -269,9 +270,9 @@ class VersionedModel:
                             if isinstance(field_value, arg_type):
                                 cast_successful = True
                                 break
-                            elif arg_type in castable_types:
+                            elif arg_type in castable_types or issubclass(arg_type, Enum):
                                 try:
-                                    # Special handling for UUID
+                                    # Try casting to the castable type or enum
                                     new_value = arg_type(field_value)
                                     setattr(self, field_name, new_value)
                                     cast_successful = True
@@ -289,7 +290,7 @@ class VersionedModel:
                             f"Invalid type for field '{field_name}': Expected {expected_type.__name__}, got NoneType"
                         )
                     if not isinstance(field_value, expected_type):
-                        if expected_type in castable_types:
+                        if expected_type in castable_types or issubclass(expected_type, Enum):
                             try:
                                 new_value = expected_type(field_value)
                                 setattr(self, field_name, new_value)

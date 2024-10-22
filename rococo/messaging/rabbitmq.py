@@ -91,15 +91,28 @@ class RabbitMqConnection(MessageAdapter):
             return {}
         return dotenv_values(self._consume_config_file_path)
 
-    def send_message(self, queue_name: str, message: dict):
+    def send_message(self, queue_name: str, message: dict, persistent: bool = True):
         """
         Sends a message to the specified queue.
 
         Args:
             queue_name (str): The name of the queue to send the message to.
             message (dict): The message to send.
+            persistent (bool): If True, the message is persisted to disk. Defaults to True.
         """
-        self._channel.basic_publish(exchange='', routing_key=queue_name, body=json.dumps(message))
+
+        from pika.spec import PERSISTENT_DELIVERY_MODE, TRANSIENT_DELIVERY_MODE
+
+        delivery_mode = PERSISTENT_DELIVERY_MODE if persistent else TRANSIENT_DELIVERY_MODE
+
+        self._channel.basic_publish(
+            exchange='',
+            routing_key=queue_name,
+            body=json.dumps(message).encode(),
+            properties=pika.BasicProperties(
+                delivery_mode=delivery_mode
+            )
+        )
 
     def consume_messages(self, queue_name: str,
                          callback_function: Callable[[dict], bool],

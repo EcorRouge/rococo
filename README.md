@@ -33,9 +33,9 @@ someone.prepare_for_save(changed_by_id=UUID("b30884cb-5127-457c-a633-4a800ad3c44
 someone.as_dict()
 ```
 
->>> OUTPUT:
+OUTPUT:
 
-```json
+```python
 {
     'active': True,
     'changed_by_id': 'b30884cb-5127-457c-a633-4a800ad3c44b',
@@ -461,27 +461,18 @@ class Email(VersionedModel):
 
 @dataclass
 class LoginMethod(VersionedModel):
-    email: str = field(default=None, metadata={
-        'relationship': {'model': Email},
-        'field_type': 'entity_id'
-    })
+    email_id: str = None  # Stores the entity_id of an object of Email class.
     method_type: str = None
 
 @dataclass
 class Person(VersionedModel):
-    login_method: str = field(default=None, metadata={
-        'relationship': {'model': LoginMethod},
-        'field_type': 'entity_id'
-    })
+    login_method_id: str = None  # Stores the entity_id of an object of LoginMethod class.
     name: str = None
     
 
 @dataclass
 class Organization(VersionedModel):
-    person: str = field(default=None, metadata={
-        'relationship': {'model': Person},
-        'field_type': 'entity_id'
-    })
+    person_id: str = None  # Stores the entity_id of an object of Person class.
     name: str = None
 
 
@@ -495,19 +486,19 @@ email = Email(email_address="test@example.com")
 # Create a LoginMethod that references Email object
 login_method = LoginMethod(
     method_type="email-password",
-    email=email  # Can be referenced by object
+    email=email.entity_id  # Reference to the Email object created previously.
 )
 
 # Create a Person that references LoginMethod object
 person = Person(
     name="Person1",
-    login_method=login_method.entity_id  # Can be referenced by UUID object.
+    login_method=login_method.entity_id  # Reference to the LoginMethod object created previously.
 )
 
 # Create an Organization that references Person object
 organization = Organization(
     name="Organization1",
-    person=str(person.entity_id)  # Can be referenced by UUID string.
+    person=person.entity_id  # Reference to the Person object created previously.
 )
 
 
@@ -527,7 +518,7 @@ with get_db_connection() as adapter:
     #     "changed_on": "2024-03-11 00:03:21",
     #     "entity_id": "5bb0a0dc004345a39dacd514b5ef7669",
     #     "name": "Organization1",
-    #     "person": "7a3f4e8cfd4643dbb6195b2129bbcc37",
+    #     "person_id": "7a3f4e8cfd4643dbb6195b2129bbcc37",
     #     "previous_version": "00000000000040008000000000000000",
     #     "version": "b49010adbc64487ebd414cdf20ff7aab"
     # }
@@ -539,7 +530,7 @@ with get_db_connection() as adapter:
     #     "changed_by_id": "00000000000040008000000000000000",
     #     "changed_on": "2024-03-11 00:03:21",
     #     "id": "7a3f4e8cfd4643dbb6195b2129bbcc37",
-    #     "login_method": "0e1ef122e4aa435fad97bd75ef6d1eb8",
+    #     "login_method_id": "0e1ef122e4aa435fad97bd75ef6d1eb8",
     #     "name": "Person1",
     #     "previous_version": "00000000000040008000000000000000",
     #     "version": "9504903080bd45cda39f09139fe67343"
@@ -551,7 +542,7 @@ with get_db_connection() as adapter:
     #     "active": true,
     #     "changed_by_id": "00000000000040008000000000000000",
     #     "changed_on": "2024-03-11 00:03:21",
-    #     "email": "3e65462847fa4a0ebd4279fda124149e",
+    #     "email_id": "3e65462847fa4a0ebd4279fda124149e",
     #     "id": "0e1ef122e4aa435fad97bd75ef6d1eb8",
     #     "method_type": "email-password",
     #     "previous_version": "00000000000040008000000000000000",
@@ -572,22 +563,12 @@ with get_db_connection() as adapter:
 
 
     # **Fetching related objects
-    organization = organization_repo.get_one({"entity_id": organization.entity_id}, join_fields=['person'])
-    # Roughly evaluates to "SELECT * FROM organization INNER JOIN person ON organization.person=person.entity_id WHERE organization.entity_id=<Specified entity ID>;"
-
-    print(organization.person.entity_id)  # Prints entity_id of related person
-    print(organization.person.name)  # Prints name of related person
-
     organization = organization_repo.get_one({"entity_id": organization.entity_id})
-    # Roughly evaluates to "SELECT * FROM organization WHERE entity_id=<Specified entity ID>;"
+    # Roughly evaluates to "SELECT * FROM organization WHERE entity_id=<Specified entity ID> LIMIT 1;"
 
-    print(organization.person.entity_id)  # Prints entity_id of related person
-    try:
-        print(organization.person.name)  # raises AttributeError
-    except AttributeError:
-        pass
-
+    print(organization.person_id)  # Prints entity_id of related person
     print(organization.as_dict(True))
+
     # prints 
     # {
     #     "entity_id":"fb5a9d0e-4bac-467f-9318-4063811e51b6",
@@ -596,68 +577,15 @@ with get_db_connection() as adapter:
     #     "active":1,
     #     "changed_by_id":"00000000-0000-4000-8000-000000000000",
     #     "changed_on":"2024-03-11T00:03:21",
-    #     "person":{
-    #         "entity_id":"582ecaad-e30f-40bc-8e6c-c4675a4bc178"
-    #     },
+    #     "person_id": "582ecaade30f40bc8e6cc4675a4bc178",
     #     "name":"Organization1"
     # }
-
-    # JOIN chaining
-    organization = organization_repo.get_one({"entity_id": organization.entity_id}, join_fields=['person', 'person.login_method', 'person.login_method.email'])
-    # Roughly evaluates to:
-    # SELECT * FROM organization 
-    #   INNER JOIN person ON organization.person=person.entity_id 
-    #   INNER JOIN login_method ON person.login_method=login_method.entity_id 
-    #   INNER JOIN email ON lgin_method.email=email.entity_id
-    # WHERE organization.entity_id=<Specified entity ID>;
-
-    print(organization.entity_id)  # Prints entity_id of organization
-    print(organization.person.entity_id)  # Prints entity_id of organization.person
-    print(organization.person.login_method.entity_id)  # Prints entity_id of organization.person.login_method
-    print(organization.person.login_method.email.entity_id)  # Prints entity_id of organization.person.login_method.email
-    print(organization.person.login_method.email.email_address)  # Prints email address of organization.person.login_method.email
-    print(organization.as_dict(True))
-    # prints
-    # {
-    #     "entity_id":"846f0756-20ab-44d3-8899-07e10b698ccd",
-    #     "version":"578ca4c7-311a-4508-85ec-00ba264cd741",
-    #     "previous_version":"00000000-0000-4000-8000-000000000000",
-    #     "active": True,
-    #     "changed_by_id":"00000000-0000-4000-8000-000000000000",
-    #     "changed_on":"2023-11-25T12:19:46.541387",
-    #     "person":{
-    #         "entity_id":"ef99b93c-e1bb-4f37-96d5-e4e560dbdda0",
-    #         "version":"b3ce7b8a-223e-4a63-a842-042178c9645c",
-    #         "previous_version":"00000000-0000-4000-8000-000000000000",
-    #         "active": True,
-    #         "changed_by_id":"00000000-0000-4000-8000-000000000000",
-    #         "changed_on":"2023-11-25T12:19:46.623192",
-    #         "login_method":{
-    #             "entity_id":"a7efa334-ea92-4e59-95d5-c8d51a976c1b",
-    #             "version":"4d1a9a1b-81fb-433f-8b43-1bf1c3b696da",
-    #             "previous_version":"00000000-0000-4000-8000-000000000000",
-    #             "active": True,
-    #             "changed_by_id":"00000000-0000-4000-8000-000000000000",
-    #             "changed_on":"2023-11-25T12:19:46.706244",
-    #             "email":{
-    #                 "entity_id":"76e95956-0404-4c06-916b-89927b73d26d",
-    #                 "version":"d59a91a4-26ef-4a88-bee2-b5c0d651bd77",
-    #                 "previous_version":"00000000-0000-4000-8000-000000000000",
-    #                 "active":True,
-    #                 "changed_by_id":"00000000-0000-4000-8000-000000000000",
-    #                 "changed_on":"2023-11-25T12:19:46.775098",
-    #                 "email_address":"test@example.com"
-    #             },
-    #             "method_type":"email-password"
-    #         },
-    #         "name":"Person1"
-    #     },
-    #     "name":"Organization1"
-    # }
+    
+    person = person_repo.get_one({"entity_id": organization.person})
 
     # Get all organizations by person
     person_orgs = organization_repo.get_many({
-        "person": person.entity_id
+        "person_id": person.entity_id
     })
     for org in person_orgs:
         print(org.as_dict(True))
@@ -669,9 +597,7 @@ with get_db_connection() as adapter:
     #     "active":1,
     #     "changed_by_id":"00000000-0000-4000-8000-000000000000",
     #     "changed_on":"2024-03-11T00:14:07",
-    #     "person":{
-    #         "entity_id":"5b10a75a-23d7-4b98-b35e-0f1a59ec5b6d"
-    #     },
+    #     "person_id": "5b10a75a-23d7-4b98-b35e-0f1a59ec5b6d",
     #     "name":"Organization1"
     # }
 
@@ -757,6 +683,103 @@ print("Done", repo.get_one({}))
 - The above code creates a new LoginMethod object and saves it to the database using the LoginMethodRepository object. It then retrieves the saved object from the database and prints it to the console.
 
     This is just a simple example of how to use the LoginMethodRepository and RepositoryFactory classes. You can use these classes to manage any type of object in a database.
+
+
+### Using [`email-transmitter`](https://github.com/EcorRouge/email-transmitter) in your project
+
+- Create an `email_transmitter` directory in your project under `services` directory.
+- Add a `config.json` file in the `email_transmitter` directory. No other file is needed in this directory.
+- The `config.json` should contain a configuration object with the following keys:
+    - `configurations`: A list of configuration objects. Currently, we are only using `mailjet` provider. An example config for `mailjet` provider looks like:
+        ```json
+        [
+            {
+                "provider": "mailjet",
+                "sourceEmail": "SecondSight <system@secondsight.ai>",
+                "errorReportingEmail": "system@secondsight.ai"
+            }
+        ]
+        ```
+    - `events`: An object whose keys represent an event name and the value represents an object that represents the email to be sent when that event is received. An example `events` object looks like:
+        ```json
+        {
+            "USER_CREATED": {
+                "subject": "Welcome {{var:recipient_name}}",
+                "templateName": "Welcome (PROD and TEST)",
+                "id": {
+                    "mailjet": 4777555
+                }
+            }
+        }
+        ```
+- **Example `config.json`**:
+    ```json
+    {
+        "configurations": [
+            {
+                "provider": "mailjet",
+                "sourceEmail": "SecondSight <system@secondsight.ai>",
+                "errorReportingEmail": "system@secondsight.ai"
+            }
+        ],
+        "events": {
+            "USER_CREATED": {
+                "subject": "Welcome {{var:recipient_name}}",
+                "templateName": "Welcome (PROD and TEST)",
+                "id": {
+                    "mailjet": 4777555
+                }
+            }
+        }
+    }
+    ```
+
+- Add the `email_transmitter` service to `docker-compose.yml`. A simple definition looks like:
+```yaml
+services:
+  email_transmitter:
+    image: ecorrouge/email-transmitter:latest
+    container_name: project_email_transmitter
+    restart: unless-stopped
+    env_file:
+      - ../.env  # Path to .env
+    volumes:
+      - <path_to_email_transmitter_service>/config.json:/app/src/services/email_transmitter/src/config.json
+```
+
+  - Make sure `MAILJET_API_KEY` and `MAILJET_API_SECRET` are available in the provided `env_file` file(s).
+  - Make sure `EmailServiceProcessor_QUEUE_NAME` and `QUEUE_NAME_PREFIX` are available in the provided `env_file` file(s).
+  - Make sure the following variables are also available in the provided `env_file` file(s):
+    - `RABBITMQ_HOST`
+    - `RABBITMQ_PORT`
+    - `RABBITMQ_USER`
+    - `RABBITMQ_PASSWORD`
+    - `RABBITMQ_VIRTUAL_HOST`
+  - Make sure the service is added to the same network as rest of the services that are to going to be calling this service.
+
+- **How to call email-transmitter to send an email from application code**:
+```python
+from rococo.messaging import RabbitMqConnection
+
+EMAIL_TRANSMITTER_QUEUE_NAME = os.getenv('QUEUE_NAME_PREFIX') + os.getenv('EmailServiceProcessor_QUEUE_NAME')
+
+user_created = User(...)
+
+message = {
+    "event": "USER_CREATED",  # The event to trigger as defined in `email_transmitter/config.json`.
+    "data": {  # The data to be passed to the email template specfied against the event in config.json.
+        "confirmation_link": confirmation_link,
+        "recipient_name": user.name,
+    },
+    "to_emails": [user.email],  # A list of email addresses where the email should be sent.
+}
+
+
+with RabbitMqConnection('host', 'port', 'username', 'password', 'virtual_host') as conn:
+    conn.send_message(EMAIL_TRANSMITTER_QUEUE_NAME, message)
+```
+
+
 
 ### Deployment
 

@@ -685,6 +685,72 @@ print("Done", repo.get_one({}))
     This is just a simple example of how to use the LoginMethodRepository and RepositoryFactory classes. You can use these classes to manage any type of object in a database.
 
 
+### Rococo MySQL CLI (`rococo-mysql`)
+
+This CLI interface provides commands for managing MySQL migrations using the Rococo module. It supports creating new migrations, running forward and backward migrations, and retrieving the current database version. The CLI also handles environment variables from `.env` files for database connection configurations.
+
+#### Usage
+
+```bash
+rococo-mysql [OPTIONS] COMMAND
+```
+
+#### Options
+
+- `--migrations-dir` (optional): Path to the migrations directory of your project. Defaults to checking standard directories (`flask/app/migrations`, `api/app/migrations`, `app/migrations`).
+- `--env-files` (optional): Paths to environment files containing database connection details (e.g., `.env.secrets`, `<APP_ENV>.env`).
+
+#### Commands
+
+##### `new`
+Creates a new migration file in the specified migrations directory.
+
+```bash
+rococo-mysql new
+```
+
+##### `rf`
+Runs the forward migration, applying all unapplied migrations in sequence.
+
+```bash
+rococo-mysql rf
+```
+
+##### `rb`
+Runs the backward migration, rolling back the last applied migration.
+
+```bash
+rococo-mysql rb
+```
+
+##### `version`
+Displays the current database version.
+
+```bash
+rococo-mysql version
+```
+
+#### Environment Configuration
+
+- If no `--env-files` are provided, the CLI attempts to load environment variables from `.env.secrets` and an environment-specific `<APP_ENV>.env` file.
+- The environment variables required for the database connection are:
+  - `MYSQL_HOST`
+  - `MYSQL_PORT`
+  - `MYSQL_USER`
+  - `MYSQL_PASSWORD`
+  - `MYSQL_DATABASE`
+
+#### Example
+
+Running a forward migration:
+
+```bash
+rococo-mysql --migrations-dir=app/migrations --env-files=.env .env.secrets rf
+```
+
+This command runs all pending migrations using the specified environment files and migrations directory.
+
+
 ### Using [`email-transmitter`](https://github.com/EcorRouge/email-transmitter) in your project
 
 - Create an `email_transmitter` directory in your project under `services` directory.

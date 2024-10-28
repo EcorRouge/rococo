@@ -222,10 +222,6 @@ class MySqlRepository(BaseRepository):
             for condition_name, value in conditions.copy().items():
                 condition_field = next((field for field in fields(self.model) if field.name == condition_name), None)
                 if condition_field and condition_field.metadata.get('field_type') == 'entity_id':
-                    if condition_name == 'entity_id':
-                        condition_name = 'id'
-                        conditions[condition_name] = conditions.pop('entity_id')
-
                     if isinstance(value, VersionedModel):
                         conditions[condition_name] = str(value.entity_id).replace('-', '')
                     elif isinstance(value, (str, UUID)):

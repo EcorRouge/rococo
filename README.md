@@ -761,8 +761,8 @@ This command runs all pending migrations using the specified environment files a
         [
             {
                 "provider": "mailjet",
-                "sourceEmail": "SecondSight <system@secondsight.ai>",
-                "errorReportingEmail": "system@secondsight.ai"
+                "sourceEmail": "EcorRouge <system@ecorrouge.com>",
+                "errorReportingEmail": "system@ecorrouge.com"
             }
         ]
         ```
@@ -784,8 +784,8 @@ This command runs all pending migrations using the specified environment files a
         "configurations": [
             {
                 "provider": "mailjet",
-                "sourceEmail": "SecondSight <system@secondsight.ai>",
-                "errorReportingEmail": "system@secondsight.ai"
+                "sourceEmail": "EcorRouge <system@ecorrouge.com>",
+                "errorReportingEmail": "system@ecorrouge.com"
             }
         ],
         "events": {

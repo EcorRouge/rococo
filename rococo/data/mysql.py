@@ -66,18 +66,20 @@ class MySqlAdapter(DbAdapter):
     def _build_condition_string(self, table, key, value):
         if '.' not in key:
             key = f"{table}.{key}"
+            
         if isinstance(value, str):
-            return f"{key}='{value}'"
+            return f"{key} = %s", [value]
         elif isinstance(value, bool):
-            return f"{key}={'true' if value is True else 'false'}"
-        elif type(value) in [int, float]:
-            return f"{key}={value}"
+            return f"{key} = %s", [1 if value else 0]
+        elif isinstance(value, (int, float)):
+            return f"{key} = %s", [value]
         elif isinstance(value, list):
-            return f"""{key} IN ({','.join(f'"{v}"' for v in value)})"""
+            placeholders = ', '.join(['%s'] * len(value))
+            return f"{key} IN ({placeholders})", value
         elif isinstance(value, UUID):
-            return f"{key}='{str(value)}'"
-        elif isinstance(value, type(None)):
-            return f"{key} IS NULL"
+            return f"{key} = %s", [str(value)]
+        elif value is None:
+            return f"{key} IS NULL", []
         else:
             raise Exception(f"Unsupported type {type(value)} for condition key: {key}, value: {value}")
 
@@ -111,7 +113,7 @@ class MySqlAdapter(DbAdapter):
 
     def parse_db_response(self, response: List[Dict[str, Any]]) -> Union[Dict[str, Any], List[Dict[str, Any]]]:
         """
-        Parse the response from SurrealDB.
+        Parse the response from MySQL.
 
         If the 'result' list has one item, return that item.
         If the 'result' list has multiple items, return the list.
@@ -135,21 +137,24 @@ class MySqlAdapter(DbAdapter):
             fields += additional_fields
 
         query = f"SELECT {', '.join(fields)} FROM {table}"
-        for join_stmt in join_statements:
-            query += f"""\n{join_stmt}\n"""
+        if join_statements:
+            for join_stmt in join_statements:
+                query += f"""\n{join_stmt}\n"""
 
-        condition_strs = []
+        condition_strs_values = []
         if conditions:
-            condition_strs = [f"{self._build_condition_string(table, k, v)}" for k, v in conditions.items()]
-        condition_strs.append(f"{table}.active=true")
-        query += f" WHERE {' AND '.join(condition_strs)}"
+            condition_strs_values = [self._build_condition_string(table, k, v) for k, v in conditions.items()]
+        condition_strs_values.append((f"{table}.active = %s", [1]))
+        query += f" WHERE {' AND '.join([condition_str for condition_str, condition_value in condition_strs_values])}"
 
         if sort:
             sort_strs = [f"{column} {direction}" for column, direction in sort]
             query += f" ORDER BY {', '.join(sort_strs)}"
         query += " LIMIT 1"
 
-        db_response = self.parse_db_response(self.execute_query(query))
+        values = sum((condition_value for condition_str, condition_value in condition_strs_values), [])
+        db_response = self.parse_db_response(self.execute_query(query, tuple(values)))
+
         if not db_response:
             return None
         elif isinstance(db_response, list):
@@ -174,16 +179,19 @@ class MySqlAdapter(DbAdapter):
             fields += additional_fields
 
         query = f"SELECT {', '.join(fields)} FROM {table}"
-        for join_stmt in join_statements:
-            query += f"""\n{join_stmt}\n"""
+        if join_statements:
+            for join_stmt in join_statements:
+                query += f"""\n{join_stmt}\n"""
 
-        condition_strs = []
+        condition_strs_values = []
         if conditions:
-            condition_strs = [f"{self._build_condition_string(table, k, v)}" for k, v in conditions.items()]
+            condition_strs_values = [self._build_condition_string(table, k, v) for k, v in conditions.items()]
         if active:
-            condition_strs.append(f"{table}.active=true")
-        if condition_strs:
-            query += f" WHERE {' AND '.join(condition_strs)}"
+            condition_strs_values.append((f"{table}.active = %s", [1]))
+
+        if condition_strs_values:
+            query += f" WHERE {' AND '.join([condition_str for condition_str, condition_value in condition_strs_values])}"
+        
         if sort:
             sort_strs = [f"{column} {direction}" for column, direction in sort]
             query += f" ORDER BY {', '.join(sort_strs)}"
@@ -192,7 +200,8 @@ class MySqlAdapter(DbAdapter):
         if offset is not None:
             query += f" OFFSET {offset}"
 
-        db_response = self.parse_db_response(self.execute_query(query))
+        values = sum((condition_value for condition_str, condition_value in condition_strs_values), [])
+        db_response = self.parse_db_response(self.execute_query(query, tuple(values)))
         if not db_response:
             return []
         elif isinstance(db_response, dict):

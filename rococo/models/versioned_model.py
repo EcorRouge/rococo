@@ -71,11 +71,11 @@ class ModelValidationError(Exception):
 class VersionedModel:
     """A base class for versioned models with common (Big 6) attributes."""
 
-    entity_id: UUID = field(default_factory=get_uuid_hex, metadata={'field_type': 'entity_id'})
-    version: UUID = field(default_factory=lambda: get_uuid_hex(0), metadata={'field_type': 'uuid'})
-    previous_version: UUID = field(default_factory=lambda: None, metadata={'field_type': 'uuid'})
+    entity_id: str = field(default_factory=get_uuid_hex, metadata={'field_type': 'entity_id'})
+    version: str = field(default_factory=lambda: get_uuid_hex(0), metadata={'field_type': 'uuid'})
+    previous_version: str = field(default_factory=lambda: None, metadata={'field_type': 'uuid'})
     active: bool = True
-    changed_by_id: UUID = field(default_factory=lambda: get_uuid_hex(0), metadata={'field_type': 'uuid'})
+    changed_by_id: str = field(default_factory=lambda: get_uuid_hex(0), metadata={'field_type': 'uuid'})
     changed_on: datetime = field(default_factory=default_datetime)
 
     _is_partial: InitVar[bool] = False
@@ -290,7 +290,10 @@ class VersionedModel:
                             f"Invalid type for field '{field_name}': Expected {expected_type.__name__}, got NoneType"
                         )
                     if not isinstance(field_value, expected_type):
-                        if expected_type in castable_types or issubclass(expected_type, Enum):
+                        if type(field_value) is UUID and expected_type is str:
+                            new_value = field_value.hex
+                            setattr(self, field_name, new_value)
+                        elif expected_type in castable_types or issubclass(expected_type, Enum):
                             try:
                                 new_value = expected_type(field_value)
                                 setattr(self, field_name, new_value)

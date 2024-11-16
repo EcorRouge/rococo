@@ -2,7 +2,7 @@ from setuptools import find_packages, setup
 
 setup(
     name='rococo',
-    version='1.0.25',
+    version='1.0.26',
     packages=find_packages(),
     url='https://github.com/EcorRouge/rococo',
     license='MIT',
@@ -18,7 +18,7 @@ setup(
     long_description_content_type='text/markdown',
     install_requires=[
         'surrealdb==0.3.2',
-        'boto3==1.28.55',
+        'boto3>=1.28.55',
         'pika==1.3.2',
         'python-dotenv==1.0.0',
         'PyMySQL==1.1.1',

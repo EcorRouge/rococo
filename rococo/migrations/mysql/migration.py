@@ -4,10 +4,10 @@ import logging
 
 class Migration:
     def __init__(self, db_adapter):
-        self.db_adapter = db_adapter
+        self.db_adapter: MySqlAdapter = db_adapter
 
     def _does_column_exist(self, table_name, column_name, commit: bool = True):
-        schema_name = self.db_adapter.database
+        schema_name = self.db_adapter._database
         query = f"""
         SELECT COUNT(*) 
             FROM information_schema.COLUMNS 
@@ -20,7 +20,7 @@ class Migration:
         return response[0].get("COUNT(*)") > 0
 
     def _does_primary_key_constraint_exists(self, table_name, commit: bool = True):
-        schema_name = self.db_adapter.database
+        schema_name = self.db_adapter._database
         query = f"""
         SELECT COUNT(*) 
             FROM information_schema.TABLE_CONSTRAINTS 

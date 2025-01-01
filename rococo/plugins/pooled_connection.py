@@ -3,6 +3,14 @@ import pymysql
 
 
 class PooledConnectionPlugin:
+    """
+    A Flask plugin for managing pooled database connections using PooledDB.
+
+    This plugin initializes a database connection pool and integrates it with
+    a Flask application. It provides methods to retrieve pooled connections
+    and ensures connections are properly closed after each request.
+    """
+
     def __init__(self, app=None):
         """
         Initialize the plugin with optional Flask app and database configuration.
@@ -42,13 +50,13 @@ class PooledConnectionPlugin:
 
     def get_connection(self, *args, **kwargs):
         """
-        Get a database connection from the pool.
+        Get a database connection from the pool or flask.g object if cached.
         
         :return: Pooled database connection
         """
         from flask import g
 
-        if hasattr(g, 'db_conn') and g.db_conn is not None:
+        if getattr(g, 'db_conn', None):
             return g.db_conn
         else:
             if not self.pool:

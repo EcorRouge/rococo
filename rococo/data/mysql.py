@@ -11,7 +11,7 @@ from rococo.data.base import DbAdapter
 class MySqlAdapter(DbAdapter):
     """MySQL adapter for interacting with MySQL."""
 
-    def __init__(self, host: str, port: int, user: str, password: str, database: str, connection_resolver: Optional[Callable] = None):
+    def __init__(self, host: str, port: int, user: str, password: str, database: str, connection_resolver: Optional[Callable] = None, connection_closer: Optional[Callable] = None):
         self._host = host
         self._port = port
         self._user = user
@@ -26,6 +26,8 @@ class MySqlAdapter(DbAdapter):
         else:
             self._connection_resolver = connection_resolver
 
+        self._connection_closer = connection_closer
+
     def __enter__(self):
         """Context manager entry point for creating DB connection."""
         self._connection = self.connect
@@ -35,14 +37,21 @@ class MySqlAdapter(DbAdapter):
 
     def __exit__(self, exc_type, exc_value, traceback):
         """Context manager exit point for closing DB connection."""
+        self.close_connection()
 
-        if self._cursor is not None:
-            self._cursor.close()
-            self._cursor = None
+    def close_connection(self):
+        """Closes the connection and cursor."""
 
-        if self._connection is not None:
-            self._connection.close()
-            self._connection = None
+        if self._connection_closer:
+            self._connection_closer(self)
+        else:
+            if self._cursor is not None:
+                self._cursor.close()
+                self._cursor = None
+
+            if self._connection is not None:
+                self._connection.close()
+                self._connection = None
 
     @property
     def connect(self):

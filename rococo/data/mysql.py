@@ -1,6 +1,6 @@
 import logging
 import time
-from typing import Any, Dict, List, Tuple, Union, Optional
+from typing import Any, Dict, List, Tuple, Union, Optional, Callable
 from uuid import UUID
 
 import pymysql
@@ -11,7 +11,7 @@ from rococo.data.base import DbAdapter
 class MySqlAdapter(DbAdapter):
     """MySQL adapter for interacting with MySQL."""
 
-    def __init__(self, host: str, port: int, user: str, password: str, database: str):
+    def __init__(self, host: str, port: int, user: str, password: str, database: str, connection_resolver: Optional[Callable] = None):
         self._host = host
         self._port = port
         self._user = user
@@ -21,16 +21,14 @@ class MySqlAdapter(DbAdapter):
         self._connection = None
         self._cursor = None
 
+        if connection_resolver is None:
+            self._connection_resolver = pymysql.connect
+        else:
+            self._connection_resolver = connection_resolver
+
     def __enter__(self):
         """Context manager entry point for creating DB connection."""
-        self._connection = pymysql.connect(
-            host=self._host,
-            port=self._port,
-            user=self._user,
-            password=self._password,
-            database=self._database,
-            cursorclass=self._cursor_class
-        )
+        self._connection = self.connect
         self._cursor = self._connection.cursor()
 
         return self
@@ -48,7 +46,7 @@ class MySqlAdapter(DbAdapter):
 
     @property
     def connect(self):
-        return pymysql.connect(
+        return self._connection_resolver(
             host=self._host,
             port=self._port,
             user=self._user,

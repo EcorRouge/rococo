@@ -2,7 +2,7 @@ from setuptools import find_packages, setup
 
 setup(
     name='rococo',
-    version='1.0.29',
+    version='1.0.30',
     packages=find_packages(),
     url='https://github.com/EcorRouge/rococo',
     license='MIT',
@@ -23,7 +23,8 @@ setup(
         'pika==1.3.2',
         'python-dotenv==1.0.0',
         'PyMySQL==1.1.1',
-        'PyMongo==4.6.3'
+        'PyMongo==4.6.3',
+        'psycopg2==2.9.10'
     ],
     python_requires=">=3.10"
 )

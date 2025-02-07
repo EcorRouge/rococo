@@ -216,7 +216,7 @@ login_method = LoginMethod(
 
 # Create a Person that references LoginMethod object
 person = Person(
-    name="Person1",
+    name="Axel",
     login_method=login_method.entity_id  # Can be referenced by UUID object.
 )
 
@@ -512,7 +512,7 @@ login_method = LoginMethod(
 
 # Create a Person that references LoginMethod object
 person = Person(
-    name="Person1",
+    name="Axel",
     login_method_id=login_method.entity_id  # Reference to the LoginMethod object created previously.
 )
 
@@ -552,7 +552,7 @@ with get_db_connection() as adapter:
     #     "changed_on": "2024-03-11 00:03:21",
     #     "id": "7a3f4e8cfd4643dbb6195b2129bbcc37",
     #     "login_method_id": "0e1ef122e4aa435fad97bd75ef6d1eb8",
-    #     "name": "Person1",
+    #     "name": "Axel",
     #     "previous_version": "00000000000040008000000000000000",
     #     "version": "9504903080bd45cda39f09139fe67343"
     # }
@@ -679,7 +679,7 @@ login_method = LoginMethod(
 
 # Create a Person that references LoginMethod object
 person = Person(
-    name="Person1",
+    name="Axel",
     login_method_id=login_method.entity_id  # Reference to the LoginMethod object created previously.
 )
 
@@ -719,7 +719,7 @@ with get_db_connection() as adapter:
     #     "changed_on": "2024-03-11 00:03:21",
     #     "id": "7a3f4e8cfd4643dbb6195b2129bbcc37",
     #     "login_method_id": "0e1ef122e4aa435fad97bd75ef6d1eb8",
-    #     "name": "Person1",
+    #     "name": "Axel",
     #     "previous_version": "00000000000040008000000000000000",
     #     "version": "9504903080bd45cda39f09139fe67343"
     # }

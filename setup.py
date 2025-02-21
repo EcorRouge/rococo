@@ -24,7 +24,7 @@ setup(
         'python-dotenv==1.0.0',
         'PyMySQL==1.1.1',
         'PyMongo==4.6.3',
-        'psycopg2==2.9.10'
+        'psycopg2-binary==2.9.10'
     ],
     python_requires=">=3.10"
 )

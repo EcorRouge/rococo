@@ -6,9 +6,9 @@ import pkgutil
 import os
 
 from uuid import uuid4, UUID
-from dataclasses import dataclass, field, fields, InitVar
+from dataclasses import dataclass, field, fields, InitVar, is_dataclass
 from datetime import datetime
-from typing import Any, Dict, List, Union, get_type_hints, get_origin, get_args
+from typing import Any, Dict, List, Union, get_type_hints, get_origin, get_args, get_type_hints
 import importlib
 from enum import Enum
 
@@ -85,6 +85,10 @@ class VersionedModel:
         for field in fields(self):
             field_model = field.metadata.get('relationship', {}).get('model')
             if field_model is not None and isinstance(field_model, str):
+                # Retrieve the model class from metadata if available
+                field_model = field.metadata.get('relationship', {}).get('model')
+                
+                # If field_model is not None, verify to import the model
                 current_module = importlib.import_module('__main__')
                 models_module = import_models_module(current_module, 'models')
                 rococo_module = importlib.import_module('rococo.models')
@@ -96,6 +100,24 @@ class VersionedModel:
 
                 field.metadata['relationship']['model'] = field_model_cls
 
+            # Handle list of uuid.UUID specifically
+            field_type = get_type_hints(self.__class__).get(field.name)
+            if hasattr(field_type, '__origin__') and field_type.__origin__ is list:
+                # Check if the field is a list of uuid.UUID
+                if UUID in field_type.__args__:
+                    # If the field is a List[uuid.UUID] and is None, set it to an empty list
+                    if getattr(self, field.name) is None:
+                        setattr(self, field.name, [])
+                    elif isinstance(getattr(self, field.name), str):
+                        # Process if the field value is a string formatted as a set of UUIDs
+                        uuid_strings = getattr(self, field.name)[1:-1].split(',')
+                        uuid_list = []
+                        for uuid_str in uuid_strings:
+                            try:
+                                uuid_list.append(UUID(uuid_str.strip()))
+                            except ValueError:
+                                print(f"'{uuid_str.strip()}' is not a valid UUID.")
+                        setattr(self, field.name, uuid_list)
 
     def __getattribute__(self, name):
         _field_names = [field for field in object.__getattribute__(self, 'fields')()]
@@ -181,10 +203,29 @@ class VersionedModel:
                 elif isinstance(value, UUID):
                     if convert_uuids:
                         results[key] = str(value)
+                elif all(isinstance(item, UUID) for item in value):
+                    results[key] = [str(item) if convert_uuids else item for item in value]
                 elif isinstance(value, str):
                     results[key] = value
                 elif isinstance(value, dict):
                     results[key] = str(value.get('entity_id')) if convert_uuids else value.get('entity_id')
+                elif isinstance(value, list) and all(is_dataclass(v) for v in value):  
+                    # Check if every dataclass in the list has 'as_dict' method
+                    for v in value:
+                        if not hasattr(v, 'as_dict'):
+                            raise AttributeError(f"Dataclass {v.__class__.__name__} does not have an 'as_dict' method.")
+                    
+                    # If all items are dataclasses with `as_dict`, convert each item to a dictionary
+                    results[key] = [
+                        v.as_dict(convert_datetime_to_iso_string, convert_uuids) if hasattr(v, 'as_dict') else v
+                        for v in value
+                    ]
+                elif is_dataclass(value):
+                    if hasattr(value, 'as_dict'):
+                        # Convert the dataclass to a dictionary using its `as_dict` method
+                        results[key] = value.as_dict(convert_datetime_to_iso_string, convert_uuids)
+                    else:
+                        raise AttributeError(f"Dataclass {value.__class__.__name__} does not have an 'as_dict' method.")
                 else:
                     raise NotImplementedError
 

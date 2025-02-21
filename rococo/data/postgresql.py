@@ -2,6 +2,7 @@ import logging
 import time
 from typing import Any, Dict, List, Tuple, Union, Optional, Callable
 from uuid import UUID
+import json
 
 import psycopg2
 
@@ -102,23 +103,39 @@ class PostgreSQLAdapter(DbAdapter):
         """Executes a query against the DB."""
         if _vars is None:
             _vars = {}
-
+        
+        # Execute the query
         self._call_cursor('execute', sql, _vars)
         
-        # Fetch column names
-        column_names = [desc[0] for desc in self._cursor.description]
+        # Check if the query is a SELECT statement to fetch results
+        if sql.strip().upper().startswith("SELECT"):
+            # Fetch column names
+            column_names = [desc[0] for desc in self._cursor.description]
 
-        # Map each row tuple to a dictionary using column names
-        return [dict(zip(column_names, row)) for row in self._call_cursor('fetchall')]
+            # Map each row tuple to a dictionary using column names
+            return [dict(zip(column_names, row)) for row in self._call_cursor('fetchall')]
+        else:
+            # For other queries (like CREATE, INSERT, UPDATE, DELETE), return None or a success message
+            self._connection.commit()
+            return None
     
     def run_transaction(self, queries_list):
         """Executes a list of queries in a single transaction against the database."""
+
         for query in queries_list:
             if type(query) is tuple:
                 query, values = query
             else:
                 values = ()
-            self._cursor.execute(query, values)
+
+            transformed_values = []
+            for value in values:
+                if isinstance(value, dict):
+                    transformed_values.append(json.dumps(value))  # Convert dict to JSON string
+                else:
+                    transformed_values.append(value)
+
+            self._cursor.execute(query, transformed_values)
         self._connection.commit()
 
     def parse_db_response(self, response: List[Dict[str, Any]]) -> Union[Dict[str, Any], List[Dict[str, Any]]]:

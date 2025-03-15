@@ -11,10 +11,7 @@ from . import VersionedModel
 class OtpMethod(VersionedModel):
     """An OTP method model."""
 
-    person: str = field(default=None, metadata={
-        'relationship': {'model': 'Person'},
-        'field_type': 'entity_id'
-    })
+    person_id: str = None
     secret: str = None
     name: str = None
     enabled: bool = False

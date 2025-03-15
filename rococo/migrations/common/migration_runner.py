@@ -1,35 +1,26 @@
 import os
 from importlib import import_module
-
 from .migration_template import get_template
-from .migration import Migration
-
-
-SCRIPTS_DIR = os.path.abspath(os.path.dirname(__file__))
-MIGRATION_DIR = os.path.abspath(os.path.dirname(SCRIPTS_DIR))
-
-
 
 class MigrationRunner:
-
-    def __init__(self, migrations_dir, db_adapter):
+    def __init__(self, migrations_dir, migration):
         self.migrations_dir = migrations_dir
-        self.db_adapter = db_adapter
-        self.migration = Migration(db_adapter)
+        self.migration = migration
 
     def _get_migration_scripts(self):
-        script_versions = {
-            file for file in os.listdir(self.migrations_dir) if file not in ["__init__.py", "lib", "__pycache__"]
+        # Return all files in the migration directory, ignoring some known ones
+        return {
+            file for file in os.listdir(self.migrations_dir)
+            if file not in ["__init__.py", "lib", "__pycache__"]
         }
-        return script_versions
 
     def get_db_version(self):
-        query = f"""SELECT version from db_version;"""
+        query = "SELECT version from db_version;"
         db_version = None
         try:
-            with self.db_adapter:
-                db_response = self.db_adapter.execute_query(query)
-                results = self.db_adapter.parse_db_response(db_response)
+            with self.migration.db_adapter:
+                db_response = self.migration.db_adapter.execute_query(query)
+                results = self.migration.db_adapter.parse_db_response(db_response)
                 db_version = results[0].get('version')
         except Exception as e:
             raise e
@@ -40,31 +31,32 @@ class MigrationRunner:
     def _get_forward_migration_script(self):
         db_version = self.get_db_version()
         for file in self._get_migration_scripts():
-            if file.strip().split('_')[1] == db_version:
+            # Assuming migration file naming convention: newversion_currentversion_migration.py
+            parts = file.strip().split('_')
+            if len(parts) > 1 and parts[1] == db_version:
                 return file.strip().split('.')[0]
-
 
     def _get_backward_migration_script(self):
         db_version = self.get_db_version()
         for file in self._get_migration_scripts():
-            if file.strip().split('_')[0] == db_version:
+            parts = file.strip().split('_')
+            if parts and parts[0] == db_version:
                 return file.strip().split('.')[0]
 
     def create_migration_file(self):
         try:
             current_db_version = int(self.get_db_version())
-        except:
+        except Exception:
             print('DB version not found in table!!!')
             return
         new_version = current_db_version + 1
-        current_db_version = f'{current_db_version:010d}'
-        new_version = f'{new_version:010d}'
-        file_name = f"{new_version}_{current_db_version}_migration.py"
-        template = get_template(new_version, current_db_version)
+        current_db_version_str = f'{current_db_version:010d}'
+        new_version_str = f'{new_version:010d}'
+        file_name = f"{new_version_str}_{current_db_version_str}_migration.py"
+        template = get_template(new_version_str, current_db_version_str)
         with open(os.path.join(self.migrations_dir, file_name), 'w') as fp:
             fp.write(template)
-        print(f"Created new migartion file at {os.path.join(self.migrations_dir, file_name)}")
-
+        print(f"Created new migration file at {os.path.join(self.migrations_dir, file_name)}")
 
     def run_forward_migration_script(self, old_db_version):
         file = self._get_forward_migration_script()
@@ -79,8 +71,8 @@ class MigrationRunner:
         print(f'Running forward migration: {file.strip().split("/")[-1]}')
         imported = import_module(f'{file}', package=None)
         imported.upgrade(self.migration)
+        # Recursively run forward migrations until complete
         return self.run_forward_migration_script(old_db_version)
-
 
     def run_backward_migration_script(self):
         file = self._get_backward_migration_script()

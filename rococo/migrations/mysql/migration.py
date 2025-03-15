@@ -1,10 +1,11 @@
-from rococo.data.mysql import MySqlAdapter
 import logging
+from ..common.migration_base import MigrationBase
+from rococo.data.mysql import MySqlAdapter
 
 
-class Migration:
-    def __init__(self, db_adapter):
-        self.db_adapter: MySqlAdapter = db_adapter
+class MySQLMigration(MigrationBase):
+    def __init__(self, db_adapter: MySqlAdapter):
+        super().__init__(db_adapter)
 
     def _does_column_exist(self, table_name, column_name, commit: bool = True):
         schema_name = self.db_adapter._database
@@ -109,11 +110,3 @@ class Migration:
     @staticmethod
     def _cursor_to_dict(result, description):
         return dict(zip([col[0] for col in description], result))
-
-    def execute(self, query, commit: bool = True, args=None):
-        with self.db_adapter:
-            db_response = self.db_adapter.execute_query(query, args)
-            result = self.db_adapter.parse_db_response(db_response)
-            if commit:
-                self.db_adapter._connection.commit()
-            return result

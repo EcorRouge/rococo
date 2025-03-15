@@ -11,10 +11,7 @@ from . import VersionedModel
 class Email(VersionedModel):
     """A email method model."""
 
-    person: str = field(default=None, metadata={
-        'relationship': {'model': 'Person'},
-        'field_type': 'entity_id'
-    })
+    person_id: str = None
     email: Optional[str] = None
     is_verified: bool = False
     is_default: bool = False

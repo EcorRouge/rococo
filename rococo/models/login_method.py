@@ -6,20 +6,19 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from . import VersionedModel
+from enum import Enum
+
+
+class LoginMethodType(str, Enum):
+    EMAIL_PASSWORD = "email-password"
 
 
 @dataclass
 class LoginMethod(VersionedModel):
     """A login method model."""
 
-    person: str = field(default=None, metadata={
-        'relationship': {'model': 'Person'},
-        'field_type': 'entity_id'
-    })
+    person_id: str = None
     method_type: Optional[str] = None
     method_data: Optional[dict] = None
-    email: Optional[str] = field(default=None, metadata={
-        'relationship': {'model': 'Email'},
-        'field_type': 'entity_id'
-    })
+    email_id: Optional[str] = None
     password: Optional[str] = None

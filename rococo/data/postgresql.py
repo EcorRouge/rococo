@@ -76,7 +76,7 @@ class PostgreSQLAdapter(DbAdapter):
         if isinstance(value, str):
             return f"{key} = %s", [value]
         elif isinstance(value, bool):
-            return f"{key} = %s", [1 if value else 0]
+            return f"{key} = %s", [value]
         elif isinstance(value, (int, float)):
             return f"{key} = %s", [value]
         elif isinstance(value, list):

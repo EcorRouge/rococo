@@ -4,13 +4,14 @@ from dataclasses import fields
 from datetime import datetime
 import json
 import re
-from typing import Any, Dict, List, Type, Union
+from typing import Any, Dict, List, Type, Union, Optional
 from uuid import UUID
 
 from rococo.data import PostgreSQLAdapter
 from rococo.messaging import MessageAdapter
 from rococo.models import VersionedModel
 from rococo.repositories import BaseRepository
+
 
 def adjust_conditions(conditions: Dict[str, Any]) -> Dict[str, Any]:
     """Convert UUIDs in the conditions dictionary to strings."""
@@ -142,7 +143,7 @@ class PostgreSQLRepository(BaseRepository):
         self, 
         instance: VersionedModel, 
         related_field: str
-    ) -> List:
+    ) -> Union[List, Optional[VersionedModel]]:
         """Fetch related entities for a given field in the instance."""
         
         related_value = getattr(instance, related_field)
@@ -159,18 +160,32 @@ class PostgreSQLRepository(BaseRepository):
             relation_model = field_metadata['relationship']['model']
             relation_table_name = re.sub(r'(?<!^)(?=[A-Z])', '_', relation_model.__name__).lower()
             field_type = field_metadata['field_type']
-            relation_conditions = { f"{field_type}": related_value   }
+            
+            # Determine the relation type
+            relation_type = field_metadata['relationship'].get('relation_type', None)
+            relation_conditions = { f"{field_type}": related_value }
             relation_conditions = adjust_conditions(relation_conditions)
-            related_records = self._execute_within_context(
-                self.adapter.get_many, relation_table_name, relation_conditions
-            )
 
-            if not related_records:
-                return None
+            if relation_type in ['one_to_many', 'many_to_many']:
+                # Fetch multiple records
+                related_records = self._execute_within_context(
+                    self.adapter.get_many, relation_table_name, relation_conditions
+                )
 
-            return [
-                relation_model.from_dict(rel_record) 
-                for rel_record in related_records
-            ]
+                if related_records is not None:
+                    return [
+                        relation_model.from_dict(rel_record) 
+                        for rel_record in related_records
+                    ]
+
+            else:
+                related_record = self._execute_within_context(
+                    self.adapter.get_one, relation_table_name, relation_conditions
+                )
+
+                if related_record is not None:
+                    return relation_model.from_dict(related_record)
+
+            return None
 
         return None

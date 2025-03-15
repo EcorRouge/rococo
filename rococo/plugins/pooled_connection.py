@@ -1,5 +1,6 @@
 from dbutils.pooled_db import PooledDB
 import pymysql
+import psycopg2
 
 
 class PooledConnectionPlugin:
@@ -11,18 +12,29 @@ class PooledConnectionPlugin:
     and ensures connections are properly closed after each request.
     """
 
-    def __init__(self, app=None):
+    SUPPORTED_DATABASES = ("mysql", "postgres")
+
+    def __init__(self, app=None, database_type="mysql"):
         """
         Initialize the plugin with optional Flask app and database configuration.
         
         :param app: Flask app instance
-        :param db_config: Database configuration parameters (e.g., host, user, password)
+        :param database_type: The type of database to use ("mysql" or "postgres").
+        :raises ValueError: If an unsupported database type is provided.
         """
+
+        if database_type not in self.SUPPORTED_DATABASES:
+            raise ValueError(
+                f"Invalid database type specified: {database_type}. Must be one of: {self.SUPPORTED_DATABASES}"
+            )
+        self.database_type = database_type
+
         self.pool = None
         self.app = app
         if app is not None:
             self.init_app(app)
-    
+
+
     def init_app(self, app):
         """
         Initialize the Flask app with the PooledDB instance.
@@ -30,16 +42,31 @@ class PooledConnectionPlugin:
         :param app: Flask app instance
         """
 
-        # Initialize the connection pool
+        # Configure connection pool based on database type.
+        if self.database_type == "postgres":
+            pool_config = {
+                "creator": psycopg2,
+                "maxconnections": app.config.get('POSTGRES_POOL_MAX_CONNECTIONS'),
+                "host": app.config.get('POSTGRES_HOST'),
+                "port": app.config.get('POSTGRES_PORT'),
+                "user": app.config.get('POSTGRES_USER'),
+                "password": app.config.get('POSTGRES_PASSWORD'),
+                "database": app.config.get('POSTGRES_DB')
+            }
+        else:  # Default to MySQL configuration
+            pool_config = {
+                "creator": pymysql,
+                "maxconnections": app.config.get('MYSQL_POOL_MAX_CONNECTIONS'),
+                "host": app.config.get('MYSQL_HOST'),
+                "port": app.config.get('MYSQL_PORT'),
+                "user": app.config.get('MYSQL_USER'),
+                "password": app.config.get('MYSQL_PASSWORD'),
+                "database": app.config.get('MYSQL_DATABASE'),
+                "cursorclass": app.config.get('MYSQL_CURSORCLASS', pymysql.cursors.DictCursor)
+            }
+
         self.pool = PooledDB(
-            creator=pymysql,
-            maxconnections=app.config.get('MYSQL_POOL_MAX_CONNECTIONS'),
-            host=app.config.get('MYSQL_HOST'),
-            port=app.config.get('MYSQL_PORT'),
-            user=app.config.get('MYSQL_USER'),
-            password=app.config.get('MYSQL_PASSWORD'),
-            database=app.config.get('MYSQL_DATABASE'),
-            cursorclass=app.config.get('MYSQL_CURSORCLASS', pymysql.cursors.DictCursor)
+            **pool_config
         )
 
          # Store the plugin in Flask app extensions

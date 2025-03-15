@@ -17,15 +17,6 @@ from . import VersionedModel
 class PersonOrganizationRole(VersionedModel):
     """A person organization role model."""
 
-    person: str = field(default=None, metadata={
-        'relationship': {'model': 'Person'},
-        'field_type': 'entity_id'
-    })
-    organization: str = field(default=None, metadata={
-        'relationship': {'model': 'Organization'},
-        'field_type': 'entity_id'
-    })
-    
-    # TODO: We would benefit from strictly typed Enum for role, but flexibility would lower
-    # role: PersonOrganizationRoleEnum = PersonOrganizationRoleEnum.MEMBER
+    person_id: str = None
+    organization_id: str = None
     role: str = None

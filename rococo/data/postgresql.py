@@ -238,19 +238,35 @@ class PostgreSQLAdapter(DbAdapter):
             return db_response
 
     def get_save_query(self, table_name, data):
-        """Returns a query to delete a row and insert a new one in PostgreSQL."""
+        """Returns a query to update a row or insert a new one in PostgreSQL."""
         columns = ', '.join(data.keys())
         placeholders = ', '.join(['%s'] * len(data))
 
-        values = tuple(data.values())
-        unique_column = list(data.keys())[0]  # Assuming the first key is the unique identifier
+        # Prepare the update columns in the form 'column_name = EXCLUDED.column_name'
+        update_columns = ', '.join([f"{col} = EXCLUDED.{col}" for col in data.keys()])
+        
+        # The first column will be used for update condition (non-unique column, can be any)
+        unique_column = list(data.keys())[0]
 
+        # The query will first try to update, and if no rows are updated, it will insert
         query = (
-            f"DELETE FROM {table_name} WHERE {unique_column} = %s; "
-            f"INSERT INTO {table_name} ({columns}) VALUES ({placeholders})"
+            f"WITH updated AS ("
+            f"  UPDATE {table_name} "
+            f"  SET {', '.join([f'{col} = %s' for col in data.keys()])} "
+            f"  WHERE {unique_column} = %s "
+            f"  RETURNING *"
+            f") "
+            f"INSERT INTO {table_name} ({columns}) "
+            f"SELECT {placeholders} "
+            f"WHERE NOT EXISTS (SELECT 1 FROM updated)"
         )
+        
+        # Prepare values: first, the update values, followed by the insert values
+        update_values = tuple(data.values()) + (data[unique_column],)  # values for update and delete condition
+        insert_values = tuple(data.values())  # values for insert
 
-        values = (data[unique_column],) + values  # Ensure the delete condition is included
+        # Combine the update and insert values
+        values = update_values + insert_values
 
         return query, values
 

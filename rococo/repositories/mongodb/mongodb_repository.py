@@ -1,143 +1,265 @@
 """MongoDbRepository class"""
 
-from dataclasses import fields
-from datetime import datetime
 import json
-from typing import Dict, List, Type
 from uuid import UUID
-import uuid
-
-from rococo.data import MongoDBAdapter
+from datetime import datetime
+from typing import Any, Dict, List, Optional, Type
+from dataclasses import fields as dataclass_fields
 from rococo.messaging import MessageAdapter
-from rococo.models.versioned_model import VersionedModel
 from rococo.repositories import BaseRepository
-
-
-def get_uuid4_hex():
-    return uuid.uuid4().hex
+from rococo.data.mongodb import MongoDBAdapter
+from rococo.models.versioned_model import VersionedModel
 
 class MongoDbRepository(BaseRepository):
-    """MongoDbRepository class"""
+    """Generic MongoDB repository for VersionedModel with audit and messaging."""
+
     def __init__(
-            self,
-            db_adapter: MongoDBAdapter,
-            model: Type[VersionedModel],
-            message_adapter: MessageAdapter,
-            queue_name: str,
-            user_id: UUID = None
+        self,
+        db_adapter: MongoDBAdapter,
+        model: Type[VersionedModel],
+        message_adapter: MessageAdapter,
+        queue_name: str,
+        user_id: Optional[UUID] = None
     ):
-        super().__init__(db_adapter, model, message_adapter, queue_name, user_id=user_id)
+        """
+        Initializes a MongoDbRepository instance.
 
-
-    def _process_data_before_save(self, instance: VersionedModel):
-        """Method to convert VersionedModel instance to a data dictionary that can be inserted in MongoDB"""
-        super()._process_data_before_save(instance)
-        data = instance.as_dict(convert_datetime_to_iso_string=False, convert_uuids=True)
-        for field in fields(instance):
-            if data.get(field.name) is None:
-                continue
-
-            field_value = data[field.name]
-
-            if field.metadata.get('field_type') in ['entity_id', 'uuid']:
-                if isinstance(field_value, VersionedModel):
-                    field_value = str(field_value.entity_id).replace('-', '')
-                elif isinstance(field_value, dict):
-                    field_value = str(field_value.get('entity_id')).replace('-', '')
-                elif isinstance(field_value, str):
-                    field_value = field_value.replace('-', '')
-            if isinstance(field_value, UUID):
-                field_value = str(field_value).replace('-', '')
-            if isinstance(field_value, datetime):
-                field_value = field_value.strftime('%Y-%m-%d %H:%M:%S')
-
-            data[field.name] = field_value
-        return data
-
-    def get_move_entity_to_audit_table_query(self, table, entity_id):
-        instance = self.get_one(table, "", {'entity_id': entity_id})
-        if instance:
-            self._insert({k:v for k,v in instance.items() if k != "_id"}, f"{table}_audit")
-    
-    def get_save_query(self, table, data):
-        self.db[table].find_one_and_update(
-            {'entity_id': data.get("entity_id")},
-            {'$set': {k:v for k,v in data.items() if k != "_id"}},
-            upsert=True
+        Args:
+            db_adapter (MongoDBAdapter): The database adapter for MongoDB operations.
+            model (Type[VersionedModel]): The model class to be used in this repository.
+            message_adapter (MessageAdapter): The message adapter for messaging operations.
+            queue_name (str): The name of the message queue.
+            user_id (Optional[UUID], optional): The user ID associated with operations. Defaults to None.
+        """
+        super().__init__(
+            db_adapter,
+            model,
+            message_adapter,
+            queue_name,
+            user_id=user_id
         )
 
-    def save(self, instance: VersionedModel, send_message: bool = False):
-        """Save func"""
+    def _process_data_before_save(self, instance: VersionedModel) -> Dict[str, Any]:
+        """
+        Convert a VersionedModel instance into a data dictionary for MongoDB storage.
+        This method processes the data from the given instance, converting it into
+        a format suitable for saving in MongoDB. It handles the conversion of UUIDs
+        by stripping dashes and formats datetime objects into strings. The method
+        iterates over each field of the instance, checking for specific metadata 
+        to apply the appropriate transformations.
+
+        Args:
+            instance (VersionedModel): The instance to be processed.
+
+        Returns:
+            Dict[str, Any]: A dictionary representation of the instance, with UUIDs
+            and datetime objects appropriately formatted.
+        """
+        super()._process_data_before_save(instance)
+        data = instance.as_dict(
+            convert_datetime_to_iso_string=False,
+            convert_uuids=True
+        )
+        for f in dataclass_fields(instance):
+            val = data.get(f.name)
+            if val is None:
+                continue
+            # Strip dashes for UUID/entity_id fields
+            if f.metadata.get('field_type') in ['entity_id', 'uuid']:
+                val = str(val).replace('-', '')
+            # Format datetimes
+            if isinstance(val, datetime):
+                val = val.strftime('%Y-%m-%d %H:%M:%S')
+            data[f.name] = val
+        return data
+
+    def get_one(
+        self,
+        collection_name: str,
+        index: str,
+        query: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Retrieves a single document matching the given query and index.
+
+        Args:
+            collection_name (str): The name of the MongoDB collection to query.
+            index (str): The name of the index to use for the query.
+            query (Dict[str, Any]): The additional query parameters to filter the results.
+
+        Returns:
+            Optional[Dict[str, Any]]: The single document matching the query, or None if no document is found.
+        """
+        base = {'latest': True, 'active': True}
+        base.update(query or {})
+        return self._execute_within_context(
+            lambda: self.adapter.get_one(
+                collection_name,
+                base,
+                hint=index
+            )
+        )
+
+    def get_many(
+        self,
+        collection_name: str,
+        index: str,
+        query: Dict[str, Any] = None,
+        limit: int = 0
+    ) -> List[Dict[str, Any]]:
+        """
+        Retrieves multiple documents from a specified MongoDB collection
+        matching the given query parameters, index, and limit.
+
+        Args:
+            collection_name (str): The name of the MongoDB collection to query.
+            index (str): The name of the index to use for the query.
+            query (Dict[str, Any], optional): Additional query parameters to filter the results.
+            limit (int, optional): The maximum number of documents to retrieve. Defaults to 0 for no limit.
+
+        Returns:
+            List[Dict[str, Any]]: A list of documents matching the query parameters.
+        """
+        base = {'latest': True, 'active': True}
+        if query:
+            base.update(query)
+        return self._execute_within_context(
+            lambda: self.adapter.get_many(
+                collection_name,
+                base,
+                hint=index,
+                limit=limit
+            )
+        )
+
+    def delete(
+        self,
+        instance: VersionedModel,
+        collection_name: str
+    ) -> VersionedModel:
+        """
+        Deactivates a given instance in the specified MongoDB collection.
+
+        Args:
+            instance (VersionedModel): The instance to deactivate.
+            collection_name (str): The name of the MongoDB collection to query.
+
+        Returns:
+            VersionedModel: The deactivated instance.
+        """
+        instance.active = False
+        return self.save(instance)
+
+    def create(
+        self,
+        instance: VersionedModel,
+        collection_name: str
+    ) -> VersionedModel:
+        """
+        Creates a new document in the specified MongoDB collection.
+
+        Args:
+            instance (VersionedModel): The instance to save.
+            collection_name (str): The name of the MongoDB collection to query.
+
+        Returns:
+            VersionedModel: The saved instance.
+        """
+        instance.active = True
+        instance.latest = True
+        return self.save(instance)
+
+    def create_many(
+        self,
+        instances: List[VersionedModel],
+        collection_name: str
+    ) -> None:
+        """
+        Creates multiple documents in the specified MongoDB collection.
+
+        Args:
+            instances (List[VersionedModel]): A list of instances to save.
+            collection_name (str): The name of the MongoDB collection to query.
+        """
+        docs = [
+            self._process_data_before_save(
+                inst.__class__(**inst.__dict__)
+            )
+            for inst in instances
+        ]
+        if docs:
+            self._execute_within_context(
+                lambda: self.adapter.db[collection_name].insert_many(docs)
+            )
+
+    def save(
+        self,
+        instance: VersionedModel,
+        send_message: bool = False
+    ) -> VersionedModel:
+        """
+        Saves the given instance to the specified MongoDB collection.
+
+        Args:
+            instance (VersionedModel): The instance to save.
+            send_message (bool, optional): If True, sends a message to the
+                configured message queue with the saved instance as a JSON
+                payload. Defaults to False.
+
+        Returns:
+            VersionedModel: The saved instance.
+
+        Notes:
+            Will move the previous version of the instance to the audit table
+            if the instance is not new.
+        """
         data = self._process_data_before_save(instance)
-        with self.adapter:
-            self.adapter.run_transaction([lambda: self.get_move_entity_to_audit_table_query(self.table_name, data.get("entity_id")), lambda: self.get_save_query(self.table_name, data)])
-            if send_message:
-                # This assumes that the instance is now in post-saved state with all the new DB updates
-                message = json.dumps(instance.as_dict(convert_datetime_to_iso_string=True))
-                self.message_adapter.send_message(self.queue_name, message)
+        # Move old version to audit
+        self._execute_within_context(
+            lambda: self.adapter.move_entity_to_audit_table(
+                self.table_name,
+                data['entity_id']
+            )
+        )
+        # Upsert new version
+        self._execute_within_context(
+            lambda: self.adapter.save(
+                self.table_name,
+                data
+            )
+        )
+        # Send message if requested
+        if send_message:
+            payload = json.dumps(
+                instance.as_dict(
+                    convert_datetime_to_iso_string=True
+                )
+            )
+            self.message_adapter.send_message(
+                self.queue_name,
+                payload
+            )
         return instance
 
-    def _insert(self, data: Dict, collection_name: str):
-        with self.adapter:
-            self.db[collection_name].insert_one(data)
+    def count(
+        self,
+        collection_name: str,
+        index: str,
+        query: Dict[str, Any]
+    ) -> int:
+        """
+        Count the number of documents in a collection that match the query.
 
-    def create(self, data: VersionedModel, collection_name: str):
-        data.active = True
-        data.latest = True
-        return self.update(data, collection_name)
+        Args:
+            collection_name (str): The name of the collection to query.
+            index (str): The name of the index to use for the query.
+            query (Dict[str, Any], optional): The query parameters to filter the results.
 
-    def create_many(self, data: List[VersionedModel], collection_name: str):
-        documents = []
-        for instance in data:
-            instance.active = True
-            instance.latest = True
-            data = self._process_data_before_save(instance)
-            documents.append(data)
-        self.db[collection_name].insert_many(documents=documents)
-
-    def update(self, data: VersionedModel, collection_name: str, updated_by=None):
-        self.table_name = collection_name
-        with self.client.start_session() as session:
-            with session.start_transaction():
-                if data:
-                    self.user_id = updated_by
-                    return self.save(data)
-
-    def delete(self, data: VersionedModel, collection_name: str):
-        data.active = False
-        return self.update(data, collection_name)
-
-    def get_one(self, collection_name: str, index: str, query: Dict):
-        base_query = {'latest': True, 'active': True}
-        if query:
-            base_query.update(query)
-
-        kwargs = {"hint": index} if index else {}
-        with self.adapter:
-            data = self.db[collection_name].find_one(base_query, **kwargs)
-            if data:
-                return data
-            
-
-    def get_all(self, collection_name: str, index: str, query: Dict = None):
-        base_query = {'latest': True, 'active': True}
-        if query:
-            base_query.update(query)
-        with self.adapter:
-            data = self.db[collection_name].find(
-                base_query, hint=index
-            )
-            if data:
-                return data
-        return []
-
-    def get_count(self, collection_name: str, index: str, query: Dict):
-        query.update(dict(latest=True, active=True))
-        return self.db[collection_name].count_documents(query, hint=index)
-
-    def create_index(self, collection_name: str, columns: List, index_name: str, partial_filter: Dict):
-        self.db[collection_name].create_index(
-            columns,
-            name=index_name,
-            partialFilterExpression=partial_filter
+        Returns:
+            int: The number of matching documents.
+        """
+        base = {'latest': True, 'active': True}
+        base.update(query or {})
+        return self._execute_within_context(
+            lambda: self.adapter.db[collection_name].count_documents(base)
         )

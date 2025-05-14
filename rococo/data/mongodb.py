@@ -372,3 +372,22 @@ class MongoDBAdapter(DbAdapter):
             return coll.create_index(columns, **options)
         except errors.PyMongoError as e:
             raise RuntimeError(f"create_index failed: {e}") from e
+
+    def get_move_entity_to_audit_table_query(self, table: str, entity_id: str):
+        """
+        Stub to satisfy the abstract API.
+        Use move_entity_to_audit_table(...) directly instead.
+        """
+        raise NotImplementedError(
+            "get_move_entity_to_audit_table_query() is not supported; "
+            "call move_entity_to_audit_table() instead."
+        )
+
+    def get_save_query(self, table: str, data: Dict[str, Any]):
+        """
+        Stub to satisfy the abstract API.
+        Use save(...) directly instead.
+        """
+        raise NotImplementedError(
+            "get_save_query() is not supported; call save() instead."
+        )

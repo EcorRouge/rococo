@@ -2,11 +2,10 @@
 base repository for rococo
 """
 
-from typing import Any, Dict, List, Type, Union
-from uuid import UUID
 import json
-
+from uuid import UUID
 from rococo.data.base import DbAdapter
+from typing import Any, Dict, List, Type, Union
 from rococo.messaging.base import MessageAdapter
 from rococo.models.versioned_model import VersionedModel
 

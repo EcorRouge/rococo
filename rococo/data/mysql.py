@@ -1,10 +1,8 @@
-import logging
 import time
-from typing import Any, Dict, List, Tuple, Union, Optional, Callable
-from uuid import UUID
-
 import pymysql
-
+import logging
+from uuid import UUID
+from typing import Any, Dict, List, Tuple, Union, Optional, Callable
 from rococo.data.base import DbAdapter
 
 

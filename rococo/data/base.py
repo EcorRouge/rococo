@@ -42,6 +42,13 @@ class DbAdapter(ABC):
         pass
 
     @abstractmethod
+    def get_count(self, table: str, conditions: Dict[str, Any]) -> int:
+        """
+        Count the number of records in `table` matching `conditions`.
+        """
+        pass
+
+    @abstractmethod
     def get_move_entity_to_audit_table_query(self, table, entity_id):
         """Returns query to move entity by entity_id to audit table."""
         pass

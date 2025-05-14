@@ -70,6 +70,32 @@ class BaseRepository:
 
         return [self.model.from_dict(record) for record in records]
 
+    def get_count(
+        self,
+        collection_name: str,
+        index: str,
+        query: Dict[str, Any]
+    ) -> int:
+        """
+        Retrieves the count of records in a specified collection that match the given query parameters
+        and index.
+
+        Args:
+            collection_name (str): The name of the collection to query.
+            index (str): The name of the index to use for the query. hint actually work for MongoDB and ignore by other DBs
+            query (Dict[str, Any], optional): Additional query parameters to filter the results.
+
+        Returns:
+            int: The count of matching records.
+        """
+        base = {'latest': True, 'active': True}
+        base.update(query or {})
+
+        # adapter.get_count only takes (table, conditions)
+        return self._execute_within_context(
+            lambda: self.adapter.get_count(collection_name, hint=index)
+        )
+
     def save(self, instance: VersionedModel, send_message: bool = False):
         """Save func"""
         data = self._process_data_before_save(instance)

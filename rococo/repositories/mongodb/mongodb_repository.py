@@ -132,6 +132,27 @@ class MongoDbRepository(BaseRepository):
             )
         )
 
+    def count(
+        self,
+        collection_name: str,
+        index: str,
+        query: Dict[str, Any]
+    ) -> int:
+        """
+        Count the number of documents in a collection that match the query.
+
+        Args:
+            collection_name (str): The name of the collection to query.
+            index (str): The name of the index to use for the query.
+            query (Dict[str, Any], optional): The query parameters to filter the results.
+
+        Returns:
+            int: The number of matching documents.
+        """
+        base = {'latest': True, 'active': True}
+        base.update(query or {})
+        return self.get_count(collection_name, index, query)
+
     def delete(
         self,
         instance: VersionedModel,
@@ -189,7 +210,7 @@ class MongoDbRepository(BaseRepository):
         ]
         if docs:
             self._execute_within_context(
-                lambda: self.adapter.db[collection_name].insert_many(docs)
+                lambda: self.adapter.insert_many(collection_name, docs)
             )
 
     def save(
@@ -240,26 +261,3 @@ class MongoDbRepository(BaseRepository):
                 payload
             )
         return instance
-
-    def count(
-        self,
-        collection_name: str,
-        index: str,
-        query: Dict[str, Any]
-    ) -> int:
-        """
-        Count the number of documents in a collection that match the query.
-
-        Args:
-            collection_name (str): The name of the collection to query.
-            index (str): The name of the index to use for the query.
-            query (Dict[str, Any], optional): The query parameters to filter the results.
-
-        Returns:
-            int: The number of matching documents.
-        """
-        base = {'latest': True, 'active': True}
-        base.update(query or {})
-        return self._execute_within_context(
-            lambda: self.adapter.db[collection_name].count_documents(base)
-        )

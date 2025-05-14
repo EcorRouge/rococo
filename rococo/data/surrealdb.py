@@ -168,6 +168,28 @@ class SurrealDbAdapter(DbAdapter):
 
         return db_response
 
+    def get_count(self, table: str, conditions: Dict[str, Any]) -> int:
+        """
+        Count records in `table` matching `conditions`.
+        """
+        # build SurrealDB WHERE clause fragments
+        clauses = []
+        for k, v in conditions.items():
+            clauses.append(self._build_condition_string(k, v))
+        # always filter on active
+        clauses.append("active = true")
+
+        where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+        # Surreal uses COUNT() for total rows
+        sql = f"SELECT COUNT() AS count FROM {table}{where}"
+
+        raw = self.execute_query(sql)
+        parsed = self.parse_db_response(raw)
+        # parse_db_response will return a dict when there's a single result
+        if isinstance(parsed, dict) and "count" in parsed:
+            return int(parsed["count"])
+        return 0
+
     def get_save_query(self, table: str, data: Dict[str, Any]):
         """Returns operation to save a data record in the table."""
         return 'update', data['id'], data

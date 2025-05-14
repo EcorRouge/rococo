@@ -224,6 +224,29 @@ class MongoDBAdapter(DbAdapter):
         except errors.PyMongoError as e:
             raise RuntimeError(f"get_many failed: {e}") from e
 
+    def get_count(self, table: str, conditions: Dict[str, Any]) -> int:
+        """
+        Retrieve the count of documents from the specified MongoDB collection based on given conditions.
+
+        This method returns the count of documents from the MongoDB collection specified by `table`
+        based on the given `conditions`.
+
+        Args:
+            table (str): The name of the collection from which to retrieve the count.
+            conditions (Dict[str, Any]): A dictionary specifying the conditions to filter the documents.
+
+        Returns:
+            int: The count of documents that match the conditions.
+
+        Raises:
+            RuntimeError: If the query fails due to a PyMongoError.
+        """
+        try:
+            coll = self._get_collection(table)
+            return coll.count_documents(conditions)
+        except errors.PyMongoError as e:
+            raise RuntimeError(f"get_count failed: {e}") from e
+
     def move_entity_to_audit_table(
         self,
         table: str,

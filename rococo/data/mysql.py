@@ -216,6 +216,27 @@ class MySqlAdapter(DbAdapter):
         else:
             return db_response
 
+    def get_count(self, table: str, conditions: Dict[str, Any]) -> int:
+        """
+        Count rows in `table` matching `conditions`.
+        """
+        # build WHERE clauses
+        cond_clauses: List[str] = []
+        params: List[Any] = []
+        for key, val in conditions.items():
+            clause, vals = self._build_condition_string(table, key, val)
+            cond_clauses.append(clause)
+            params.extend(vals)
+
+        where = f"WHERE {' AND '.join(cond_clauses)}" if cond_clauses else ""
+        # alias as `count`
+        sql = f"SELECT COUNT(*) AS `count` FROM {table} {where}"
+        rows = self.execute_query(sql, tuple(params))
+        # execute_query returns a list of dicts
+        if isinstance(rows, list) and rows:
+            return int(rows[0].get('count', 0))
+        return 0
+
     def get_save_query(self, table_name, data):
         """Returns a query to save an entity in database."""
         columns = ', '.join(data.keys())

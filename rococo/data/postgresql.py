@@ -237,6 +237,26 @@ class PostgreSQLAdapter(DbAdapter):
         else:
             return db_response
 
+    def get_count(self, table: str, conditions: Dict[str, Any]) -> int:
+        """
+        Count rows in `table` matching `conditions`.
+        """
+        cond_clauses: List[str] = []
+        params: List[Any] = []
+        for key, val in conditions.items():
+            clause, vals = self._build_condition_string(table, key, val)
+            cond_clauses.append(clause)
+            params.extend(vals)
+
+        where = f"WHERE {' AND '.join(cond_clauses)}" if cond_clauses else ""
+        sql = f"SELECT COUNT(*) AS count FROM {table} {where}"
+        rows = self.execute_query(sql, tuple(params))
+
+        if isinstance(rows, list) and rows:
+            # pull from the more descriptive alias
+            return int(rows[0].get('count', 0))
+        return 0
+
     def get_save_query(self, table_name, data):
         """Returns a query to update a row or insert a new one in PostgreSQL."""
         columns = ', '.join(data.keys())

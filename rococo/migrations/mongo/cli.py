@@ -1,5 +1,4 @@
 # rococo/migrations/mongo/cli.py
-import os
 from rococo.migrations.common.cli_base import BaseCli
 from rococo.data.mongodb import MongoDBAdapter
 from .migration import MongoMigration # This will be a new class

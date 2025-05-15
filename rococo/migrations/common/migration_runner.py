@@ -1,4 +1,5 @@
 import os
+import logging
 from importlib import import_module
 from .migration_template import get_template
 
@@ -15,18 +16,27 @@ class MigrationRunner:
         }
 
     def get_db_version(self):
-        query = "SELECT version from db_version;"
-        db_version = None
         try:
             with self.migration.db_adapter:
-                db_response = self.migration.db_adapter.execute_query(query)
-                results = self.migration.db_adapter.parse_db_response(db_response)
-                db_version = results[0].get('version')
+                if hasattr(self.migration, 'get_current_db_version'):
+                    db_version = self.migration.get_current_db_version()
+                else:
+                    # This part is for the SQL-based migrations
+                    query = "SELECT version from db_version;"
+                    # Ensure db_adapter context is managed if execute_query doesn't do it
+                    db_response = self.migration.db_adapter.execute_query(query)
+                    results = self.migration.db_adapter.parse_db_response(db_response)
+                    db_version = results[0].get('version')
         except Exception as e:
-            raise e
+            logging.warning(f"Could not retrieve DB version, assuming '0000000000'. Error: {e}")
+            db_version = '0000000000'
 
         db_version = db_version or '0000000000'
-        return f'{int(db_version):010d}'
+        try:
+            return f'{int(db_version):010d}'
+        except ValueError:
+            logging.error(f"DB version '{db_version}' is not a valid integer string. Using as is.")
+            return db_version
 
     def _get_forward_migration_script(self):
         db_version = self.get_db_version()

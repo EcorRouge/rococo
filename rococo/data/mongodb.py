@@ -67,9 +67,9 @@ class MongoDBAdapter(DbAdapter):
         if self._session:
             self._session.end_session()
             self._session = None
-        # Don’t close the MongoClient in __exit__, only tear down the session. 
+        # self.client.close()
+        # Keep MongoClient open; application teardown will close it
         # The MongoClient is thread‐safe and intended to be long‐lived; you shouldn’t open & close it per operation.
-        # self.client.close() 
 
     def _get_collection(self, name: str, write: bool = False) -> Collection:
         """

@@ -16,27 +16,34 @@ class MigrationRunner:
         }
 
     def get_db_version(self):
+        # This delegates to the specific migration class's method
         try:
+            # The db_adapter should be in a context for the migration's methods
             with self.migration.db_adapter:
+                # If MongoMigration is used, its get_current_db_version will be called.
+                # For SQL, a similar method would exist or be adapted.
                 if hasattr(self.migration, 'get_current_db_version'):
                     db_version = self.migration.get_current_db_version()
-                else:
-                    # This part is for the SQL-based migrations
+                else: # Fallback or specific logic for SQL if needed
                     query = "SELECT version from db_version;"
-                    # Ensure db_adapter context is managed if execute_query doesn't do it
                     db_response = self.migration.db_adapter.execute_query(query)
                     results = self.migration.db_adapter.parse_db_response(db_response)
                     db_version = results[0].get('version')
+
         except Exception as e:
+            # For MongoDB, if the metadata collection/document isn't there,
+            # get_current_db_version handles returning '0000000000'.
+            # This generic catch might hide specific setup issues.
             logging.warning(f"Could not retrieve DB version, assuming '0000000000'. Error: {e}")
-            db_version = '0000000000'
+            db_version = '0000000000' # Default if any error
 
         db_version = db_version or '0000000000'
+        # Ensure consistent formatting (e.g., 10-digit string)
         try:
             return f'{int(db_version):010d}'
-        except ValueError:
+        except ValueError: # If version is not an int string
             logging.error(f"DB version '{db_version}' is not a valid integer string. Using as is.")
-            return db_version
+            return db_version # Or handle error more strictly
 
     def _get_forward_migration_script(self):
         db_version = self.get_db_version()

@@ -143,18 +143,34 @@ class VersionedModel:
 
     def __repr__(self) -> str:
         """
-        Return a string representation of the object, suitable for debugging.
+        Return a string representation of the VersionedModel instance.
 
-        If the instance is partial (i.e. it was loaded from the database as a
-        foreign key of another model), only the entity_id and _is_partial fields
-        are included in the representation.
+        This method generates a string that includes the class name and a list of
+        field names with their respective values. For partial instances, only the
+        `entity_id` and `_is_partial` flag are included. For fields marked as 
+        many-to-many lists, it displays a placeholder `[...]` to indicate the 
+        presence of related entities. Any unloaded fields are represented with 
+        `<unloaded>`.
 
-        For non-partial instances, all fields are included, with many-to-many
-        fields represented as [...].
+        Returns:
+            str: A string representation of the instance.
         """
         if self._is_partial:
             return f"{type(self).__name__}(entity_id={self.entity_id!r}, _is_partial=True)"
-        return f"{type(self).__name__}({', '.join(f'{f.name}={'[...]' if f.metadata.get('field_type') == 'm2m_list' and getattr(self, f.name) is not None else repr(getattr(self, f.name))}' for f in fields(type(self)))})"
+
+        field_strings = []
+        for f in fields(type(self)):
+            try:
+                value = getattr(self, f.name)
+                if f.metadata.get('field_type') == 'm2m_list' and value is not None:
+                    field_strings.append(f"{f.name}=[...]")
+                else:
+                    field_strings.append(f"{f.name}={repr(value)}")
+            except AttributeError:
+                field_strings.append(f"{f.name}=<unloaded>")
+        
+        return f"{type(self).__name__}({', '.join(field_strings)})"
+
 
     @classmethod
     def fields(cls) -> List[str]:

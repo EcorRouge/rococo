@@ -1,5 +1,4 @@
-# rococo/migrations/mongo/migration.py
-import logging # <<< IMPORT ADDED HERE
+import logging
 from pymongo.errors import OperationFailure
 from rococo.migrations.common.migration_base import MigrationBase
 from rococo.data.mongodb import MongoDBAdapter

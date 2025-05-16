@@ -1,67 +1,179 @@
 """
-Mongo DB repository test
+Extended MongoDbRepository test cases
 """
 
 import json
 import unittest
-from unittest.mock import MagicMock
 from uuid import UUID
-from .base_repository_test import TestVersionedModel
+from unittest.mock import MagicMock
+from .base_repository_test import DummyVersionedModel
 from rococo.repositories.mongodb.mongodb_repository import MongoDbRepository
 
 
 class MongoDbRepositoryTestCase(unittest.TestCase):
-    """
-    MongoDbRepository Test Case class
-    """
     def setUp(self):
+        """
+        Set up the test fixture.
+
+        This sets up a mock database adapter, message adapter, and a test model
+        instance. The MongoDbRepository is then initialized with these mocks.
+        """
         self.db_adapter_mock = MagicMock()
         self.message_adapter_mock = MagicMock()
-        self.model_data = {"entity_id": UUID(int=8)}
-        self.model_instance = TestVersionedModel(**self.model_data)
         self.queue_name = "test_queue"
+        self.model_data = {"entity_id": UUID(int=8)}
+        self.model_instance = DummyVersionedModel(**self.model_data)
+
         self.repository = MongoDbRepository(
             db_adapter=self.db_adapter_mock,
-            model=TestVersionedModel,
+            model=DummyVersionedModel,
             message_adapter=self.message_adapter_mock,
             queue_name=self.queue_name
         )
 
     def test_save_sends_message(self):
         """
-        test that saving sends the message
+        Tests that the save method sends a message to the message queue after saving.
+        
+        Verifies that the save method sends a message to the message queue with the
+        saved entity data and the correct queue name. Also verifies that the saved
+        instance is returned with the correct entity_id.
         """
-        # Set up the mock to return a successful save
-        self.db_adapter_mock.get_save_query.return_value = "", ()
-        self.db_adapter_mock.get_move_entity_to_audit_table_query.return_value = "", ()
-        self.db_adapter_mock.run_transaction.return_value = True
+        self.db_adapter_mock.save.return_value = self.model_instance.as_dict()
+        self.db_adapter_mock.move_entity_to_audit_table.return_value = None
 
-        # Call the save method
         saved_instance = self.repository.save(self.model_instance, send_message=True)
 
-        mongo_dict = saved_instance
-        mongo_dict._id = mongo_dict.entity_id
-
-        # Assert the send_message method was called once with the correct arguments
         self.message_adapter_mock.send_message.assert_called_once_with(
-            self.queue_name, json.dumps(self.model_instance.as_dict(convert_datetime_to_iso_string=True))
+            self.queue_name,
+            json.dumps(self.model_instance.as_dict(convert_datetime_to_iso_string=True))
         )
+        self.assertEqual(saved_instance.entity_id, self.model_instance.entity_id)
 
     def test_save_without_message(self):
         """
-        Test save without sending message
+        Tests that the save method doesn't send a message to the message queue when
+        send_message=False is passed.
+        
+        Verifies that the save method doesn't send a message to the message queue
+        when send_message=False is passed. Also verifies that the saved
+        instance is returned with the correct entity_id.
         """
-        # Set up the mock to return a successful save
-        self.db_adapter_mock.get_save_query.return_value = "", ()
-        self.db_adapter_mock.get_move_entity_to_audit_table_query.return_value = "", ()
-        self.db_adapter_mock.run_transaction.return_value = True
+        self.db_adapter_mock.save.return_value = self.model_instance.as_dict()
+        self.db_adapter_mock.move_entity_to_audit_table.return_value = None
 
-        # Call the save method with send_message as False
         self.repository.save(self.model_instance, send_message=False)
 
-        # Assert the send_message method was not called
         self.message_adapter_mock.send_message.assert_not_called()
 
+    def test_delete_sets_active_false(self):
+        """
+        Tests that the delete method sets the active flag of the instance to False.
+
+        Verifies that the delete method sets the active flag of the instance to False
+        and calls the save method. This test ensures that the delete method correctly
+        marks the instance as deleted.
+        """
+        self.db_adapter_mock.save.return_value = self.model_instance.as_dict()
+        self.db_adapter_mock.move_entity_to_audit_table.return_value = None
+
+        deleted_instance = self.repository.delete(self.model_instance)
+
+        self.assertFalse(deleted_instance.active)
+        self.db_adapter_mock.save.assert_called()
+
+    def test_create_sets_active_true(self):
+        """
+        Tests that the create method sets the active flag of the instance to True.
+
+        Verifies that the create method correctly sets the active flag to True
+        for the instance being created and ensures that the save method is called
+        on the database adapter.
+        """
+        self.db_adapter_mock.save.return_value = self.model_instance.as_dict()
+        self.model_instance.active = False
+
+        created_instance = self.repository.create(self.model_instance)
+
+        self.assertTrue(created_instance.active)
+        self.db_adapter_mock.save.assert_called()
+
+    def test_create_many_calls_insert_many(self):
+        """
+        Tests that the create_many method calls the insert_many method
+        of the database adapter with the correct arguments.
+
+        Verifies that the create_many method calls the insert_many method
+        with the correct collection name and list of instances to insert.
+        """
+        self.repository._execute_within_context = MagicMock()
+        instances = [DummyVersionedModel(entity_id=UUID(int=i)) for i in range(3)]
+
+        self.repository.create_many(instances, collection_name="test_collection")
+
+        self.repository._execute_within_context.assert_called_once()
+        call_args = self.repository._execute_within_context.call_args[0][0]  # the lambda passed
+        docs = call_args()  # call the lambda
+        self.assertEqual(len(docs), 3)
+
+    def test_get_one_returns_instance(self):
+        """
+        Tests that the get_one method returns an instance of the model when given a matching condition.
+
+        Verifies that the get_one method correctly returns an instance of the model
+        when given a matching condition. The condition is specified as a dictionary
+        with the key being the field name and the value being the value of the field.
+        The method should return an instance of the model with the correct entity_id.
+        """
+        self.db_adapter_mock.get_one.return_value = {"_id": str(self.model_instance.entity_id)}
+
+        result = self.repository.get_one("test_collection", "entity_id_idx", {"entity_id": str(self.model_instance.entity_id)})
+        self.assertIsInstance(result, DummyVersionedModel)
+
+    def test_get_one_returns_none(self):
+        """
+        Tests that the get_one method returns None when no matching record is found.
+
+        Verifies that the get_one method correctly returns None when no record is found
+        matching the given condition. The condition is specified as a dictionary
+        with the key being the field name and the value being the value of the field.
+        The method should return None in this case.
+        """
+        self.db_adapter_mock.get_one.return_value = None
+
+        result = self.repository.get_one("test_collection", "entity_id_idx", {"entity_id": str(self.model_instance.entity_id)})
+        self.assertIsNone(result)
+
+    def test_get_many_returns_instances(self):
+        """
+        Tests that the get_many method returns a list of instances when given a matching condition.
+
+        Verifies that the get_many method correctly returns a list of instances of the model
+        when given a matching condition. The condition is specified as a dictionary
+        with the key being the field name and the value being the value of the field.
+        The method should return a list of instances of the model with the correct entity_id.
+        """
+        self.db_adapter_mock.get_many.return_value = [
+            {"_id": str(UUID(int=1))},
+            {"_id": str(UUID(int=2))},
+        ]
+
+        result = self.repository.get_many("test_collection", "entity_id_idx")
+        self.assertEqual(len(result), 2)
+        for item in result:
+            self.assertIsInstance(item, DummyVersionedModel)
+
+    def test_get_many_empty(self):
+        """
+        Tests that the get_many method returns an empty list when no records match the condition.
+
+        Verifies that the get_many method correctly returns an empty list when the database
+        adapter returns an empty list, indicating no records match the provided condition.
+        """
+        self.db_adapter_mock.get_many.return_value = []
+
+        result = self.repository.get_many("test_collection", "entity_id_idx")
+        self.assertEqual(result, [])
 
 if __name__ == '__main__':
     unittest.main()

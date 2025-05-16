@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 
 class DbAdapter(ABC):
@@ -42,10 +42,7 @@ class DbAdapter(ABC):
         pass
 
     @abstractmethod
-    def get_count(self, table: str, conditions: Dict[str, Any]) -> int:
-        """
-        Count the number of records in `table` matching `conditions`.
-        """
+    def get_count(self, table: str, conditions: Dict[str, Any], options: Optional[Dict[str, Any]] = None) -> int:
         pass
 
     @abstractmethod

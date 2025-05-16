@@ -1,11 +1,10 @@
 """PostgreSQLDbRepository class"""
 
-from dataclasses import fields
-from datetime import datetime
-import json
 import re
-from typing import Any, Dict, List, Type, Union, Optional
 from uuid import UUID
+from datetime import datetime
+from dataclasses import fields
+from typing import Any, Dict, List, Type, Union, Optional
 
 from rococo.data import PostgreSQLAdapter
 from rococo.messaging import MessageAdapter
@@ -138,6 +137,49 @@ class PostgreSQLRepository(BaseRepository):
                     setattr(instance, key, value)
 
         return instances
+
+    def get_count(
+        self,
+        # collection_name: str, # Use self.table_name for consistency
+        index: Optional[str] = None, # index (for hint) can be optional
+        query: Optional[Dict[str, Any]] = None # query can be optional
+    ) -> int:
+        """
+        Retrieves the count of records in the repository's table that match the given query parameters.
+        The 'index' parameter is used as a hint via the 'options' argument to the adapter.
+
+        Args:
+            index (Optional[str], optional): The name of the index to use for the query (passed as a hint). Defaults to None.
+            query (Optional[Dict[str, Any]], optional): Additional query parameters to filter the results. Defaults to None.
+
+        Returns:
+            int: The count of matching records.
+        """
+        # Prepare the actual conditions for the database query
+        db_conditions = {'latest': True, 'active': True} # Default conditions from BaseRepository
+        if query: # Ensure query is not None before updating
+            actual_query = adjust_conditions(query.copy()) # Adjust UUIDs in query
+            db_conditions.update(actual_query)
+        else: # Ensure adjust_conditions is called even if query is None but db_conditions has UUIDs (not in this default)
+            db_conditions = adjust_conditions(db_conditions)
+
+
+        # Prepare the options dictionary for the adapter
+        adapter_options: Dict[str, Any] = {}
+        if index: # If an index (hint) is provided, add it to options
+            adapter_options['hint'] = index
+
+        # Call the adapter's get_count method with table, conditions, and options
+        # self.adapter is PostgreSQLAdapter here.
+        # PostgreSQLAdapter.get_count signature (from previous context):
+        # def get_count(self, table: str, conditions: Dict[str, Any], options: Optional[Dict[str, Any]] = None) -> int:
+        count = self._execute_within_context(
+            self.adapter.get_count, # type: ignore
+            self.table_name, # Use self.table_name for the repository's primary table
+            db_conditions,
+            options=adapter_options if adapter_options else None
+        )
+        return count
 
     def fetch_related_entities_for_field(
         self, 

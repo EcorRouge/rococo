@@ -1,5 +1,6 @@
+import logging
 import asyncio
-from typing import Any, Dict, List, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 from uuid import UUID
 from surrealdb import Surreal
 
@@ -168,26 +169,47 @@ class SurrealDbAdapter(DbAdapter):
 
         return db_response
 
-    def get_count(self, table: str, conditions: Dict[str, Any]) -> int:
+    def get_count(
+        self,
+        table: str,
+        conditions: Dict[str, Any],
+        options: Optional[Dict[str, Any]] = None
+    ) -> int:
         """
         Count records in `table` matching `conditions`.
+        The optional 'options' dict is supported for interface compatibility
+        (e.g. a 'hint' key), but SurrealDB COUNT() doesn’t take hints here.
         """
-        # build SurrealDB WHERE clause fragments
-        clauses = []
-        for k, v in conditions.items():
-            clauses.append(self._build_condition_string(k, v))
-        # always filter on active
-        clauses.append("active = true")
+        # Build WHERE clauses from the conditions dict
+        where_clauses: List[str] = []
+        if conditions:
+            for key, val in conditions.items():
+                where_clauses.append(self._build_condition_string(key, val))
 
-        where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
-        # Surreal uses COUNT() for total rows
-        sql = f"SELECT COUNT() AS count FROM {table}{where}"
+        where_sql = f" WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+        sql = f"SELECT COUNT() AS count FROM {table}{where_sql}"
 
+        # If someone passed a 'hint', just log it
+        if options and 'hint' in options:
+            # using `logging` or `self.logger` if you have one
+            logging.info(
+                "SurrealDbAdapter.get_count received hint=%r; ignoring for COUNT().",
+                options['hint']
+            )
+
+        # run the query
         raw = self.execute_query(sql)
+
+        # parse_db_response will unwrap the Surreal response
         parsed = self.parse_db_response(raw)
-        # parse_db_response will return a dict when there's a single result
-        if isinstance(parsed, dict) and "count" in parsed:
-            return int(parsed["count"])
+
+        # parsed might be a dict or a list of dicts
+        if isinstance(parsed, dict) and 'count' in parsed:
+            return int(parsed['count'])
+        if isinstance(parsed, list) and parsed and 'count' in parsed[0]:
+            return int(parsed[0]['count'])
+
+        # fallback
         return 0
 
     def get_save_query(self, table: str, data: Dict[str, Any]):

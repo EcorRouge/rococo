@@ -1,11 +1,10 @@
 """
 base repository for rococo
 """
-
 import json
 from uuid import UUID
-from rococo.data.base import DbAdapter
 from typing import Any, Dict, List, Type, Union
+from rococo.data.base import DbAdapter
 from rococo.messaging.base import MessageAdapter
 from rococo.models.versioned_model import VersionedModel
 
@@ -14,8 +13,14 @@ class BaseRepository:
     """
     BaseRepository class
     """
-    def __init__(self, adapter: DbAdapter, model: Type[VersionedModel], message_adapter: MessageAdapter,
-                 queue_name: str = 'placeholder', user_id: UUID = None):
+    def __init__(
+        self,
+        adapter: DbAdapter,
+        model: Type[VersionedModel],
+        message_adapter: MessageAdapter,
+        queue_name: str = 'placeholder',
+        user_id: UUID = None
+    ):
         self.adapter = adapter
         self.message_adapter = message_adapter
         self.queue_name = queue_name
@@ -23,24 +28,48 @@ class BaseRepository:
         self.table_name = model.__name__.lower()
         self.user_id = user_id
 
-    def _execute_within_context(self, func, *args, **kwargs):
+    def _execute_within_context(
+        self,
+        func,
+        *args,
+        **kwargs
+    ):
         """Utility method to execute adapter methods within the context manager."""
         with self.adapter:
             return func(*args, **kwargs)
 
-    def _process_data_before_save(self, instance: VersionedModel):
-        """Method to convert a VersionedModel instance to data dictionary to be sent to adapter."""
+    def _process_data_before_save(
+        self,
+        instance: VersionedModel
+    ) -> Dict[str, Any]:
+        """Convert a VersionedModel instance to a data dictionary for the adapter."""
         instance.prepare_for_save(changed_by_id=self.user_id)
-        return instance.as_dict(True)
+        return instance.as_dict(convert_datetime_to_iso_string=True)
 
-    def _process_data_from_db(self, data):
-        """Method to convert a data dictionary fetched from adapter into a VersionedModel object."""
+    def _process_data_from_db(
+        self,
+        data: Any
+    ):
+        """Hook to process raw DB data (can be overridden by subclass)."""
         pass
 
-    def get_one(self, conditions: Dict[str, Any], fetch_related: List[str] = None) -> Union[VersionedModel, None]:
-        """get one"""
+    def get_one(
+        self,
+        conditions: Dict[str, Any],
+        fetch_related: List[str] = None
+    ) -> Union[VersionedModel, None]:
+        """
+        Fetches a single record from the specified table based on given conditions.
+
+        :param conditions: filter conditions
+        :param fetch_related: list of related fields to fetch
+        :return: a VersionedModel instance if found, None otherwise
+        """
         data = self._execute_within_context(
-            self.adapter.get_one, self.table_name, conditions, fetch_related=fetch_related
+            self.adapter.get_one,
+            self.table_name,
+            conditions,
+            fetch_related=fetch_related
         )
 
         self._process_data_from_db(data)
@@ -56,12 +85,24 @@ class BaseRepository:
         limit: int = 100,
         fetch_related: List[str] = None
     ) -> List[VersionedModel]:
-        """get many"""
+        """
+        Fetches multiple records from the specified table based on given conditions.
+
+        :param conditions: filter conditions
+        :param sort: sort order
+        :param limit: maximum number of records to return
+        :param fetch_related: list of related fields to fetch
+        :return: list of VersionedModel instances
+        """
         records = self._execute_within_context(
-            self.adapter.get_many, self.table_name, conditions, sort, limit, fetch_related=fetch_related
+            self.adapter.get_many,
+            self.table_name,
+            conditions,
+            sort,
+            limit,
+            fetch_related=fetch_related
         )
 
-        # If the adapter returned a single dictionary, wrap it in a list
         if isinstance(records, dict):
             records = [records]
 
@@ -87,16 +128,33 @@ class BaseRepository:
         Returns:
             int: The count of matching records.
         """
-        base = {'latest': True, 'active': True}
-        base.update(query or {})
+        db_conditions = {'active': True}
+        if query:
+            db_conditions.update(query)
 
-        # adapter.get_count only takes (table, conditions)
+        adapter_options: Dict[str, Any] = {}
+        if index:
+            adapter_options['hint'] = index
+
         return self._execute_within_context(
-            lambda: self.adapter.get_count(collection_name, hint=index)
+            self.adapter.get_count,
+            collection_name,
+            db_conditions,
+            options=adapter_options if adapter_options else None
         )
 
-    def save(self, instance: VersionedModel, send_message: bool = False):
-        """Save func"""
+    def save(
+        self,
+        instance: VersionedModel,
+        send_message: bool = False
+    ) -> VersionedModel:
+        """
+        Saves a VersionedModel instance to the database.
+
+        :param instance: The VersionedModel instance to save.
+        :param send_message: Whether to send a message to the message queue after saving. Defaults to False.
+        :return: The saved VersionedModel instance.
+        """
         data = self._process_data_before_save(instance)
         with self.adapter:
             move_entity_query = self.adapter.get_move_entity_to_audit_table_query(self.table_name, instance.entity_id)
@@ -109,7 +167,15 @@ class BaseRepository:
 
         return instance
 
-    def delete(self, instance: VersionedModel):
-        """delete func"""
+    def delete(
+        self,
+        instance: VersionedModel
+    ) -> VersionedModel:
+        """
+        Logically deletes a VersionedModel instance from the database by setting its active flag to False.
+
+        :param instance: The VersionedModel instance to delete.
+        :return: The deleted VersionedModel instance, which is now in a logically deleted state.
+        """
         instance.active = False
         return self.save(instance)

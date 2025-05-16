@@ -1,11 +1,11 @@
-from rococo.data.base import DbAdapter
+from typing import Any, Dict, List, Optional, Tuple, Union
+from pymongo import MongoClient, ReturnDocument, errors
 from pymongo.collection import Collection
+from pymongo.client_session import ClientSession
 from pymongo.read_concern import ReadConcern
 from pymongo.write_concern import WriteConcern
-from pymongo.client_session import ClientSession
-from pymongo import MongoClient, ReturnDocument, errors
-from typing import Any, Dict, List, Optional, Tuple, Union
 
+from rococo.data.base import DbAdapter
 
 class MongoDBAdapter(DbAdapter):
     """
@@ -31,8 +31,8 @@ class MongoDBAdapter(DbAdapter):
             'maxPoolSize': 100,
         }
         options.update(client_options)
-        self.client = MongoClient(mongo_uri, **options)
-        self.db_name = mongo_database
+        self.client: MongoClient = MongoClient(mongo_uri, **options)
+        self.db_name: str = mongo_database
         self.db: Any = None
         self._session: Optional[ClientSession] = None
 
@@ -49,7 +49,6 @@ class MongoDBAdapter(DbAdapter):
             MongoDBAdapter: The initialized adapter with a live connection.
         """
         try:
-            # Verify connection
             self.client.admin.command('ping')
         except errors.PyMongoError as e:
             raise ConnectionError(f"MongoDB ping failed: {e}") from e
@@ -110,7 +109,7 @@ class MongoDBAdapter(DbAdapter):
             RuntimeError: If the session is not started before calling this method.
         """
         if not self._session:
-            raise RuntimeError('Session not started')
+            raise RuntimeError("Session not started")
         with self._session.start_transaction():
             for op in operations_list:
                 op()
@@ -126,7 +125,7 @@ class MongoDBAdapter(DbAdapter):
         Raises:
             NotImplementedError: execute_query is not supported for MongoDB.
         """
-        raise NotImplementedError('execute_query is not supported for MongoDB')
+        raise NotImplementedError("execute_query is not supported for MongoDB")
 
     def parse_db_response(self, response: Any) -> Union[Dict[str, Any], List[Dict[str, Any]]]:
         """
@@ -142,8 +141,7 @@ class MongoDBAdapter(DbAdapter):
         Returns:
             Union[Dict[str, Any], List[Dict[str, Any]]]: Structured data from the MongoDB response
         """
-
-        if hasattr(response, '__iter__') and not isinstance(response, dict):
+        if hasattr(response, "__iter__") and not isinstance(response, dict):
             return list(response)
         return response
 
@@ -152,7 +150,7 @@ class MongoDBAdapter(DbAdapter):
         table: str,
         conditions: Dict[str, Any],
         hint: Optional[str] = None,
-        sort: Optional[List[Tuple[str, int]]] = None,
+        sort: Optional[List[Tuple[str, int]]] = None
     ) -> Optional[Dict[str, Any]]:
         """
         Retrieve a single document from the specified MongoDB collection based on given conditions.
@@ -176,9 +174,9 @@ class MongoDBAdapter(DbAdapter):
         try:
             coll = self._get_collection(table)
             kwargs: Dict[str, Any] = {}
-            if hint:
+            if hint is not None:
                 kwargs['hint'] = hint
-            if sort:
+            if sort is not None:
                 kwargs['sort'] = sort
             return coll.find_one(conditions, **kwargs)
         except errors.PyMongoError as e:
@@ -214,19 +212,21 @@ class MongoDBAdapter(DbAdapter):
         """
         try:
             coll = self._get_collection(table)
-            if hint:
-                cursor = coll.find(conditions or {}, hint=hint)
-            else:
-                cursor = coll.find(conditions or {})
+            cursor = coll.find(conditions or {}, **({'hint': hint} if hint else {}))
             if sort:
                 cursor = cursor.sort(sort)
-            if limit and limit > 0:
+            if limit > 0:
                 cursor = cursor.limit(limit)
             return list(cursor)
         except errors.PyMongoError as e:
             raise RuntimeError(f"get_many failed: {e}") from e
 
-    def get_count(self, table: str, conditions: Dict[str, Any]) -> int:
+    def get_count(
+        self,
+        table: str,
+        conditions: Dict[str, Any],
+        options: Optional[Dict[str, Any]] = None
+    ) -> int:
         """
         Retrieve the count of documents from the specified MongoDB collection based on given conditions.
 
@@ -242,10 +242,14 @@ class MongoDBAdapter(DbAdapter):
 
         Raises:
             RuntimeError: If the query fails due to a PyMongoError.
-        """
+        """        
         try:
             coll = self._get_collection(table)
-            return coll.count_documents(conditions)
+            kwargs: Dict[str, Any] = {}
+            # forward hint if provided
+            if options and 'hint' in options and options['hint'] is not None:
+                kwargs['hint'] = options['hint']
+            return coll.count_documents(conditions, **kwargs)
         except errors.PyMongoError as e:
             raise RuntimeError(f"get_count failed: {e}") from e
 
@@ -311,9 +315,9 @@ class MongoDBAdapter(DbAdapter):
             raise RuntimeError(f"save failed: {e}") from e
 
     def delete(
-        self,
-        table: str,
-        conditions: Dict[str, Any]
+        self, 
+        table: str, 
+        data: Dict[str, Any]
     ) -> bool:
         """
         Delete a document from the specified MongoDB collection based on given conditions.
@@ -333,7 +337,7 @@ class MongoDBAdapter(DbAdapter):
         """
         try:
             coll = self._get_collection(table, write=True)
-            result = coll.delete_one(conditions)
+            result = coll.delete_one(data)
             return result.deleted_count > 0
         except errors.PyMongoError as e:
             raise RuntimeError(f"delete failed: {e}") from e

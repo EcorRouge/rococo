@@ -1,11 +1,10 @@
 """MySqlDbRepository class"""
 
-from dataclasses import fields
-from datetime import datetime
-import json
 import re
-from typing import Any, Dict, List, Type, Union
 from uuid import UUID
+from datetime import datetime
+from dataclasses import fields
+from typing import Any, Dict, List, Type, Union
 
 from rococo.data import MySqlAdapter
 from rococo.messaging import MessageAdapter

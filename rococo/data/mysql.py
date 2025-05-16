@@ -214,24 +214,35 @@ class MySqlAdapter(DbAdapter):
         else:
             return db_response
 
-    def get_count(self, table: str, conditions: Dict[str, Any]) -> int:
+    def get_count(
+        self,
+        table: str,
+        conditions: Dict[str, Any],
+        options: Optional[Dict[str, Any]] = None
+    ) -> int:
         """
         Count rows in `table` matching `conditions`.
+        The 'options' parameter is included for interface compatibility.
         """
-        # build WHERE clauses
+        safe_table_name = f"`{table}`"
         cond_clauses: List[str] = []
         params: List[Any] = []
-        for key, val in conditions.items():
-            clause, vals = self._build_condition_string(table, key, val)
-            cond_clauses.append(clause)
-            params.extend(vals)
+        
+        if conditions:
+            for key, val in conditions.items():
+                clause, vals_list = self._build_condition_string(table, key, val)
+                cond_clauses.append(clause)
+                params.extend(vals_list)
 
-        where = f"WHERE {' AND '.join(cond_clauses)}" if cond_clauses else ""
-        # alias as `count`
-        sql = f"SELECT COUNT(*) AS `count` FROM {table} {where}"
+        where_clause = f"WHERE {' AND '.join(cond_clauses)}" if cond_clauses else ""
+        sql = f"SELECT COUNT(*) AS `count` FROM {safe_table_name} {where_clause}"
+
+        if options and 'hint' in options:
+            self.logger.info(f"MySQLAdapter.get_count received hint option: {options['hint']}, but it's not directly applied in this generic manner for MySQL.")
+
         rows = self.execute_query(sql, tuple(params))
-        # execute_query returns a list of dicts
-        if isinstance(rows, list) and rows:
+        
+        if rows and isinstance(rows, list) and rows[0] is not None:
             return int(rows[0].get('count', 0))
         return 0
 

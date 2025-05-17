@@ -128,9 +128,9 @@ class BaseRepository:
         Returns:
             int: The count of matching records.
         """
-        db_conditions = {'active': True}
-        if query:
-            db_conditions.update(query)
+        # The 'query' parameter directly represents the conditions for the count.
+        # If an 'active' filter is needed, it should be included in the 'query' argument by the caller.
+        db_conditions = query
 
         adapter_options: Dict[str, Any] = {}
         if index:

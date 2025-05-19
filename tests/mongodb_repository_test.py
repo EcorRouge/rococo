@@ -108,32 +108,50 @@ class MongoDbRepositoryTestCase(unittest.TestCase):
 
     def test_create_many_calls_insert_many(self):
         """
-        Tests that the create_many method calls the insert_many method
-        of the database adapter with the correct arguments.
+        Tests that the create_many method calls the insert_many method with the correct arguments.
 
-        Verifies that the create_many method calls the insert_many method
-        with the correct collection name and list of instances to insert.
+        This test verifies that the `create_many` method of the repository class correctly:
+        - Calls the `_execute_within_context` method.
+        - Passes a function to `_execute_within_context` that, when executed, calls the `insert_many` method of the adapter.
+        - Ensures the `insert_many` method is called with the correct collection name and the expected documents.
+        - Confirms that all documents have the `active` flag set to True and the correct `_id` values.
         """
         self.repository._execute_within_context = MagicMock()
         instances = [TestVersionedModel(entity_id=UUID(int=i)) for i in range(3)]
 
-        # Mock the return value of adapter.insert_many, as the executed lambda will return this.
-        # The test asserts the length of this returned value.
+        # stub insert_many to return a list of dummy docs
         self.db_adapter_mock.insert_many.return_value = [
-            {'id': str(instances[0].entity_id)}, 
-            {'id': str(instances[1].entity_id)}, 
-            {'id': str(instances[2].entity_id)}
+            {'_id': str(instances[0].entity_id), 'active': True},
+            {'_id': str(instances[1].entity_id), 'active': True},
+            {'_id': str(instances[2].entity_id), 'active': True},
         ]
+
         self.repository.create_many(instances, collection_name="test_collection")
 
+        # assert that _execute_within_context was called
         self.repository._execute_within_context.assert_called_once()
-        
-        # func_passed_to_execute is the function/lambda that _execute_within_context would run.
-        # This function, when called, will execute self.db_adapter_mock.insert_many(...)
         func_passed_to_execute = self.repository._execute_within_context.call_args[0][0]
-        docs_returned_by_adapter_op = func_passed_to_execute() 
         
-        self.assertEqual(len(docs_returned_by_adapter_op), 3)
+        # executing func should invoke insert_many
+        returned_docs = func_passed_to_execute()
+        self.assertEqual(len(returned_docs), 3)
+
+        # now inspect the actual call to insert_many
+        self.db_adapter_mock.insert_many.assert_called_once()
+        called_collection, called_docs = self.db_adapter_mock.insert_many.call_args[0]
+
+        # 1) correct collection
+        self.assertEqual(called_collection, "test_collection")
+        # 2) right number of docs
+        self.assertEqual(len(called_docs), 3)
+
+        # 3) each doc has expected _id and active=True
+        expected_ids = [str(inst.entity_id) for inst in instances]
+        actual_ids   = [doc['_id'] for doc in called_docs]
+        self.assertCountEqual(actual_ids, expected_ids)
+
+        for doc in called_docs:
+            self.assertTrue(doc.get('active', False), "Each inserted doc should be active")
 
 
     def test_get_one_returns_instance(self):

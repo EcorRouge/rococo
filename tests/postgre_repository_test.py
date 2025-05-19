@@ -93,10 +93,14 @@ class TestVersionedModel(VersionedModel):
 
                 if is_uuid_type:
                     if isinstance(val, str):
-                        try: init_args[f_info.name] = UUID(val)
-                        except ValueError: init_args[f_info.name] = None 
-                    elif isinstance(val, UUID): init_args[f_info.name] = val
-                    elif val is None: init_args[f_info.name] = None
+                        try: 
+                            init_args[f_info.name] = UUID(val)
+                        except ValueError: 
+                            init_args[f_info.name] = None 
+                    elif isinstance(val, UUID): 
+                        init_args[f_info.name] = val
+                    elif val is None: 
+                        init_args[f_info.name] = None
                 elif is_list_uuid_type:
                     if isinstance(val, list) and all(isinstance(item, str) for item in val):
                         init_args[f_info.name] = [UUID(item) for item in val]
@@ -108,11 +112,15 @@ class TestVersionedModel(VersionedModel):
                     if isinstance(val, str):
                         try:
                             iso_val = val
-                            if iso_val.endswith('Z'): iso_val = iso_val[:-1] + '+00:00'
+                            if iso_val.endswith('Z'): 
+                                iso_val = iso_val[:-1] + '+00:00'
                             init_args[f_info.name] = datetime.datetime.fromisoformat(iso_val)
-                        except ValueError: init_args[f_info.name] = None
-                    elif isinstance(val, datetime.datetime): init_args[f_info.name] = val
-                    elif val is None: init_args[f_info.name] = None
+                        except ValueError: 
+                            init_args[f_info.name] = None
+                    elif isinstance(val, datetime.datetime): 
+                        init_args[f_info.name] = val
+                    elif val is None: 
+                        init_args[f_info.name] = None
                 else:
                     init_args[f_info.name] = val
         
@@ -499,7 +507,6 @@ def test_get_many_with_fetch_related(mock_fetch_related, repository, mock_adapte
     related_data_mock_list = [TestVersionedModel(name="Related Item 1")]
     # Simulate fetch_related_entities_for_field being called for each instance and field
     mock_fetch_related.return_value = related_data_mock_list
-
 
     results = repository.get_many(
         conditions={'active': True},

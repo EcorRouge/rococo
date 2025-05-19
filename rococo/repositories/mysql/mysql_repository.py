@@ -28,30 +28,48 @@ class MySqlRepository(BaseRepository):
         self.model()
 
     def _process_data_before_save(self, instance: VersionedModel):
-        """Method to convert VersionedModel instance to a data dictionary that can be saved to MySQL"""
-        super()._process_data_before_save(instance)
-        data = instance.as_dict(convert_datetime_to_iso_string=False, convert_uuids=False)
-        for field in fields(instance):
-            if data.get(field.name) is None:
+        # Step 1: Call prepare_for_save on the instance.
+        # This updates version, changed_on, previous_version, changed_by_id on the instance.
+        instance.prepare_for_save(changed_by_id=self.user_id)
+        # Step 2: Get the dictionary from the instance.
+        # We need raw Python types (UUID objects, datetime objects) to then format them
+        # specifically for MySQL. So, convert_uuids=False and convert_datetime_to_iso_string=False.
+        raw_data_dict = instance.as_dict(
+            convert_datetime_to_iso_string=False, 
+            convert_uuids=False  # This means UUIDs will be UUID objects, datetimes will be datetime objects
+        )
+        # Step 3: Apply MySQL-specific formatting to create the final data dictionary for the adapter.
+        # This logic should be comprehensive for all VersionedModel fields and any potential custom fields.
+        formatted_data_for_adapter = {}
+        for field_name, field_value in raw_data_dict.items():
+            if field_value is None:
+                # For MySQL, it's often better to explicitly pass NULL than omit the key
+                # if the column is nullable. If the column is NOT NULL and has a default,
+                # omitting might be fine. For consistency, let's include None as NULL.
+                formatted_data_for_adapter[field_name] = None
                 continue
 
-            field_value = data[field.name]
-
-            if field.metadata.get('field_type') in ['entity_id', 'uuid']:
-                if isinstance(field_value, VersionedModel):
-                    field_value = str(field_value.entity_id).replace('-', '')
-                elif isinstance(field_value, dict):
-                    field_value = str(field_value.get('entity_id')).replace('-', '')
-                elif isinstance(field_value, str):
-                    field_value = field_value.replace('-', '')
-
             if isinstance(field_value, UUID):
-                field_value = str(field_value).replace('-', '')
-            if isinstance(field_value, datetime):
-                field_value = field_value.strftime('%Y-%m-%d %H:%M:%S')
+                # MySQL typically stores UUIDs as 32-char hex strings without hyphens (BINARY(16) often stores the bytes)
+                # or as CHAR(36) with hyphens. The existing MySqlRepository._process_data_before_save
+                # did str(field_value).replace('-', '').
+                # MySqlAdapter's _build_condition_string also uses str(value) for UUID.
+                # Let's stick to the .hex.replace('-', '') for data to be saved if that's consistent,
+                # or ensure the adapter handles UUID objects correctly if passed (it seems to convert to string).
+                # The original MySqlRepository did: str(field_value).replace('-', '')
+                formatted_data_for_adapter[field_name] = str(field_value).replace('-', '')
+            elif isinstance(field_value, datetime):
+                formatted_data_for_adapter[field_name] = field_value.strftime('%Y-%m-%d %H:%M:%S')
+            elif isinstance(field_value, bool): # e.g., 'active' field
+                formatted_data_for_adapter[field_name] = 1 if field_value else 0
+            # Add handling for lists (e.g., list of UUIDs) if your models require it and
+            # they need special formatting for MySQL (e.g., comma-separated string).
+            # VersionedModel itself doesn't have list fields by default.
+            else:
+                formatted_data_for_adapter[field_name] = field_value
+        
+        return formatted_data_for_adapter
 
-            data[field.name] = field_value
-        return data
 
     def _process_data_from_db(self, data):
         """Method to convert data dictionary fetched from MySQL to a VersionedModel instance."""

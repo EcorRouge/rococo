@@ -24,14 +24,28 @@ def import_models_module(current_module, module_name):
     """
     Dynamically import a module named `module_name` from the same tree as `current_module`
     """
+    # First, try direct import (handles rococo.models via fallback)
+    try:
+        return importlib.import_module(module_name)
+    except ImportError:
+        # Fallback: if attempting to import 'models', resolve to rococo.models
+        if module_name == 'models':
+            return importlib.import_module('rococo.models')
+        # Otherwise, continue to filesystem-based lookup
+    
     root_path = os.path.dirname(os.path.abspath(current_module.__file__))
     for root, dirs, _ in os.walk(root_path):
-        for module in pkgutil.iter_modules([os.path.join(root, dir) for dir in dirs] + [root]):
+        search_paths = [os.path.join(root, d) for d in dirs] + [root]
+        for module in pkgutil.iter_modules(search_paths):
             if module.name == module_name:
-                spec = importlib.util.spec_from_file_location(module_name, os.path.join(module.module_finder.path, module_name, '__init__.py'))
-                module = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(module)
-                return module
+                spec = importlib.util.spec_from_file_location(
+                    module_name,
+                    os.path.join(module.module_finder.path, module_name, '__init__.py')
+                )
+                mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mod)
+                return mod
+
 
 class ModelValidationError(Exception):
     """

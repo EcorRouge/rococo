@@ -61,7 +61,9 @@ class MongoDbRepository(BaseRepository):
         """
         instance.prepare_for_save(changed_by_id=self.user_id)
         data = instance.as_dict(convert_datetime_to_iso_string=True, convert_uuids=True)
-        data['_id'] = data.get('entity_id')
+        data["_id"] = data["entity_id"]
+        data["active"] = True
+        data["latest"] = True
         return data
 
     def get_one(
@@ -81,7 +83,7 @@ class MongoDbRepository(BaseRepository):
         Returns:
             Optional[VersionedModel]: An instance of the model if a matching record is found, otherwise None.
         """
-        db_conditions = {'active': True}
+        db_conditions = {"active": True, "latest": True}
         db_conditions.update(query or {})
 
         data = self._execute_within_context(
@@ -238,49 +240,53 @@ class MongoDbRepository(BaseRepository):
         instance: VersionedModel,
         send_message: bool = False
     ) -> VersionedModel:
-        """
-        Saves a VersionedModel instance to the database.
-
-        This method saves the provided VersionedModel instance to the database.
-        Before saving, it converts the instance to a dictionary format and updates
-        the instance's metadata with necessary information. The instance is then
-        saved to the database.
-
-        :param instance: The VersionedModel instance to save.
-        :type instance: VersionedModel
-        :param send_message: Whether to send a message to the message queue after saving. Defaults to False.
-        :type send_message: bool
-        :return: The saved VersionedModel instance.
-        :rtype: VersionedModel
-        """
-        self.logger.info(f"Saving entity_id={getattr(instance, 'entity_id', 'N/A')} to {self.table_name}")
-
-        data = self._process_data_before_save(instance)
-
-        if data.get('previous_version') and data.get('previous_version') != get_uuid_hex(0):
+        # 0) if this isn't the very first version, move the existing latest doc into audit
+        if instance.previous_version and instance.previous_version != get_uuid_hex(0):
             self._execute_within_context(
                 lambda: self.adapter.move_entity_to_audit_table(
                     self.table_name,
-                    data['entity_id']
+                    instance.entity_id
                 )
             )
-
-        saved = self._execute_within_context(
-            lambda: self.adapter.save(
-                self.table_name,
-                data
+                
+        # 1) Un-flag the old 'latest' document(s)
+        def unset_old():
+            # find any prior version marked latest
+            old_docs = self.adapter.get_many(
+                table=self.table_name,
+                conditions={
+                    "entity_id": instance.entity_id,
+                    "latest": True,
+                    "active": True
+                },
+                hint=None,
+                limit=0
             )
+            # mark them as no longer latest
+            for old in old_docs:
+                old["latest"] = False
+                # write back the change
+                self.adapter.save(self.table_name, old)
+
+        self._execute_within_context(unset_old)
+
+        # 2) Prepare & write the new version
+        payload = self._process_data_before_save(instance)
+        saved = self._execute_within_context(
+            lambda: self.adapter.save(self.table_name, payload)
         )
 
+        # 3) Hydrate the returned fields onto our instance
         if saved:
             for k, v in saved.items():
                 if hasattr(instance, k):
                     setattr(instance, k, v)
-            if '_id' in saved:
-                setattr(instance, 'id', str(saved['_id']))
 
+        # 4) Send a message if requested
         if send_message:
-            payload = json.dumps(instance.as_dict(convert_datetime_to_iso_string=True))
-            self.message_adapter.send_message(self.queue_name, payload)
+            self.message_adapter.send_message(
+                self.queue_name,
+                json.dumps(instance.as_dict(convert_datetime_to_iso_string=True))
+            )
 
         return instance

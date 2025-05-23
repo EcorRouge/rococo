@@ -2,7 +2,7 @@ from setuptools import find_packages, setup
 
 setup(
     name='rococo',
-    version='1.0.34',
+    version='1.0.35',
     packages=find_packages(),
     url='https://github.com/EcorRouge/rococo',
     license='MIT',
@@ -13,6 +13,7 @@ setup(
         'console_scripts': [
             'rococo-mysql = rococo.migrations.mysql.cli:main',
             'rococo-postgres = rococo.migrations.postgres.cli:main',
+            'rococo-mongo = rococo.migrations.mongo.cli:main',
         ],
     },
     long_description=open('README.md').read(),

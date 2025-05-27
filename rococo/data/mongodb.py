@@ -277,7 +277,7 @@ class MongoDBAdapter(DbAdapter):
             doc = coll.find_one({'entity_id': entity_id})
             if doc:
                 audit = self._get_collection(f"{table}_audit", write=True)
-                audit.insert_one(doc)
+                audit.replace_one({'_id': doc['_id']}, doc, upsert=True)
         except errors.PyMongoError as e:
             raise RuntimeError(f"move_entity_to_audit_table failed: {e}") from e
 

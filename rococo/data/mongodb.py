@@ -287,30 +287,52 @@ class MongoDBAdapter(DbAdapter):
         data: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
-        Save or update a document in the specified MongoDB collection.
+        Save (versioned) a document in the specified MongoDB collection.
 
-        This method attempts to update an existing document with the provided data 
-        based on the `entity_id`. If no document matches the `entity_id`, a new 
-        document is inserted.
+        Instead of doing a simple upsert, this does a “versioned insert”:
+          1. Find existing document with entity_id and latest=True. If found, set latest=False.
+          2. Create a new document based on `data` with latest=True, big7=True, active=True.
+          3. Insert that new document and return it.
 
         Args:
-            table (str): The name of the MongoDB collection to update or insert the document.
-            data (Dict[str, Any]): The data to be saved or updated in the collection.
+            table (str): The name of the MongoDB collection to version-insert into.
+            data (Dict[str, Any]): The new version’s fields (must include 'entity_id').
 
         Returns:
-            Dict[str, Any]: The updated or newly inserted document.
+            Dict[str, Any]: The newly inserted (latest) document.
 
         Raises:
-            RuntimeError: If the operation fails due to a PyMongoError.
+            RuntimeError: If any MongoDB operation fails.
         """
+        if 'entity_id' not in data:
+            raise RuntimeError("save failed: 'entity_id' is required in data")
+
         try:
             coll = self._get_collection(table, write=True)
-            return coll.find_one_and_update(
-                {'entity_id': data['entity_id']},
-                {'$set': data},
-                upsert=True,
-                return_document=ReturnDocument.AFTER,
+
+            # 1) Find the current latest version (if any) and mark it as not latest
+            prev_latest = coll.find_one(
+                {"entity_id": data['entity_id'], "latest": True},
+                session=self._session
             )
+            if prev_latest:
+                coll.update_one(
+                    {"_id": prev_latest["_id"]},
+                    {"$set": {"latest": False}},
+                    session=self._session
+                )
+
+            # 2) Prepare the new version document
+            new_doc = data.copy()
+            # Ensure flags are set appropriately:
+            new_doc["latest"] = True
+            new_doc["active"] = True
+
+            # 3) Insert the new version
+            insert_result = coll.insert_one(new_doc, session=self._session)
+            # 4) Fetch and return the freshly inserted document (including _id)
+            return coll.find_one({"_id": insert_result.inserted_id}, session=self._session)
+
         except errors.PyMongoError as e:
             raise RuntimeError(f"save failed: {e}") from e
 
@@ -320,25 +342,25 @@ class MongoDBAdapter(DbAdapter):
         data: Dict[str, Any]
     ) -> bool:
         """
-        Delete a document from the specified MongoDB collection based on given conditions.
+        Soft delete a document by setting 'active' to False in the specified MongoDB collection.
 
-        This method deletes a document from the MongoDB collection specified by `table`
-        based on the given `conditions`.
+        This method updates a document in the MongoDB collection specified by `table`
+        by setting its 'active' field to False instead of deleting it.
 
         Args:
-            table (str): The name of the MongoDB collection from which to delete the document.
-            conditions (Dict[str, Any]): The conditions to filter the documents to be deleted.
+            table (str): The name of the MongoDB collection containing the document.
+            data (Dict[str, Any]): The filter conditions to identify the document to update.
 
         Returns:
-            bool: True if a document was deleted, False otherwise.
+            bool: True if a document was updated (soft deleted), False otherwise.
 
         Raises:
             RuntimeError: If the operation fails due to a PyMongoError.
         """
         try:
             coll = self._get_collection(table, write=True)
-            result = coll.delete_one(data)
-            return result.deleted_count > 0
+            result = coll.update_one(data, {'$set': {'active': False}})
+            return result.matched_count > 0 and result.modified_count > 0
         except errors.PyMongoError as e:
             raise RuntimeError(f"delete failed: {e}") from e
 

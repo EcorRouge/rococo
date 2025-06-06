@@ -61,6 +61,9 @@ class MongoDbRepository(BaseRepository):
         """
         instance.prepare_for_save(changed_by_id=self.user_id)
         data = instance.as_dict(convert_datetime_to_iso_string=True, convert_uuids=True)
+        # Remove _id if it exists to prevent immutability error, then set it to entity_id
+        if '_id' in data:
+            del data['_id']
         data["_id"] = data["entity_id"]
         data["active"] = True
         data["latest"] = True
@@ -162,6 +165,9 @@ class MongoDbRepository(BaseRepository):
         instance.active = False
 
         data = instance.as_dict(convert_datetime_to_iso_string=True, convert_uuids=True)
+        # Remove _id if it exists to prevent immutability error, then set it to entity_id
+        if '_id' in data:
+            del data['_id']
         data['_id'] = data.get('entity_id')
 
         if instance.previous_version and instance.previous_version != get_uuid_hex(0):
@@ -226,6 +232,9 @@ class MongoDbRepository(BaseRepository):
             instance.prepare_for_save(changed_by_id=self.user_id)
             instance.active = True
             doc = instance.as_dict(convert_datetime_to_iso_string=True, convert_uuids=True)
+            # Remove _id if it exists to prevent immutability error, then set it to entity_id
+            if '_id' in doc:
+                del doc['_id']
             doc['_id'] = doc.get('entity_id')
             docs.append(doc)
 

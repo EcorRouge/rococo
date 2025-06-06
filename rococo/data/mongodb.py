@@ -327,8 +327,13 @@ class MongoDBAdapter(DbAdapter):
             # Ensure flags are set appropriately:
             new_doc["latest"] = True
             new_doc["active"] = True
+            
+            # Remove _id if it exists to prevent immutability error
+            if '_id' in new_doc:
+                del new_doc['_id']
 
-            # 3) Insert the new version
+            # 3) Insert the new version with entity_id as _id
+            new_doc['_id'] = data['entity_id']
             insert_result = coll.insert_one(new_doc, session=self._session)
             # 4) Fetch and return the freshly inserted document (including _id)
             return coll.find_one({"_id": insert_result.inserted_id}, session=self._session)

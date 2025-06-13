@@ -15,7 +15,7 @@ The base class defines the following methods:
     Soft-deletes the instance from the database. Setting `active` to `False` and returns the deleted model.
 - `def get_one(self, conditions: Dict[str, Any]) -> VersionedModel`
     Retrieves a single instance from the database based on the provided conditions.
-- `def get_all(self, conditions: Dict[str, Any]) -> List[VersionedModel]`
+- `def get_many(self, conditions: Dict[str, Any]) -> List[VersionedModel]`
     Retrieves all instances from the database based on the provided conditions.
 
 ## Repository Example

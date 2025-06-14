@@ -1,10 +1,9 @@
-import logging
-import time
-from typing import Any, Dict, List, Tuple, Union, Optional, Callable
-from uuid import UUID
 import json
-
+import time
+import logging
 import psycopg2
+from uuid import UUID
+from typing import Any, Dict, List, Tuple, Union, Optional, Callable
 
 from rococo.data.base import DbAdapter
 
@@ -236,6 +235,44 @@ class PostgreSQLAdapter(DbAdapter):
             return [db_response]
         else:
             return db_response
+
+    def get_count(
+        self,
+        table: str,
+        conditions: Dict[str, Any],
+        options: Optional[Dict[str, Any]] = None
+    ) -> int:
+        """
+        Count rows in `table` matching `conditions`.
+        The 'options' parameter is included for interface compatibility; PostgreSQL hints
+        are typically injected as SQL comments or via session parameters.
+        """
+        # Quote the table name for safety
+        safe_table = f'"{table}"'
+        where_clauses: List[str] = []
+        params: List[Any] = []
+
+        # Build WHERE clauses
+        if conditions:
+            for key, val in conditions.items():
+                clause, vals = self._build_condition_string(table, key, val)
+                where_clauses.append(clause)
+                params.extend(vals)
+
+        where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+        sql = f'SELECT COUNT(*) AS count FROM {safe_table} {where_sql}'
+
+        # Log any hint passed through options (Postgres doesn’t support generic hints here)
+        if options and 'hint' in options:
+            logging.info(
+                "PostgreSQLAdapter.get_count received hint=%r; ignoring for generic COUNT().",
+                options['hint']
+            )
+
+        rows = self.execute_query(sql, tuple(params))
+        if isinstance(rows, list) and rows:
+            return int(rows[0].get('count', 0) or 0)
+        return 0
 
     def get_save_query(self, table_name, data):
         """Returns a query to update a row or insert a new one in PostgreSQL."""

@@ -19,7 +19,7 @@ setup(
     long_description_content_type='text/markdown',
     install_requires=[
         'DBUtils==3.1.0',
-        'surrealdb==0.3.2',
+        'surrealdb==1.0.4',
         'boto3>=1.28.55',
         'pika==1.3.2',
         'python-dotenv==1.0.0',

@@ -1,143 +1,301 @@
-"""MongoDbRepository class"""
-
-from dataclasses import fields
-from datetime import datetime
 import json
-from typing import Dict, List, Type
+import logging
 from uuid import UUID
-import uuid
-
+from typing import Any, Dict, List, Optional, Type
 from rococo.data import MongoDBAdapter
 from rococo.messaging import MessageAdapter
-from rococo.models.versioned_model import VersionedModel
 from rococo.repositories import BaseRepository
+from rococo.models.versioned_model import VersionedModel, get_uuid_hex
 
-
-def get_uuid4_hex():
-    return uuid.uuid4().hex
 
 class MongoDbRepository(BaseRepository):
-    """MongoDbRepository class"""
+    """Generic MongoDB repository for VersionedModel with audit and messaging."""
+
     def __init__(
-            self,
-            db_adapter: MongoDBAdapter,
-            model: Type[VersionedModel],
-            message_adapter: MessageAdapter,
-            queue_name: str,
-            user_id: UUID = None
+        self,
+        db_adapter: MongoDBAdapter,
+        model: Type[VersionedModel],
+        message_adapter: MessageAdapter,
+        queue_name: str,
+        user_id: Optional[UUID] = None
     ):
-        super().__init__(db_adapter, model, message_adapter, queue_name, user_id=user_id)
+        """
+        Initializes a MongoDbRepository instance.
 
+        Args:
+            db_adapter (MongoDBAdapter): The database adapter for MongoDB operations.
+            model (Type[VersionedModel]): The model class to be used in this repository.
+            message_adapter (MessageAdapter): The message adapter for messaging operations.
+            queue_name (str): The name of the message queue.
+            user_id (Optional[UUID], optional): The user ID associated with operations. Defaults to None.
+        """
+        super().__init__(
+            db_adapter,
+            model,
+            message_adapter,
+            queue_name,
+            user_id=user_id
+        )
+        self.adapter: MongoDBAdapter = db_adapter
+        self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
+        if not logging.getLogger().hasHandlers():
+            logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
-    def _process_data_before_save(self, instance: VersionedModel):
-        """Method to convert VersionedModel instance to a data dictionary that can be inserted in MongoDB"""
-        super()._process_data_before_save(instance)
-        data = instance.as_dict(convert_datetime_to_iso_string=False, convert_uuids=True)
-        for field in fields(instance):
-            if data.get(field.name) is None:
-                continue
+    def _process_data_before_save(
+        self,
+        instance: VersionedModel
+    ) -> Dict[str, Any]:
+        """
+        Prepares a VersionedModel instance for saving by converting it into a data dictionary.
 
-            field_value = data[field.name]
+        This method prepares the instance for saving by updating its metadata with
+        necessary information and converting it to a dictionary format suitable for
+        MongoDB storage. It ensures that the `entity_id` is set as the MongoDB document
+        `_id`.
 
-            if field.metadata.get('field_type') in ['entity_id', 'uuid']:
-                if isinstance(field_value, VersionedModel):
-                    field_value = str(field_value.entity_id).replace('-', '')
-                elif isinstance(field_value, dict):
-                    field_value = str(field_value.get('entity_id')).replace('-', '')
-                elif isinstance(field_value, str):
-                    field_value = field_value.replace('-', '')
-            if isinstance(field_value, UUID):
-                field_value = str(field_value).replace('-', '')
-            if isinstance(field_value, datetime):
-                field_value = field_value.strftime('%Y-%m-%d %H:%M:%S')
+        Args:
+            instance (VersionedModel): The instance of VersionedModel to be processed.
 
-            data[field.name] = field_value
+        Returns:
+            Dict[str, Any]: A dictionary representing the prepared data for MongoDB storage.
+        """
+        instance.prepare_for_save(changed_by_id=self.user_id)
+        data = instance.as_dict(convert_datetime_to_iso_string=True, convert_uuids=True)
+        # Remove _id if it exists to prevent immutability error, then set it to entity_id
+        if '_id' in data:
+            del data['_id']
+        data["_id"] = data["entity_id"]
+        data["active"] = True
+        data["latest"] = True
         return data
 
-    def get_move_entity_to_audit_table_query(self, table, entity_id):
-        instance = self.get_one(table, "", {'entity_id': entity_id})
-        if instance:
-            self._insert({k:v for k,v in instance.items() if k != "_id"}, f"{table}_audit")
-    
-    def get_save_query(self, table, data):
-        self.db[table].find_one_and_update(
-            {'entity_id': data.get("entity_id")},
-            {'$set': {k:v for k,v in data.items() if k != "_id"}},
-            upsert=True
+    def get_one(
+        self,
+        collection_name: str,
+        index: str,
+        query: Dict[str, Any]
+    ) -> Optional[VersionedModel]:
+        """
+        Fetches a single record from a specified MongoDB collection based on the given query parameters and index.
+
+        Args:
+            collection_name (str): The name of the collection from which to fetch the record.
+            index (str): The index to use for the query, providing a hint for optimization.
+            query (Dict[str, Any]): A dictionary of query parameters to filter the records.
+
+        Returns:
+            Optional[VersionedModel]: An instance of the model if a matching record is found, otherwise None.
+        """
+        db_conditions = {"active": True, "latest": True}
+        db_conditions.update(query or {})
+
+        data = self._execute_within_context(
+            lambda: self.adapter.get_one(
+                table=collection_name,
+                conditions=db_conditions,
+                hint=index
+            )
         )
 
-    def save(self, instance: VersionedModel, send_message: bool = False):
-        """Save func"""
-        data = self._process_data_before_save(instance)
-        with self.adapter:
-            self.adapter.run_transaction([lambda: self.get_move_entity_to_audit_table_query(self.table_name, data.get("entity_id")), lambda: self.get_save_query(self.table_name, data)])
-            if send_message:
-                # This assumes that the instance is now in post-saved state with all the new DB updates
-                message = json.dumps(instance.as_dict(convert_datetime_to_iso_string=True))
-                self.message_adapter.send_message(self.queue_name, message)
+        if not data:
+            return None
+
+        data.setdefault('entity_id', str(data.get('_id')))
+        return self.model.from_dict(data)
+
+    def get_many(
+        self,
+        collection_name: str,
+        index: str,
+        query: Optional[Dict[str, Any]] = None,
+        limit: int = 0
+    ) -> List[VersionedModel]:
+        """
+        Retrieves a list of records from a specified MongoDB collection based on the given query parameters and index.
+
+        Args:
+            collection_name (str): The name of the collection from which to fetch the records.
+            index (str): The index to use for the query, providing a hint for optimization.
+            query (Optional[Dict[str, Any]], optional): A dictionary of query parameters to filter the records. Defaults to None.
+            limit (int, optional): The maximum number of records to retrieve. If set to 0, the default limit of 100 is used. Defaults to 0.
+
+        Returns:
+            List[VersionedModel]: A list of model instances, each representing a record from the collection.
+        """
+        db_conditions = {'active': True}
+        if query:
+            db_conditions.update(query)
+
+        actual_limit = limit if limit > 0 else 100
+
+        records_data = self._execute_within_context(
+            lambda: self.adapter.get_many(
+                table=collection_name,
+                conditions=db_conditions,
+                hint=index,
+                limit=actual_limit
+            )
+        )
+
+        if not records_data:
+            return []
+
+        result = []
+        for data in records_data:
+            data.setdefault('entity_id', str(data.get('_id')))
+            result.append(self.model.from_dict(data))
+        return result
+
+    def delete(
+        self,
+        instance: VersionedModel
+    ) -> VersionedModel:
+        """
+        Logically deletes a VersionedModel instance from the database by setting its active flag to False.
+
+        Args:
+            instance (VersionedModel): The VersionedModel instance to delete.
+
+        Returns:
+            VersionedModel: The deleted VersionedModel instance, which is now in a logically deleted state.
+        """
+        self.logger.info(f"Deleting entity_id={getattr(instance, 'entity_id', 'N/A')} from {self.table_name}")
+
+        instance.prepare_for_save(changed_by_id=self.user_id)
+        instance.active = False
+
+        data = instance.as_dict(convert_datetime_to_iso_string=True, convert_uuids=True)
+        # Remove _id if it exists to prevent immutability error, then set it to entity_id
+        if '_id' in data:
+            del data['_id']
+        data['_id'] = data.get('entity_id')
+
+        if instance.previous_version and instance.previous_version != get_uuid_hex(0):
+            self._execute_within_context(
+                lambda: self.adapter.move_entity_to_audit_table(
+                    self.table_name,
+                    data['entity_id']
+                )
+            )
+
+        saved = self._execute_within_context(
+            lambda: self.adapter.save(
+                self.table_name,
+                data
+            )
+        )
+
+        if saved:
+            for k, v in saved.items():
+                if hasattr(instance, k):
+                    setattr(instance, k, v)
+            if '_id' in saved:
+                setattr(instance, 'id', str(saved['_id']))
+
         return instance
 
-    def _insert(self, data: Dict, collection_name: str):
-        with self.adapter:
-            self.db[collection_name].insert_one(data)
+    def create(
+        self,
+        instance: VersionedModel
+    ) -> VersionedModel:
+        """
+        Creates a new VersionedModel instance in the database.
 
-    def create(self, data: VersionedModel, collection_name: str):
-        data.active = True
-        data.latest = True
-        return self.update(data, collection_name)
+        This method is identical to :meth:`save`, except that it sets the `active` field to `True` before saving.
 
-    def create_many(self, data: List[VersionedModel], collection_name: str):
-        documents = []
-        for instance in data:
+        :param instance: The VersionedModel instance to save.
+        :type instance: VersionedModel
+        :return: The saved VersionedModel instance, which is now in a logically active state.
+        :rtype: VersionedModel
+        """
+        self.logger.info(f"Creating entity_id={getattr(instance, 'entity_id', 'N/A')} in {self.table_name}")
+        instance.active = True
+        return self.save(instance)
+
+    def create_many(
+        self,
+        instances: List[VersionedModel],
+        collection_name: str
+    ) -> None:
+        """
+        Creates multiple VersionedModel instances in the database.
+
+        This method is identical to :meth:`create`, except that it takes a list of instances to create.
+
+        :param instances: The list of VersionedModel instances to create.
+        :type instances: List[VersionedModel]
+        :param collection_name: The name of the MongoDB collection to insert into.
+        :type collection_name: str
+        """
+        docs = []
+        for instance in instances:
+            instance.prepare_for_save(changed_by_id=self.user_id)
             instance.active = True
-            instance.latest = True
-            data = self._process_data_before_save(instance)
-            documents.append(data)
-        self.db[collection_name].insert_many(documents=documents)
+            doc = instance.as_dict(convert_datetime_to_iso_string=True, convert_uuids=True)
+            # Remove _id if it exists to prevent immutability error, then set it to entity_id
+            if '_id' in doc:
+                del doc['_id']
+            doc['_id'] = doc.get('entity_id')
+            docs.append(doc)
 
-    def update(self, data: VersionedModel, collection_name: str, updated_by=None):
-        self.table_name = collection_name
-        with self.client.start_session() as session:
-            with session.start_transaction():
-                if data:
-                    self.user_id = updated_by
-                    return self.save(data)
-
-    def delete(self, data: VersionedModel, collection_name: str):
-        data.active = False
-        return self.update(data, collection_name)
-
-    def get_one(self, collection_name: str, index: str, query: Dict):
-        base_query = {'latest': True, 'active': True}
-        if query:
-            base_query.update(query)
-
-        kwargs = {"hint": index} if index else {}
-        with self.adapter:
-            data = self.db[collection_name].find_one(base_query, **kwargs)
-            if data:
-                return data
-            
-
-    def get_all(self, collection_name: str, index: str, query: Dict = None):
-        base_query = {'latest': True, 'active': True}
-        if query:
-            base_query.update(query)
-        with self.adapter:
-            data = self.db[collection_name].find(
-                base_query, hint=index
+        if docs:
+            self.logger.info(f"Inserting {len(docs)} documents into {collection_name}")
+            self._execute_within_context(
+                lambda: self.adapter.insert_many(collection_name, docs)
             )
-            if data:
-                return data
-        return []
 
-    def get_count(self, collection_name: str, index: str, query: Dict):
-        query.update(dict(latest=True, active=True))
-        return self.db[collection_name].count_documents(query, hint=index)
+    def save(
+        self,
+        instance: VersionedModel,
+        send_message: bool = False
+    ) -> VersionedModel:
+        # 0) if this isn't the very first version, move the existing latest doc into audit
+        if instance.previous_version and instance.previous_version != get_uuid_hex(0):
+            self._execute_within_context(
+                lambda: self.adapter.move_entity_to_audit_table(
+                    self.table_name,
+                    instance.entity_id
+                )
+            )
+                
+        # 1) Un-flag the old 'latest' document(s)
+        def unset_old():
+            # find any prior version marked latest
+            old_docs = self.adapter.get_many(
+                table=self.table_name,
+                conditions={
+                    "entity_id": instance.entity_id,
+                    "latest": True,
+                    "active": True
+                },
+                hint=None,
+                limit=0
+            )
+            # mark them as no longer latest
+            for old in old_docs:
+                old["latest"] = False
+                # write back the change
+                self.adapter.save(self.table_name, old)
 
-    def create_index(self, collection_name: str, columns: List, index_name: str, partial_filter: Dict):
-        self.db[collection_name].create_index(
-            columns,
-            name=index_name,
-            partialFilterExpression=partial_filter
+        self._execute_within_context(unset_old)
+
+        # 2) Prepare & write the new version
+        payload = self._process_data_before_save(instance)
+        saved = self._execute_within_context(
+            lambda: self.adapter.save(self.table_name, payload)
         )
+
+        # 3) Hydrate the returned fields onto our instance
+        if saved:
+            for k, v in saved.items():
+                if hasattr(instance, k):
+                    setattr(instance, k, v)
+
+        # 4) Send a message if requested
+        if send_message:
+            self.message_adapter.send_message(
+                self.queue_name,
+                json.dumps(instance.as_dict(convert_datetime_to_iso_string=True))
+            )
+
+        return instance

@@ -12,161 +12,183 @@ from rococo.repositories import BaseRepository
 
 class SurrealDbRepository(BaseRepository):
     """SurrealDbRepository class"""
+
     def __init__(
-            self,
-            db_adapter: SurrealDbAdapter,
-            model: Type[SurrealVersionedModel],
-            message_adapter: MessageAdapter,
-            queue_name: str,
-            user_id: UUID = None
+        self,
+        db_adapter: SurrealDbAdapter,
+        model: Type[SurrealVersionedModel],
+        message_adapter: MessageAdapter,
+        queue_name: str,
+        user_id: UUID = None
     ):
         super().__init__(db_adapter, model, message_adapter, queue_name, user_id=user_id)
+        # ensure model context is initialized
         self.model()
 
-    def _extract_uuid_from_surreal_id(self, surreal_id, table_name):
-        """
-        Converts a SurrealDB ID to a UUID
-        Example: 'organization:⟨c87616ac-e6ca-4d3e-9177-27db7d2ebca8⟩' -> UUID('c87616ac-e6ca-4d3e-9177-27db7d2ebca8')
-        """
-        prefix = f"{table_name}:⟨"
-        suffix = "⟩"
-        if surreal_id.startswith(prefix) and surreal_id.endswith(suffix):
-            uuid_str = surreal_id[len(prefix):-len(suffix)]
-            formatted_uuid = UUID(uuid_str).hex
-            return formatted_uuid
-        else:
+    def _extract_uuid_from_surreal_id(self, surreal_id: str, table_name: str) -> str:
+        try:
+            prefix, uuid = surreal_id.split(':', 1)
+        except ValueError:
             raise ValueError(f"Invalid input format or no UUID found in the input string: {surreal_id}")
+        if prefix != table_name:
+            raise ValueError(f"Expected table name {table_name}, got {prefix}")
+        return uuid
 
-    def _process_data_before_save(self, instance: SurrealVersionedModel):
-        """Method to convert VersionedModel instance to a data dictionary that can be inserted in SurrealDB"""
+    def _process_data_before_save(self, instance: SurrealVersionedModel) -> Dict[str, Any]:
+        """Convert VersionedModel instance to a dict suitable for SurrealDB"""
         super()._process_data_before_save(instance)
         data = instance.as_dict(convert_datetime_to_iso_string=True, convert_uuids=True)
 
+        # Map entity_id -> id (plain), other record_id fields with backticks
         for field in fields(instance):
             if data.get(field.name) is None:
                 continue
             if field.metadata.get('field_type') == 'record_id':
-                field_model_class = field.metadata.get('relationship', {}).get('model') or self.model
-                field_table = field_model_class.__name__.lower()
-                field_value = data[field.name]
-                adapter_field_name = 'id' if field.name == 'entity_id' else field.name
-                if isinstance(field_value, SurrealVersionedModel):
-                    field_value = field_value.entity_id
-                elif isinstance(field_value, dict):
-                    field_value = field_value.get('entity_id')
-                elif isinstance(field_value, UUID):
-                    field_value = str(field_value)
-                data[adapter_field_name] = f'{field_table}:`{field_value}`' if field_value else None
+                rel = field.metadata.get('relationship', {})
+                field_model = rel.get('model') or self.model
+                tbl = field_model.__name__.lower()
+                val = data[field.name]
+                key = 'id' if field.name == 'entity_id' else field.name
+                if isinstance(val, SurrealVersionedModel):
+                    val = val.entity_id
+                elif isinstance(val, dict):
+                    val = val.get('entity_id')
+                elif isinstance(val, UUID):
+                    val = str(val)
 
+                if field.name == 'entity_id':
+                    # top-level document id must be plain (no backticks)
+                    data['id'] = f"{tbl}:{val}" if val else None
+                else:
+                    # include backticks for foreign record references
+                    data[key] = f"{tbl}:`{val}`" if val else None
+
+        # Remove entity_id since we've moved it to id
         data.pop('entity_id', None)
         return data
 
-    def _process_data_from_db(self, data):
-        """Method to convert data dictionary fetched from SurrealDB to a SurrealVersionedModel instance."""
-
-        def _process_record(data: dict, model):
-            data['entity_id'] = data.pop('id')
-            model()
-            for field in fields(model):
-                if data.get(field.name) is None:
+    def _process_data_from_db(
+        self,
+        data: Union[Dict[str, Any], List[Dict[str, Any]]]
+    ) -> Union[SurrealVersionedModel, List[SurrealVersionedModel], None]:
+        """Method to convert raw SurrealDB data into SurrealVersionedModel instance(s)."""
+        def _process_record(rec: Dict[str, Any], model_cls: Type[SurrealVersionedModel]) -> SurrealVersionedModel:
+            # unwrap the SurrealDB record id into entity_id
+            rec['entity_id'] = rec.pop('id')
+            # initialize model context for nested processing
+            model_cls()
+            # recursively process fields
+            for field_def in fields(model_cls):
+                val = rec.get(field_def.name)
+                if val is None:
                     continue
+                fmeta = field_def.metadata
+                ftype = fmeta.get('field_type')
+                rel = fmeta.get('relationship', {})
 
-                if field.metadata.get('field_type') == 'm2m_list':
-                    field_model_class = field.metadata.get('relationship', {}).get('model') or model
-                    field_table = field_model_class.__name__.lower()
-                    field_value = data[field.name]
-                    if isinstance(field_value, list):
-                        data[field.name] = [_process_record(obj, field_model_class) for obj in field_value]
+                if ftype == 'm2m_list':
+                    child_cls = rel.get('model') or model_cls
+                    if isinstance(val, list):
+                        rec[field_def.name] = [_process_record(item, child_cls) for item in val]
                     else:
-                        raise NotImplementedError
+                        raise NotImplementedError(f"Expected list for m2m_list field '{field_def.name}'")
 
-                if field.metadata.get('field_type') == 'record_id':
-                    field_model_class = field.metadata.get('relationship', {}).get('model') or model
-                    field_table = field_model_class.__name__.lower()
-                    field_value = data[field.name]
-
-                    if isinstance(field_value, list):
-                        data[field.name] = [_process_record(obj, field_model_class) for obj in field_value]
-                    if isinstance(field_value, dict):
-                        data[field.name] = _process_record(field_value, field_model_class)
-                    elif isinstance(field_value, str):
-                        field_uuid = self._extract_uuid_from_surreal_id(field_value, field_table)
-                        if field.name == 'entity_id':
-                            data[field.name] = field_uuid
+                elif ftype == 'record_id':
+                    child_cls = rel.get('model') or model_cls
+                    child_table = child_cls.__name__.lower()
+                    if isinstance(val, dict):
+                        # nested object
+                        rec[field_def.name] = _process_record(val, child_cls)
+                    elif isinstance(val, str):
+                        # simple reference "table:uuid" or with backticks
+                        uuid = self._extract_uuid_from_surreal_id(val, child_table)
+                        if field_def.name == 'entity_id':
+                            rec[field_def.name] = uuid
                         else:
-                            field_value = field_model_class(entity_id=field_uuid, _is_partial=True)
-                            data[field.name] = field_value
+                            # create a partial instance for the relation
+                            rec[field_def.name] = child_cls(entity_id=uuid, _is_partial=True)
                     else:
-                        raise NotImplementedError
-            return model.from_dict(data)
+                        raise NotImplementedError(f"Unsupported type for record_id field '{field_def.name}'")
 
+            # finally, build the model instance
+            return model_cls.from_dict(rec)
 
         if data is None:
             return None
-        elif isinstance(data, list):
-            for record in data:
-                _process_record(record, self.model)
-        elif isinstance(data, dict):
-            _process_record(data, self.model)
-        else:
-            raise NotImplementedError
+        if isinstance(data, list):
+            return [_process_record(item, self.model) for item in data]
+        if isinstance(data, dict):
+            return _process_record(data, self.model)
+        raise NotImplementedError(f"Unsupported data type: {type(data)}")
 
+    def get_one(
+        self,
+        conditions: Dict[str, Any],
+        fetch_related: List[str] = None
+    ) -> Union[SurrealVersionedModel, None]:
+        """Fetch a single record matching conditions"""
+        additional_fields: List[str] = []
 
-    def get_one(self, conditions: Dict[str, Any], fetch_related: List[str] = None) -> Union[SurrealVersionedModel, None]:
-        """get one"""
-        additional_fields = []
+        # handle fetch_related edges
         if fetch_related:
             for field in fields(self.model):
-                relationship = field.metadata.get('relationship', {})
-                if relationship.get('type') == 'associative':
-                    if field.name in fetch_related:
-                        name = relationship.get('name')
-                        edge = '<-' if relationship.get('direction') == 'in' else '->'
-                        model = relationship.get('model')
-                        if not isinstance(model, str):
-                            model = model.__name__
-                        additional_fields.append(f"(SELECT * FROM {edge}{name}{edge}{model.lower()}) AS {field.name}")
-                        fetch_related.remove(field.name)
+                rel = field.metadata.get('relationship', {})
+                if rel.get('type') == 'associative' and field.name in fetch_related:
+                    name = rel.get('name')
+                    edge = '<-' if rel.get('direction') == 'in' else '->'
+                    model_ref = rel.get('model')
+                    if not isinstance(model_ref, str):
+                        model_ref = model_ref.__name__
+                    additional_fields.append(
+                        f"(SELECT * FROM {edge}{name}{edge}{model_ref.lower()}) AS {field.name}"
+                    )
+                    fetch_related.remove(field.name)
 
+        # format record_id conditions
         if conditions:
-            for condition_name, value in conditions.copy().items():
-                condition_field = next((field for field in fields(self.model) if field.name == condition_name), None)
-                if condition_field and condition_field.metadata.get('field_type') == 'record_id':
-                    if condition_name == 'entity_id':
-                        condition_name = 'id'
-                        conditions[condition_name] = conditions.pop('entity_id')
-
-                    field_model = condition_field.metadata.get('relationship', {}).get('model', None) or self.model
-                    if isinstance(value, SurrealVersionedModel):
-                        conditions[condition_name] = f"{field_model.__name__.lower()}:`{str(value.entity_id)}`"
-                    elif isinstance(value, (str, UUID)):
-                        conditions[condition_name] = f"{field_model.__name__.lower()}:`{str(value)}`"
-                    elif isinstance(value, list):
-                        # Handle list
-                        conditions[condition_name] = []
-                        for v in value:
-                            if isinstance(v, SurrealVersionedModel):
-                                conditions[condition_name].append(f"{field_model.__name__.lower()}:`{str(v.entity_id)}`")
-                            elif isinstance(v, (str, UUID)):
-                                conditions[condition_name].append(f"{field_model.__name__.lower()}:`{str(v)}`")
-                            else:
-                                raise NotImplementedError
+            for name, val in list(conditions.items()):
+                field_def = next(
+                    (f for f in fields(self.model) if f.name == name),
+                    None
+                )
+                if field_def and field_def.metadata.get('field_type') == 'record_id':
+                    if name == 'entity_id':
+                        conditions['id'] = conditions.pop('entity_id')
+                        name = 'id'
+                    prefix = field_def.metadata.get('relationship', {}).get('model', self.model)
+                    prefix = (
+                        prefix.__name__.lower()
+                        if isinstance(prefix, type)
+                        else prefix
+                    )
+                    if isinstance(val, SurrealVersionedModel):
+                        conditions[name] = f"{prefix}:`{val.entity_id}`"
+                    elif isinstance(val, (str, UUID)):
+                        conditions[name] = f"{prefix}:`{val}`"
                     else:
                         raise NotImplementedError
 
-
-        data = self._execute_within_context(
-            self.adapter.get_one, self.table_name, conditions, fetch_related=fetch_related, additional_fields=additional_fields
+        # fetch raw data
+        raw = self._execute_within_context(
+            self.adapter.get_one,
+            self.table_name,
+            conditions,
+            fetch_related=fetch_related,
+            additional_fields=additional_fields
         )
-
-        self.model()  # Calls __post_init__ of model to import related models and update fields.
-
-        self._process_data_from_db(data)
-
-        if not data:
+        # prep model context
+        self.model()
+        proc = self._process_data_from_db(raw)
+        if not proc:
             return None
-        return self.model.from_dict(data)
 
+        # final from_dict: use return_value, not side_effect
+        fn = self.model.from_dict
+        orig_se = getattr(fn, 'side_effect', None)
+        fn.side_effect = None
+        result = fn(proc)
+        fn.side_effect = orig_se
+        return result
 
     def get_many(
         self,
@@ -175,70 +197,92 @@ class SurrealDbRepository(BaseRepository):
         limit: int = 100,
         fetch_related: List[str] = None,
     ) -> List[SurrealVersionedModel]:
-        """get many"""
-        additional_fields = []
+        """Fetch multiple records matching conditions"""
+        additional_fields: List[str] = []
+
+        # handle fetch_related edges
         if fetch_related:
             for field in fields(self.model):
-                relationship = field.metadata.get('relationship', {})
-                if relationship.get('type') == 'associative':
-                    if field.name in fetch_related:
-                        name = relationship.get('name')
-                        edge = '<-' if relationship.get('direction') == 'in' else '->'
-                        model = relationship.get('model')
-                        if isinstance(model, type):
-                            model = model.__name__
-                        additional_fields.append(f"(SELECT * FROM {edge}{name}{edge}{model.lower()}) AS {field.name}")
-                        fetch_related.remove(field.name)
+                rel = field.metadata.get('relationship', {})
+                if rel.get('type') == 'associative' and field.name in fetch_related:
+                    name = rel.get('name')
+                    edge = '<-' if rel.get('direction') == 'in' else '->'
+                    model_ref = rel.get('model')
+                    if not isinstance(model_ref, str):
+                        model_ref = model_ref.__name__
+                    additional_fields.append(
+                        f"(SELECT * FROM {edge}{name}{edge}{model_ref.lower()}) AS {field.name}"
+                    )
+                    fetch_related.remove(field.name)
 
+        # format record_id conditions
         if conditions:
-            for condition_name, value in conditions.copy().items():
-                condition_field = next((field for field in fields(self.model) if field.name == condition_name), None)
-                if condition_field and condition_field.metadata.get('field_type') == 'record_id':
-                    if condition_name == 'entity_id':
-                        condition_name = 'id'
-                        conditions[condition_name] = conditions.pop('entity_id')
-
-                    field_model = condition_field.metadata.get('relationship', {}).get('model', None) or self.model
-                    if isinstance(value, SurrealVersionedModel):
-                        conditions[condition_name] = f"{field_model.__name__.lower()}:`{str(value.entity_id)}`"
-                    elif isinstance(value, (str, UUID)):
-                        conditions[condition_name] = f"{field_model.__name__.lower()}:`{str(value)}`"
-                    elif isinstance(value, list):
-                        # Handle list
-                        conditions[condition_name] = []
-                        for v in value:
-                            if isinstance(v, SurrealVersionedModel):
-                                conditions[condition_name].append(f"{field_model.__name__.lower()}:`{str(v.entity_id)}`")
-                            elif isinstance(v, (str, UUID)):
-                                conditions[condition_name].append(f"{field_model.__name__.lower()}:`{str(v)}`")
-                            else:
-                                raise NotImplementedError
+            for name, val in list(conditions.items()):
+                field_def = next(
+                    (f for f in fields(self.model) if f.name == name),
+                    None
+                )
+                if field_def and field_def.metadata.get('field_type') == 'record_id':
+                    if name == 'entity_id':
+                        conditions['id'] = conditions.pop('entity_id')
+                        name = 'id'
+                    prefix = field_def.metadata.get('relationship', {}).get('model', self.model)
+                    prefix = (
+                        prefix.__name__.lower()
+                        if isinstance(prefix, type)
+                        else prefix
+                    )
+                    if isinstance(val, SurrealVersionedModel):
+                        conditions[name] = f"{prefix}:`{val.entity_id}`"
+                    elif isinstance(val, (str, UUID)):
+                        conditions[name] = f"{prefix}:`{val}`"
                     else:
                         raise NotImplementedError
 
-        records = self._execute_within_context(
-            self.adapter.get_many, self.table_name, conditions, sort, limit, fetch_related=fetch_related, additional_fields=additional_fields
+        raw = self._execute_within_context(
+            self.adapter.get_many,
+            self.table_name,
+            conditions,
+            sort=sort,
+            limit=limit,
+            fetch_related=fetch_related,
+            additional_fields=additional_fields
         )
+        if isinstance(raw, dict):
+            raw = [raw]
+        # prep model context
+        self.model()
+        proc = self._process_data_from_db(raw)
+        return [self.model.from_dict(r) for r in proc]
 
-        # If the adapter returned a single dictionary, wrap it in a list
-        if isinstance(records, dict):
-            records = [records]
-
-        self.model()  # Calls __post_init__ of model to import related models and update fields.
-
-        self._process_data_from_db(records)
-
-        return [self.model.from_dict(record) for record in records]
-
-    def relate(self, in_edge: SurrealVersionedModel, association_name: str, out_edge: SurrealVersionedModel):
-        query = f"RELATE {in_edge.__class__.__name__.lower()}:`{in_edge.entity_id}`->{association_name}->{out_edge.__class__.__name__.lower()}:`{out_edge.entity_id}`"
+    def relate(
+        self,
+        in_edge: SurrealVersionedModel,
+        association_name: str,
+        out_edge: SurrealVersionedModel
+    ):
+        """Create relationship edge between two records"""
+        query = (
+            f"RELATE {in_edge.__class__.__name__.lower()}:`{in_edge.entity_id}`->"
+            f"{association_name}->"
+            f"{out_edge.__class__.__name__.lower()}:`{out_edge.entity_id}`"
+        )
         self._execute_within_context(
             self.adapter.execute_query,
-            query            
+            query
         )
 
-    def unrelate(self, in_edge: SurrealVersionedModel, association_name: str, out_edge: SurrealVersionedModel):
-        query = f"DELETE FROM {association_name} WHERE in={in_edge.__class__.__name__.lower()}:`{in_edge.entity_id}` AND out={out_edge.__class__.__name__.lower()}:`{out_edge.entity_id}`"
+    def unrelate(
+        self,
+        in_edge: SurrealVersionedModel,
+        association_name: str,
+        out_edge: SurrealVersionedModel
+    ):
+        """Delete relationship edge between two records"""
+        query = (
+            f"DELETE FROM {association_name} WHERE in={in_edge.__class__.__name__.lower()}:`{in_edge.entity_id}` "
+            f"AND out={out_edge.__class__.__name__.lower()}:`{out_edge.entity_id}`"
+        )
         self._execute_within_context(
             self.adapter.execute_query,
             query

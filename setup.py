@@ -13,6 +13,7 @@ setup(
         'console_scripts': [
             'rococo-mysql = rococo.migrations.mysql.cli:main',
             'rococo-postgres = rococo.migrations.postgres.cli:main',
+            'rococo-mongo = rococo.migrations.mongo.cli:main',
         ],
     },
     long_description=open('README.md').read(),

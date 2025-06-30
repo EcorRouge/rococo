@@ -36,13 +36,14 @@ class DbAdapter(ABC):
         pass
 
     @abstractmethod
-    def get_many(self, table: str, conditions: Dict[str, Any] = None, sort: List[Tuple[str, str]] = None, 
+    def get_many(self, table: str, conditions: Dict[str, Any] = None, sort: List[Tuple[str, str]] = None,
                  limit: int = 100) -> List[Dict[str, Any]]:
         """Fetches multiple records from the specified table based on given conditions."""
         pass
 
     @abstractmethod
     def get_count(self, table: str, conditions: Dict[str, Any], options: Optional[Dict[str, Any]] = None) -> int:
+        """Returns record count from the specified table based on given conditions"""
         pass
 
     @abstractmethod

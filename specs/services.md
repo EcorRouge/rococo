@@ -152,11 +152,11 @@ class LoggingServiceProcessor():  # <-- Does not inherit from BaseServiceProcess
 
     def process(self):
         """Main processor loop"""
-        logger.info("Cron processor execution started at %s ...",datetime.datetime.utcnow())
+        logger.info("Cron processor execution started at %s ...", datetime.datetime.now(datetime.timezone.utc))
         # Do something that needs to be done on a schedule
         # For example, you can call a method from the service's lib directory
         task_handler()
-        logger.info("Cron processor execution finished at %s ...",datetime.datetime.utcnow())
+        logger.info("Cron processor execution finished at %s ...", datetime.datetime.now(datetime.timezone.utc))
 
 ```
 

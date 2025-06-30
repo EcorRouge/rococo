@@ -4,7 +4,7 @@ Tests for BaseRepository
 import json
 import uuid
 import pytest
-from datetime import datetime
+from datetime import datetime, timezone
 
 from rococo.data.base import DbAdapter
 from rococo.messaging.base import MessageAdapter
@@ -17,6 +17,7 @@ class TestVersionedModel(VersionedModel):
     Test Class for VersionedModel, enhanced for testing BaseRepository.
     It simulates the necessary interface of VersionedModel.
     """
+
     def __init__(self, entity_id=None, version=None, active=True, name=None, **kwargs):
         """
         Initialize a TestVersionedModel object. This mimics the behavior of a real VersionedModel's
@@ -31,21 +32,24 @@ class TestVersionedModel(VersionedModel):
         # Initialize attributes that from_dict would set, and as_dict would read/write.
         # These are also attributes the real VersionedModel would likely have.
         self.entity_id = entity_id if entity_id is not None else uuid.uuid4()
-        self.version = version if version is not None else uuid.uuid4() # prepare_for_save typically handles versioning
-        self.previous_version = kwargs.get("previous_version", uuid.UUID(int=0))
+        # prepare_for_save typically handles versioning
+        self.version = version if version is not None else uuid.uuid4()
+        self.previous_version = kwargs.get(
+            "previous_version", uuid.UUID(int=0))
         self.active = active
-        self.name = name # Example custom field for the model
-        self.created_at = kwargs.get('created_at', datetime.utcnow())
-        self.updated_at = kwargs.get('updated_at', datetime.utcnow())
+        self.name = name  # Example custom field for the model
+        self.created_at = kwargs.get('created_at', datetime.now(timezone.utc))
+        self.updated_at = kwargs.get('updated_at', datetime.now(timezone.utc))
         self.changed_by_id = kwargs.get('changed_by_id')
-        self.other_data = {k:v for k,v in kwargs.items() if k not in ['created_at', 'updated_at', 'changed_by_id', 'previous_version']}
-
+        self.other_data = {k: v for k, v in kwargs.items() if k not in [
+            'created_at', 'updated_at', 'changed_by_id', 'previous_version']}
 
     # prepare_for_save is a method on the actual VersionedModel.
     # BaseRepository calls instance.prepare_for_save().
     # We will mock this method on the *instance* in tests for save/delete
     # to verify it's called correctly and to control its side-effects if needed.
     # However, for this TestVersionedModel to be complete if not mocked:
+
     def prepare_for_save(self, changed_by_id: uuid.UUID = None):
         """
         Prepares the model instance for saving by updating its metadata.
@@ -58,10 +62,10 @@ class TestVersionedModel(VersionedModel):
         Args:
             changed_by_id (uuid.UUID, optional): The ID of the user making the change.
         """
-        if not hasattr(self, '_created_at_original') and not self.created_at: # Crude check for new
-             self.created_at = datetime.utcnow()
-        self.updated_at = datetime.utcnow()
-        self.version = uuid.uuid4() # Always update version on save
+        if not hasattr(self, '_created_at_original') and not self.created_at:  # Crude check for new
+            self.created_at = datetime.now(timezone.utc)
+        self.updated_at = datetime.now(timezone.utc)
+        self.version = uuid.uuid4()  # Always update version on save
         if changed_by_id:
             self.changed_by_id = changed_by_id
 
@@ -81,15 +85,16 @@ class TestVersionedModel(VersionedModel):
         """
         if data is None:
             return None
-        
+
         processed_data = data.copy()
-        uuid_fields_to_convert = ['entity_id', 'version', 'previous_version', 'changed_by_id']
+        uuid_fields_to_convert = [
+            'entity_id', 'version', 'previous_version', 'changed_by_id']
 
         for field_name in uuid_fields_to_convert:
             if field_name in processed_data:
                 value = processed_data[field_name]
                 if isinstance(value, str):
-                    if value: # Ensure the string is not empty
+                    if value:  # Ensure the string is not empty
                         try:
                             processed_data[field_name] = uuid.UUID(value)
                         except ValueError:
@@ -97,16 +102,19 @@ class TestVersionedModel(VersionedModel):
                             # For critical fields like entity_id, you might want to raise an error
                             # For optional fields, you might set to None or raise, depending on model rules
                             # For this test's purpose, we'll assume valid UUID strings if they are present for these fields
-                            raise ValueError(f"Invalid UUID string for field {field_name}: {value}")
+                            raise ValueError(
+                                f"Invalid UUID string for field {field_name}: {value}")
                     else:
                         # If an empty string is provided for an optional UUID field, set it to None
-                        if field_name in ['changed_by_id', 'previous_version']: # Example optional UUID fields
+                        # Example optional UUID fields
+                        if field_name in ['changed_by_id', 'previous_version']:
                             processed_data[field_name] = None
                         # For non-optional UUIDs like entity_id/version, an empty string is an issue
                         # but UUID(None) or UUID('') would fail anyway if not handled above
                 elif value is not None and not isinstance(value, uuid.UUID):
                     # If it's not a string, not None, and not already a UUID, it's an unexpected type
-                    raise TypeError(f"Field {field_name} expects a UUID or string UUID, got {type(value)}")
+                    raise TypeError(
+                        f"Field {field_name} expects a UUID or string UUID, got {type(value)}")
 
         # Handle datetime fields if they might come as ISO strings
         # (as_dict can produce them if convert_datetime_to_iso_string=True)
@@ -120,10 +128,11 @@ class TestVersionedModel(VersionedModel):
                         # Attempt to parse ISO format, handle 'Z' for UTC
                         if value.endswith('Z'):
                             value = value[:-1] + '+00:00'
-                        processed_data[field_name] = datetime.fromisoformat(value)
+                        processed_data[field_name] = datetime.fromisoformat(
+                            value)
                     except ValueError:
-                         raise ValueError(f"Invalid ISO datetime string for field {field_name}: {value}")
-
+                        raise ValueError(
+                            f"Invalid ISO datetime string for field {field_name}: {value}")
 
         return cls(**processed_data)
 
@@ -153,11 +162,12 @@ class TestVersionedModel(VersionedModel):
         }
         # Ensure all relevant fields are included, like previous_version
         if hasattr(self, 'previous_version'):
-            data_dict["previous_version"] = str(self.previous_version) if convert_uuids and self.previous_version else self.previous_version
+            data_dict["previous_version"] = str(
+                self.previous_version) if convert_uuids and self.previous_version else self.previous_version
 
         if self.other_data:
             data_dict.update(self.other_data)
-        
+
         # Simulate common practice of not sending None values for cleaner DB interaction
         return {k: v for k, v in data_dict.items() if v is not None}
 
@@ -180,6 +190,7 @@ def mock_db_adapter(mocker):
     adapter.parse_db_response = mocker.Mock(side_effect=lambda x: x)
     return adapter
 
+
 @pytest.fixture
 def mock_message_adapter(mocker):
     """
@@ -195,10 +206,12 @@ def mock_message_adapter(mocker):
     adapter.send_message = mocker.Mock()
     return adapter
 
+
 @pytest.fixture
 def test_user_id():
     """A sample UUID for user_id."""
     return uuid.uuid4()
+
 
 @pytest.fixture
 def repository(request, mock_db_adapter, mock_message_adapter, test_user_id, mocker):
@@ -216,30 +229,33 @@ def repository(request, mock_db_adapter, mock_message_adapter, test_user_id, moc
     return repo
 
 
-
 @pytest.fixture
 def model_instance_mocker(mocker):
     """
     Creates a TestVersionedModel instance and mocks its prepare_for_save and as_dict methods.
     This is useful for save/delete tests to precisely control these model interactions.
     """
-    instance = TestVersionedModel(name="Initial Name") # Create a real instance
-    
+    instance = TestVersionedModel(
+        name="Initial Name")  # Create a real instance
+
     # Mock prepare_for_save on this specific instance
     # We use wraps to call the original TestVersionedModel.prepare_for_save
     # while still being able to assert calls and arguments.
     # If TestVersionedModel.prepare_for_save is too complex or relies on base VersionedModel
     # that we don't want to execute, we can remove `wraps`.
-    mocker.patch.object(instance, 'prepare_for_save', wraps=instance.prepare_for_save)
+    mocker.patch.object(instance, 'prepare_for_save',
+                        wraps=instance.prepare_for_save)
 
     # Mock as_dict on this specific instance
     # We use wraps for similar reasons. If we want to control the exact dict returned,
     # we can set a `return_value` instead of `wraps`.
     mocker.patch.object(instance, 'as_dict', wraps=instance.as_dict)
-    
+
     return instance
 
 # --- Test Class for BaseRepository ---
+
+
 class TestBaseRepository:
     """Test class for BaseRepository."""
 
@@ -253,9 +269,10 @@ class TestBaseRepository:
         data is processed correctly and converted to a `TestVersionedModel`
         instance.
         """
-        expected_data = {'entity_id': uuid.uuid4(), 'name': 'Test Record', 'active': True}
+        expected_data = {'entity_id': uuid.uuid4(
+        ), 'name': 'Test Record', 'active': True}
         mock_db_adapter.get_one.return_value = expected_data
-        
+
         # Spy on TestVersionedModel.from_dict
         from_dict_spy = mocker.spy(TestVersionedModel, 'from_dict')
 
@@ -292,7 +309,7 @@ class TestBaseRepository:
         mock_db_adapter.get_one.assert_called_once_with(
             repository.table_name,
             {'id': 2},
-            fetch_related=None # Default value
+            fetch_related=None  # Default value
         )
         repository._process_data_from_db.assert_called_once_with(None)
         # TestVersionedModel.from_dict might still be called with None if not handled inside get_one before calling
@@ -362,10 +379,10 @@ class TestBaseRepository:
         the `from_dict` method is called once with the record data.
         """
         record_data = {'entity_id': uuid.uuid4(), 'name': 'Single Test'}
-        mock_db_adapter.get_many.return_value = record_data # Single dict
+        mock_db_adapter.get_many.return_value = record_data  # Single dict
         from_dict_spy = mocker.spy(TestVersionedModel, 'from_dict')
 
-        result = repository.get_many() # Default conditions is None
+        result = repository.get_many()  # Default conditions is None
 
         # If conditions is None in get_many, adapter.get_many is called with conditions=None
         # This test should perhaps pass conditions explicitly if it wants to test specific behavior
@@ -377,7 +394,8 @@ class TestBaseRepository:
             100,   # limit
             fetch_related=None
         )
-        repository._process_data_from_db.assert_called_once_with([record_data]) # BaseRepository wraps it
+        repository._process_data_from_db.assert_called_once_with(
+            [record_data])  # BaseRepository wraps it
         from_dict_spy.assert_called_once_with(record_data)
         assert len(result) == 1
         assert isinstance(result[0], TestVersionedModel)
@@ -427,8 +445,8 @@ class TestBaseRepository:
         collection_name = "items"
         index_name = "item_name_idx"
         # If we want to test counting active items, 'active': True must now be in query_params
-        query_params = {"category": "electronics", 'active': True} 
-        
+        query_params = {"category": "electronics", 'active': True}
+
         # expected_db_conditions should now be exactly what query_params is,
         # as BaseRepository.get_count no longer adds 'active': True itself.
         expected_db_conditions = query_params
@@ -460,18 +478,18 @@ class TestBaseRepository:
         collection_name = "users"
         # If the intention is to count active items by default in this test scenario,
         # the query passed to get_count must now explicitly state it.
-        query_params = {'active': True} 
+        query_params = {'active': True}
         expected_db_conditions = query_params
         mock_db_adapter.get_count.return_value = 100
 
         # Pass the explicit query_params. The previous `None` for query was problematic.
-        count = repository.get_count(collection_name, None, query_params) 
+        count = repository.get_count(collection_name, None, query_params)
 
         assert count == 100
         mock_db_adapter.get_count.assert_called_once_with(
             collection_name,
             expected_db_conditions,
-            options=None # No options if no index
+            options=None  # No options if no index
         )
 
     @pytest.mark.parametrize("repository", [True, False], indirect=True)
@@ -487,45 +505,51 @@ class TestBaseRepository:
         in as an argument, and that the appropriate database adapter context methods
         are called.
         """
-        instance_to_save = model_instance_mocker # Use the instance with mocked methods
-        original_entity_id = instance_to_save.entity_id # Capture before prepare_for_save
-        
+        instance_to_save = model_instance_mocker  # Use the instance with mocked methods
+        original_entity_id = instance_to_save.entity_id  # Capture before prepare_for_save
+
         # What as_dict (mocked on instance) should return after prepare_for_save
         # This depends on how TestVersionedModel.as_dict and prepare_for_save are implemented/mocked
         # For this test, we assume model_instance_mocker.as_dict will be called and its return value used.
         # Let's define what data we expect it to return for the save query
-        expected_data_for_save_query = {"name": "Updated Name", "active": True, "entity_id": str(instance_to_save.entity_id)}
+        expected_data_for_save_query = {
+            "name": "Updated Name", "active": True, "entity_id": str(instance_to_save.entity_id)}
         model_instance_mocker.as_dict.return_value = expected_data_for_save_query
 
         # Mock adapter query methods
         mock_move_query = ("MOVE_SQL", (original_entity_id,))
-        mock_save_query = ("SAVE_SQL", ("Updated Name", True, original_entity_id))
+        mock_save_query = (
+            "SAVE_SQL", ("Updated Name", True, original_entity_id))
         mock_db_adapter.get_move_entity_to_audit_table_query.return_value = mock_move_query
         mock_db_adapter.get_save_query.return_value = mock_save_query
-        mock_db_adapter.run_transaction.return_value = True # Simulate successful transaction
+        # Simulate successful transaction
+        mock_db_adapter.run_transaction.return_value = True
 
         result = repository.save(instance_to_save, send_message=False)
 
         # 1. Verify _process_data_before_save behavior (prepare_for_save and as_dict calls)
-        instance_to_save.prepare_for_save.assert_called_once_with(changed_by_id=repository.user_id)
-        instance_to_save.as_dict.assert_called_once_with(convert_datetime_to_iso_string=True)
-        
+        instance_to_save.prepare_for_save.assert_called_once_with(
+            changed_by_id=repository.user_id)
+        instance_to_save.as_dict.assert_called_once_with(
+            convert_datetime_to_iso_string=True)
+
         # 2. Verify adapter calls
         mock_db_adapter.get_move_entity_to_audit_table_query.assert_called_once_with(
             repository.table_name,
-            instance_to_save.entity_id # entity_id from the instance *after* prepare_for_save (if it changes it)
-                                        # In our TestVersionedModel, entity_id is set at init mostly.
+            # entity_id from the instance *after* prepare_for_save (if it changes it)
+            instance_to_save.entity_id
+            # In our TestVersionedModel, entity_id is set at init mostly.
         )
         mock_db_adapter.get_save_query.assert_called_once_with(
             repository.table_name,
-            expected_data_for_save_query # This is crucial: data from the mocked as_dict
+            expected_data_for_save_query  # This is crucial: data from the mocked as_dict
         )
-        mock_db_adapter.run_transaction.assert_called_once_with([mock_move_query, mock_save_query])
-        
-        assert result is instance_to_save # Returns the same instance
+        mock_db_adapter.run_transaction.assert_called_once_with(
+            [mock_move_query, mock_save_query])
+
+        assert result is instance_to_save  # Returns the same instance
         mock_db_adapter.__enter__.assert_called_once()
         mock_db_adapter.__exit__.assert_called_once()
-
 
     @pytest.mark.parametrize("repository", [True, False], indirect=True)
     def test_save_and_send_message(self, repository: BaseRepository, mock_db_adapter, mock_message_adapter, model_instance_mocker, mocker):
@@ -545,29 +569,33 @@ class TestBaseRepository:
         `get_save_query` method, but with the `updated_at` field converted to an ISO string.
         """
         instance_to_save = model_instance_mocker
-        
+
         # Define what the instance's as_dict should return for the save query and for the message
         # For save query (after prepare_for_save, with convert_datetime_to_iso_string=True)
-        data_for_save_query = {"entity_id": str(instance_to_save.entity_id), "name": "Test Save Message", "version": str(uuid.uuid4())}
+        data_for_save_query = {"entity_id": str(
+            instance_to_save.entity_id), "name": "Test Save Message", "version": str(uuid.uuid4())}
         # For message (after prepare_for_save, with convert_datetime_to_iso_string=True)
-        data_for_message = {"entity_id": str(instance_to_save.entity_id), "name": "Test Save Message", "version": data_for_save_query["version"], "updated_at": datetime.utcnow().isoformat()}
+        data_for_message = {"entity_id": str(instance_to_save.entity_id), "name": "Test Save Message",
+                            "version": data_for_save_query["version"], "updated_at": datetime.now(timezone.utc).isoformat()}
 
         # Configure the mocked as_dict on the instance
         # It will be called twice: once by _process_data_before_save, once for the message
         model_instance_mocker.as_dict.side_effect = [
-            data_for_save_query, # First call for get_save_query
+            data_for_save_query,  # First call for get_save_query
             data_for_message     # Second call for the message
         ]
 
-        mock_db_adapter.get_move_entity_to_audit_table_query.return_value = ("AUDIT_SQL", ())
+        mock_db_adapter.get_move_entity_to_audit_table_query.return_value = (
+            "AUDIT_SQL", ())
         mock_db_adapter.get_save_query.return_value = ("SAVE_SQL", ())
         mock_db_adapter.run_transaction.return_value = True
 
         result = repository.save(instance_to_save, send_message=True)
 
         assert result is instance_to_save
-        instance_to_save.prepare_for_save.assert_called_once_with(changed_by_id=repository.user_id)
-        
+        instance_to_save.prepare_for_save.assert_called_once_with(
+            changed_by_id=repository.user_id)
+
         # Check as_dict calls
         assert model_instance_mocker.as_dict.call_count == 2
         calls = model_instance_mocker.as_dict.call_args_list
@@ -576,11 +604,11 @@ class TestBaseRepository:
         # Second call (for message)
         assert calls[1] == mocker.call(convert_datetime_to_iso_string=True)
 
-
         mock_db_adapter.run_transaction.assert_called_once()
         mock_message_adapter.send_message.assert_called_once_with(
             repository.queue_name,
-            json.dumps(data_for_message) # Data from the second call to as_dict
+            # Data from the second call to as_dict
+            json.dumps(data_for_message)
         )
         mock_db_adapter.__enter__.assert_called_once()
         mock_db_adapter.__exit__.assert_called_once()
@@ -603,13 +631,13 @@ class TestBaseRepository:
         Calls to the adapter's `run_transaction` method are also verified.
         """
         instance_to_delete = model_instance_mocker
-        instance_to_delete.active = True # Ensure it's active before deletion
+        instance_to_delete.active = True  # Ensure it's active before deletion
 
         # Mock the internal save call's dependencies (prepare_for_save, as_dict)
         # When repository.delete calls repository.save, these instance methods will be hit.
-        expected_data_after_prepare_for_delete = {"entity_id": str(instance_to_delete.entity_id), "active": False, "name": instance_to_delete.name}
+        expected_data_after_prepare_for_delete = {"entity_id": str(
+            instance_to_delete.entity_id), "active": False, "name": instance_to_delete.name}
         model_instance_mocker.as_dict.return_value = expected_data_after_prepare_for_delete
-
 
         # Mock adapter query methods for the internal save operation
         mock_move_query = ("MOVE_SQL_FOR_DELETE", ())
@@ -618,22 +646,23 @@ class TestBaseRepository:
         mock_db_adapter.get_save_query.return_value = mock_save_query
         mock_db_adapter.run_transaction.return_value = True
 
-
         # Spy on the repository's save method to ensure it's called by delete
         # save_spy = mocker.spy(repository, 'save') # This won't work well if we also want to check internal calls of save
 
         result = repository.delete(instance_to_delete)
 
         assert result is instance_to_delete
-        assert instance_to_delete.active is False # Verifies active flag is set
+        assert instance_to_delete.active is False  # Verifies active flag is set
 
         # Verify that prepare_for_save was called (via the internal save call)
         # The instance passed to save inside delete() is `instance_to_delete` which already has active=False
         # prepare_for_save should still be called.
-        instance_to_delete.prepare_for_save.assert_called_once_with(changed_by_id=repository.user_id)
-        
+        instance_to_delete.prepare_for_save.assert_called_once_with(
+            changed_by_id=repository.user_id)
+
         # Verify that as_dict was called (via the internal save call)
-        instance_to_delete.as_dict.assert_called_once_with(convert_datetime_to_iso_string=True)
+        instance_to_delete.as_dict.assert_called_once_with(
+            convert_datetime_to_iso_string=True)
 
         # Verify adapter calls for the save operation within delete
         mock_db_adapter.get_move_entity_to_audit_table_query.assert_called_once_with(
@@ -642,11 +671,14 @@ class TestBaseRepository:
         )
         mock_db_adapter.get_save_query.assert_called_once_with(
             repository.table_name,
-            expected_data_after_prepare_for_delete # Data from as_dict, reflecting active=False
+            # Data from as_dict, reflecting active=False
+            expected_data_after_prepare_for_delete
         )
-        mock_db_adapter.run_transaction.assert_called_once_with([mock_move_query, mock_save_query])
-        
-        mock_db_adapter.__enter__.assert_called_once() # Should be called by the save method
+        mock_db_adapter.run_transaction.assert_called_once_with(
+            [mock_move_query, mock_save_query])
+
+        # Should be called by the save method
+        mock_db_adapter.__enter__.assert_called_once()
         mock_db_adapter.__exit__.assert_called_once()
 
 

@@ -3,7 +3,7 @@ import os
 import importlib
 from uuid import uuid4, UUID
 from dataclasses import dataclass, field, fields, InitVar, is_dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Union, get_type_hints, get_origin, get_args
 from enum import Enum
 
@@ -12,13 +12,15 @@ def default_datetime():
     """
     Definition for default datetime
     """
-    return datetime.utcnow()
+    return datetime.now(timezone.utc)
+
 
 def get_uuid_hex(_int=None):
     """
     Returns UUID in hex format. If _int is passed, it creates UUID with int base.
     """
     return uuid4().hex if _int is None else UUID(int=_int, version=4).hex
+
 
 def import_models_module(current_module, module_name):
     """
@@ -32,7 +34,7 @@ def import_models_module(current_module, module_name):
         if module_name == 'models':
             return importlib.import_module('rococo.models')
         # Otherwise, continue to filesystem-based lookup
-    
+
     root_path = os.path.dirname(os.path.abspath(current_module.__file__))
     for root, dirs, _ in os.walk(root_path):
         search_paths = [os.path.join(root, d) for d in dirs] + [root]
@@ -40,7 +42,8 @@ def import_models_module(current_module, module_name):
             if module.name == module_name:
                 spec = importlib.util.spec_from_file_location(
                     module_name,
-                    os.path.join(module.module_finder.path, module_name, '__init__.py')
+                    os.path.join(module.module_finder.path,
+                                 module_name, '__init__.py')
                 )
                 mod = importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(mod)
@@ -54,6 +57,7 @@ class ModelValidationError(Exception):
     Attributes:
         errors (list): A list of error messages returned from validation methods.
     """
+
     def __init__(self, errors):
         # Ensure errors is a list of messages
         if isinstance(errors, str):
@@ -72,15 +76,20 @@ class ModelValidationError(Exception):
         # Return the formatted error messages
         return self.format_errors()
 
+
 @dataclass(kw_only=True)
 class VersionedModel:
     """A base class for versioned models with common (Big 6) attributes."""
 
-    entity_id: str = field(default_factory=get_uuid_hex, metadata={'field_type': 'entity_id'})
-    version: str = field(default_factory=lambda: get_uuid_hex(0), metadata={'field_type': 'uuid'})
-    previous_version: str = field(default_factory=lambda: None, metadata={'field_type': 'uuid'})
+    entity_id: str = field(default_factory=get_uuid_hex,
+                           metadata={'field_type': 'entity_id'})
+    version: str = field(default_factory=lambda: get_uuid_hex(
+        0), metadata={'field_type': 'uuid'})
+    previous_version: str = field(
+        default_factory=lambda: None, metadata={'field_type': 'uuid'})
     active: bool = True
-    changed_by_id: str = field(default_factory=lambda: get_uuid_hex(0), metadata={'field_type': 'uuid'})
+    changed_by_id: str = field(default_factory=lambda: get_uuid_hex(
+        0), metadata={'field_type': 'uuid'})
     changed_on: datetime = field(default_factory=default_datetime)
 
     _is_partial: InitVar[bool] = False
@@ -116,7 +125,8 @@ class VersionedModel:
                     or (getattr(rococo_module, model_name, None) if rococo_module else None)
                 )
                 if not field_model_cls:
-                    raise ImportError(f"Unable to import {model_name} class from current/module/models.")
+                    raise ImportError(
+                        f"Unable to import {model_name} class from current/module/models.")
                 metadata['model'] = field_model_cls
 
             # Handle list of uuid.UUID specifically
@@ -127,7 +137,8 @@ class VersionedModel:
                     setattr(self, f.name, [])
                 elif isinstance(value, str):
                     try:
-                        uuid_list = [UUID(u.strip()) for u in value[1:-1].split(',') if u.strip()]
+                        uuid_list = [UUID(u.strip())
+                                     for u in value[1:-1].split(',') if u.strip()]
                         setattr(self, f.name, uuid_list)
                     except ValueError:
                         print(f"Invalid UUIDs in list for field '{f.name}'")
@@ -146,7 +157,8 @@ class VersionedModel:
         """
         if name in VersionedModel.fields():
             if object.__getattribute__(self, '_is_partial') and name != 'entity_id':
-                raise AttributeError(f"Attribute '{name}' is not available in a partial instance.")
+                raise AttributeError(
+                    f"Attribute '{name}' is not available in a partial instance.")
 
         # Raise error if m2m field is accessed before loading
         f = next((f for f in fields(type(self)) if f.name == name), None)
@@ -182,9 +194,8 @@ class VersionedModel:
                     field_strings.append(f"{f.name}={repr(value)}")
             except AttributeError:
                 field_strings.append(f"{f.name}=<unloaded>")
-        
-        return f"{type(self).__name__}({', '.join(field_strings)})"
 
+        return f"{type(self).__name__}({', '.join(field_strings)})"
 
     @classmethod
     def fields(cls) -> List[str]:
@@ -220,20 +231,24 @@ class VersionedModel:
                 if v is None:
                     keys_to_remove.append(k)
                 elif isinstance(v, list):
-                    result[k] = [obj.as_dict(convert_datetime_to_iso_string) for obj in v]
+                    result[k] = [obj.as_dict(
+                        convert_datetime_to_iso_string) for obj in v]
 
             elif f.metadata.get('field_type') in ['record_id', 'entity_id']:
                 # Handle references or nested versioned models
                 if isinstance(v, VersionedModel):
-                    result[k] = {'entity_id': str(v.entity_id)} if v._is_partial else v.as_dict(convert_datetime_to_iso_string)
+                    result[k] = {'entity_id': str(v.entity_id)} if v._is_partial else v.as_dict(
+                        convert_datetime_to_iso_string)
                 elif isinstance(v, UUID):
                     result[k] = str(v) if convert_uuids else v
                 elif isinstance(v, list) and all(isinstance(i, UUID) for i in v):
                     result[k] = [str(i) if convert_uuids else i for i in v]
                 elif is_dataclass(v):
-                    result[k] = v.as_dict(convert_datetime_to_iso_string, convert_uuids) if hasattr(v, 'as_dict') else v
+                    result[k] = v.as_dict(
+                        convert_datetime_to_iso_string, convert_uuids) if hasattr(v, 'as_dict') else v
                 elif isinstance(v, dict):
-                    result[k] = str(v.get('entity_id')) if convert_uuids else v.get('entity_id')
+                    result[k] = str(v.get('entity_id')
+                                    ) if convert_uuids else v.get('entity_id')
 
             if convert_datetime_to_iso_string and isinstance(v, datetime):
                 result[k] = v.isoformat()
@@ -254,12 +269,13 @@ class VersionedModel:
         for k, v in clean_data.items():
             if k in ["entity_id", "version", "previous_version", "changed_by_id"]:
                 try:
-                    clean_data[k] = UUID(v).hex if v and not isinstance(v, UUID) else v
+                    clean_data[k] = UUID(
+                        v).hex if v and not isinstance(v, UUID) else v
                 except ValueError:
                     print(f"'{v}' is not a valid UUID.")
         return cls(**clean_data)
 
-    def validate(self): 
+    def validate(self):
         """
         Validate all fields by calling corresponding `validate_<field_name>` methods if defined,
         and validate the type of each field. Raise `ModelValidationError` if any validations fail.
@@ -296,9 +312,11 @@ class VersionedModel:
                     except Exception:
                         continue
                 else:
-                    errors.append(f"Invalid type for '{name}': expected {args}, got {type(value).__name__}")
+                    errors.append(
+                        f"Invalid type for '{name}': expected {args}, got {type(value).__name__}")
             elif value is None:
-                errors.append(f"Invalid type for '{name}': expected {expected.__name__}, got NoneType")
+                errors.append(
+                    f"Invalid type for '{name}': expected {expected.__name__}, got NoneType")
             elif not isinstance(value, expected):
                 try:
                     if expected in castable or issubclass(expected, Enum):
@@ -308,7 +326,8 @@ class VersionedModel:
                     else:
                         raise TypeError
                 except Exception:
-                    errors.append(f"Invalid type for '{name}': expected {expected.__name__}, got {type(value).__name__}")
+                    errors.append(
+                        f"Invalid type for '{name}': expected {expected.__name__}, got {type(value).__name__}")
 
         if errors:
             raise ModelValidationError(errors)
@@ -327,7 +346,8 @@ class VersionedModel:
         else:
             self.previous_version = get_uuid_hex(0)
         self.version = get_uuid_hex()
-        self.changed_on = datetime.utcnow()
+        self.changed_on = datetime.now(timezone.utc)
+
         if changed_by_id:
             self.changed_by_id = changed_by_id
         self.validate()

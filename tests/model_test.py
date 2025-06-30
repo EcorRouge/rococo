@@ -1,10 +1,11 @@
 """
 Test VersionedModel
 """
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 from dataclasses import dataclass
 from rococo.models import VersionedModel
+
 
 def test_prepare_for_save():
     """
@@ -18,7 +19,8 @@ def test_prepare_for_save():
     assert model.previous_version == version
     assert model.version != version
     assert model.changed_by_id == changed_by_id
-    assert model.changed_on > datetime.utcnow() + timedelta(seconds=-1)
+    assert model.changed_on > datetime.now(
+        timezone.utc) + timedelta(seconds=-1)
 
 
 def test_as_dict():
@@ -35,6 +37,7 @@ def test_as_dict():
     assert isinstance(model_as_dict['changed_on'], str)
     assert 'attribute_that_should_not_exist' not in model_as_dict
 
+
 def test_from_dict():
     """
     Test converting model to dict
@@ -50,6 +53,7 @@ def test_from_dict():
     assert hasattr(dict_as_model, "changed_by_id")
     assert hasattr(dict_as_model, "changed_on")
 
+
 def test_sublass_from_dict():
     """
     Test converting subclassed model to dict
@@ -60,7 +64,8 @@ def test_sublass_from_dict():
         """TestModel for VersionedModel"""
         test_attribute: int = 0
 
-    model_dict = {"entity_id": UUID(int=0).hex, "version": UUID(int=0).hex, "test_attribute": 5}
+    model_dict = {"entity_id": UUID(int=0).hex, "version": UUID(
+        int=0).hex, "test_attribute": 5}
     dict_as_model = TestModel.from_dict(model_dict)
 
     assert isinstance(dict_as_model, TestModel)

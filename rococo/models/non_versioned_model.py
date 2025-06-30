@@ -1,13 +1,16 @@
 from dataclasses import dataclass, field, fields, is_dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict
 from uuid import uuid4, UUID
 
+
 def default_datetime():
-    return datetime.utcnow()
+    return datetime.now(timezone.utc)
+
 
 def get_uuid_hex(_int=None):
     return uuid4().hex if _int is None else UUID(int=_int, version=4).hex
+
 
 @dataclass(kw_only=True)
 class NonVersionedModel:
@@ -17,7 +20,8 @@ class NonVersionedModel:
     """
 
     # If you want every non-versioned document to carry an entity_id:
-    entity_id: str = field(default_factory=get_uuid_hex, metadata={'field_type': 'entity_id'})
+    entity_id: str = field(default_factory=get_uuid_hex,
+                           metadata={'field_type': 'entity_id'})
 
     def __post_init__(self):
         # No _is_partial logic here; all fields are assumed “fully loaded.”
@@ -38,13 +42,16 @@ class NonVersionedModel:
             value = getattr(self, name)
             # If it’s a nested dataclass, call its as_dict()
             if is_dataclass(value):
-                result[name] = value.as_dict(convert_datetime_to_iso_string, convert_uuids)
+                result[name] = value.as_dict(
+                    convert_datetime_to_iso_string, convert_uuids)
             elif isinstance(value, list):
                 # If list of dataclasses or UUIDs, convert accordingly
                 if value and all(isinstance(i, UUID) for i in value):
-                    result[name] = [str(i) if convert_uuids else i for i in value]
+                    result[name] = [
+                        str(i) if convert_uuids else i for i in value]
                 elif value and all(is_dataclass(i) for i in value):
-                    result[name] = [i.as_dict(convert_datetime_to_iso_string, convert_uuids) for i in value]
+                    result[name] = [
+                        i.as_dict(convert_datetime_to_iso_string, convert_uuids) for i in value]
                 else:
                     result[name] = value
             elif isinstance(value, UUID):

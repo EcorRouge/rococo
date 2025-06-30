@@ -129,6 +129,9 @@ env.bak/
 venv.bak/
 my_env/
 
+# VS Code
+.vscode
+
 # Spyder project settings
 .spyderproject
 .spyproject

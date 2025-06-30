@@ -26,8 +26,8 @@ class SurrealVersionedModel(VersionedModel):
 
     def __post_init__(self, _is_partial):
         self._is_partial = _is_partial
-        for field in fields(self):
-            field_model = field.metadata.get('relationship', {}).get('model')
+        for field_obj in fields(self):
+            field_model = field_obj.metadata.get('relationship', {}).get('model')
             if field_model is not None and isinstance(field_model, str):
                 current_module = importlib.import_module('__main__')
                 models_module = import_models_module(current_module, 'models')
@@ -38,5 +38,5 @@ class SurrealVersionedModel(VersionedModel):
                 if not field_model_cls:
                     raise ImportError(f"Unable to import {field_model} class from current module or models module.")
 
-                field.metadata['relationship']['model'] = field_model_cls
+                field_obj.metadata['relationship']['model'] = field_model_cls
 

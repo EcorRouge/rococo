@@ -1,10 +1,8 @@
-import logging
 import time
-from typing import Any, Dict, List, Tuple, Union, Optional, Callable
-from uuid import UUID
-
 import pymysql
-
+import logging
+from uuid import UUID
+from typing import Any, Dict, List, Tuple, Union, Optional, Callable
 from rococo.data.base import DbAdapter
 
 
@@ -215,6 +213,38 @@ class MySqlAdapter(DbAdapter):
             return [db_response]
         else:
             return db_response
+
+    def get_count(
+        self,
+        table: str,
+        conditions: Dict[str, Any],
+        options: Optional[Dict[str, Any]] = None
+    ) -> int:
+        """
+        Count rows in `table` matching `conditions`.
+        The 'options' parameter is included for interface compatibility.
+        """
+        safe_table_name = f"`{table}`"
+        cond_clauses: List[str] = []
+        params: List[Any] = []
+        
+        if conditions:
+            for key, val in conditions.items():
+                clause, vals_list = self._build_condition_string(table, key, val)
+                cond_clauses.append(clause)
+                params.extend(vals_list)
+
+        where_clause = f"WHERE {' AND '.join(cond_clauses)}" if cond_clauses else ""
+        sql = f"SELECT COUNT(*) AS `count` FROM {safe_table_name} {where_clause}"
+
+        if options and 'hint' in options:
+            self.logger.info(f"MySQLAdapter.get_count received hint option: {options['hint']}, but it's not directly applied in this generic manner for MySQL.")
+
+        rows = self.execute_query(sql, tuple(params))
+        
+        if rows and isinstance(rows, list) and rows[0] is not None:
+            return int(rows[0].get('count', 0))
+        return 0
 
     def get_save_query(self, table_name, data):
         """Returns a query to save an entity in database."""

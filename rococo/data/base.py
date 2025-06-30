@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 
 class DbAdapter(ABC):
@@ -39,6 +39,10 @@ class DbAdapter(ABC):
     def get_many(self, table: str, conditions: Dict[str, Any] = None, sort: List[Tuple[str, str]] = None, 
                  limit: int = 100) -> List[Dict[str, Any]]:
         """Fetches multiple records from the specified table based on given conditions."""
+        pass
+
+    @abstractmethod
+    def get_count(self, table: str, conditions: Dict[str, Any], options: Optional[Dict[str, Any]] = None) -> int:
         pass
 
     @abstractmethod

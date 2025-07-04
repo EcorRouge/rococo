@@ -7,6 +7,7 @@ from pymongo.write_concern import WriteConcern
 
 from rococo.data.base import DbAdapter
 
+
 class MongoDBAdapter(DbAdapter):
     """
     Production-ready MongoDB adapter with robust defaults and safety patterns:
@@ -16,6 +17,7 @@ class MongoDBAdapter(DbAdapter):
       - Causal consistency sessions
       - Clean error handling
     """
+
     def __init__(
         self,
         mongo_uri: str,
@@ -52,6 +54,7 @@ class MongoDBAdapter(DbAdapter):
             self.client.admin.command('ping')
         except errors.PyMongoError as e:
             raise ConnectionError(f"MongoDB ping failed: {e}") from e
+
         self.db = self.client.get_database(self.db_name)
         # Start a causal-consistency session for transactions
         self._session = self.client.start_session(causal_consistency=True)
@@ -212,7 +215,8 @@ class MongoDBAdapter(DbAdapter):
         """
         try:
             coll = self._get_collection(table)
-            cursor = coll.find(conditions or {}, **({'hint': hint} if hint else {}))
+            cursor = coll.find(conditions or {}, **
+                               ({'hint': hint} if hint else {}))
             if sort:
                 cursor = cursor.sort(sort)
             if limit > 0:
@@ -242,7 +246,7 @@ class MongoDBAdapter(DbAdapter):
 
         Raises:
             RuntimeError: If the query fails due to a PyMongoError.
-        """        
+        """
         try:
             coll = self._get_collection(table)
             kwargs: Dict[str, Any] = {}
@@ -279,7 +283,8 @@ class MongoDBAdapter(DbAdapter):
                 audit = self._get_collection(f"{table}_audit", write=True)
                 audit.replace_one({'_id': doc['_id']}, doc, upsert=True)
         except errors.PyMongoError as e:
-            raise RuntimeError(f"move_entity_to_audit_table failed: {e}") from e
+            raise RuntimeError(
+                f"move_entity_to_audit_table failed: {e}") from e
 
     def save(
         self,
@@ -327,7 +332,7 @@ class MongoDBAdapter(DbAdapter):
             # Ensure flags are set appropriately:
             new_doc["latest"] = True
             new_doc["active"] = True
-            
+
             # Remove _id if it exists to prevent immutability error
             if '_id' in new_doc:
                 del new_doc['_id']
@@ -342,8 +347,8 @@ class MongoDBAdapter(DbAdapter):
             raise RuntimeError(f"save failed: {e}") from e
 
     def delete(
-        self, 
-        table: str, 
+        self,
+        table: str,
         data: Dict[str, Any]
     ) -> bool:
         """

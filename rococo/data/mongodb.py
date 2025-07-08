@@ -263,14 +263,15 @@ class MongoDBAdapter(DbAdapter):
         entity_id: str
     ) -> None:
         """
-        Move an entity to the audit collection.
+        Move all entity versions to the audit collection.
 
-        This method retrieves a document from the specified MongoDB collection
-        using the given entity_id and inserts it into a corresponding audit collection
-        named `{table}_audit`.
+        This method retrieves ALL documents from the specified MongoDB collection
+        with the given entity_id and copies them to the corresponding audit collection
+        named `{table}_audit`. This preserves the entire change history for the entity,
+        matching the behavior of the MySQL implementation.
 
         Args:
-            table (str): The name of the collection from which to retrieve the document.
+            table (str): The name of the collection from which to retrieve the documents.
             entity_id (str): The identifier of the entity to move to the audit collection.
 
         Raises:
@@ -278,14 +279,23 @@ class MongoDBAdapter(DbAdapter):
         """
         try:
             coll = self._get_collection(table)
-            doc = coll.find_one({'entity_id': entity_id})
-            if doc:
+            # Find ALL documents with this entity_id (entire change history)
+            docs = list(
+                coll.find({'entity_id': entity_id}, session=self._session))
+
+            if docs:
                 audit = self._get_collection(f"{table}_audit", write=True)
-                audit.replace_one(
-                    {'entity_id': doc['entity_id']},
-                    doc,
-                    upsert=True
-                )
+
+                # Insert all documents into audit collection
+                # Use replace_one with upsert to handle potential duplicates
+                for doc in docs:
+                    # Use the document's _id as the unique identifier to avoid duplicates
+                    audit.replace_one(
+                        {'_id': doc['_id']},
+                        doc,
+                        upsert=True,
+                        session=self._session
+                    )
         except errors.PyMongoError as e:
             raise RuntimeError(
                 f"move_entity_to_audit_table failed: {e}") from e

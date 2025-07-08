@@ -263,14 +263,15 @@ class MongoDBAdapter(DbAdapter):
         entity_id: str
     ) -> None:
         """
-        Move an entity to the audit collection.
+        Move all entity versions to the audit collection.
 
-        This method retrieves a document from the specified MongoDB collection
-        using the given entity_id and inserts it into a corresponding audit collection
-        named `{table}_audit`.
+        This method retrieves ALL documents from the specified MongoDB collection
+        with the given entity_id and copies them to the corresponding audit collection
+        named `{table}_audit`. This preserves the entire change history for the entity,
+        matching the behavior of the MySQL implementation.
 
         Args:
-            table (str): The name of the collection from which to retrieve the document.
+            table (str): The name of the collection from which to retrieve the documents.
             entity_id (str): The identifier of the entity to move to the audit collection.
 
         Raises:
@@ -278,10 +279,23 @@ class MongoDBAdapter(DbAdapter):
         """
         try:
             coll = self._get_collection(table)
-            doc = coll.find_one({'entity_id': entity_id})
-            if doc:
+            # Find ALL documents with this entity_id (entire change history)
+            docs = list(
+                coll.find({'entity_id': entity_id}, session=self._session))
+
+            if docs:
                 audit = self._get_collection(f"{table}_audit", write=True)
-                audit.replace_one({'_id': doc['_id']}, doc, upsert=True)
+
+                # Insert all documents into audit collection
+                # Use replace_one with upsert to handle potential duplicates
+                for doc in docs:
+                    # Use the document's _id as the unique identifier to avoid duplicates
+                    audit.replace_one(
+                        {'_id': doc['_id']},
+                        doc,
+                        upsert=True,
+                        session=self._session
+                    )
         except errors.PyMongoError as e:
             raise RuntimeError(
                 f"move_entity_to_audit_table failed: {e}") from e
@@ -296,7 +310,7 @@ class MongoDBAdapter(DbAdapter):
 
         Instead of doing a simple upsert, this does a “versioned insert”:
           1. Find existing document with entity_id and latest=True. If found, set latest=False.
-          2. Create a new document based on `data` with latest=True, big7=True, active=True.
+          2. Create a new document based on `data` with latest=True, active=True.
           3. Insert that new document and return it.
 
         Args:
@@ -333,13 +347,9 @@ class MongoDBAdapter(DbAdapter):
             new_doc["latest"] = True
             new_doc["active"] = True
 
-            # Remove _id if it exists to prevent immutability error
-            if '_id' in new_doc:
-                del new_doc['_id']
-
-            # 3) Insert the new version with entity_id as _id
-            new_doc['_id'] = data['entity_id']
+            # 3) Insert the new version
             insert_result = coll.insert_one(new_doc, session=self._session)
+
             # 4) Fetch and return the freshly inserted document (including _id)
             return coll.find_one({"_id": insert_result.inserted_id}, session=self._session)
 
@@ -373,6 +383,61 @@ class MongoDBAdapter(DbAdapter):
             return result.matched_count > 0 and result.modified_count > 0
         except errors.PyMongoError as e:
             raise RuntimeError(f"delete failed: {e}") from e
+
+    def insert_many(
+        self,
+        table: str,
+        documents: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """
+        Insert multiple documents into the specified MongoDB collection.
+
+        This method inserts a list of documents into the MongoDB collection specified by `table`.
+        Each document is inserted with the current session for transaction consistency.
+
+        Args:
+            table (str): The name of the MongoDB collection to insert documents into.
+            documents (List[Dict[str, Any]]): A list of document dictionaries to insert.
+
+        Returns:
+            List[Dict[str, Any]]: The list of inserted documents including their generated _id fields.
+
+        Raises:
+            RuntimeError: If the operation fails due to a PyMongoError.
+            ValueError: If the documents list is empty.
+        """
+        if not documents:
+            raise ValueError(
+                "insert_many failed: documents list cannot be empty")
+
+        try:
+            coll = self._get_collection(table, write=True)
+
+            # Prepare documents for insertion
+            docs_to_insert = []
+            for doc in documents:
+                doc_copy = doc.copy()
+                # Remove _id if it exists to let MongoDB generate it
+                if '_id' in doc_copy:
+                    del doc_copy['_id']
+                docs_to_insert.append(doc_copy)
+
+            # Insert the documents
+            insert_result = coll.insert_many(
+                docs_to_insert, session=self._session)
+
+            # Fetch and return the inserted documents with their generated _id values
+            inserted_docs = []
+            for inserted_id in insert_result.inserted_ids:
+                doc = coll.find_one({"_id": inserted_id},
+                                    session=self._session)
+                if doc:
+                    inserted_docs.append(doc)
+
+            return inserted_docs
+
+        except errors.PyMongoError as e:
+            raise RuntimeError(f"insert_many failed: {e}") from e
 
     def create_index(
         self,

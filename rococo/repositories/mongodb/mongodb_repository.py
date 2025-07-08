@@ -37,9 +37,11 @@ class MongoDbRepository(BaseRepository):
             user_id=user_id
         )
         self.adapter: MongoDBAdapter = db_adapter
-        self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
+        self.logger = logging.getLogger(
+            f"{__name__}.{self.__class__.__name__}")
         if not logging.getLogger().hasHandlers():
-            logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+            logging.basicConfig(
+                level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
     def _process_data_before_save(
         self,
@@ -60,11 +62,9 @@ class MongoDbRepository(BaseRepository):
             Dict[str, Any]: A dictionary representing the prepared data for MongoDB storage.
         """
         instance.prepare_for_save(changed_by_id=self.user_id)
-        data = instance.as_dict(convert_datetime_to_iso_string=True, convert_uuids=True)
+        data = instance.as_dict(
+            convert_datetime_to_iso_string=True, convert_uuids=True)
         # Remove _id if it exists to prevent immutability error, then set it to entity_id
-        if '_id' in data:
-            del data['_id']
-        data["_id"] = data["entity_id"]
         data["active"] = True
         data["latest"] = True
         return data
@@ -100,7 +100,6 @@ class MongoDbRepository(BaseRepository):
         if not data:
             return None
 
-        data.setdefault('entity_id', str(data.get('_id')))
         return self.model.from_dict(data)
 
     def get_many(
@@ -142,7 +141,6 @@ class MongoDbRepository(BaseRepository):
 
         result = []
         for data in records_data:
-            data.setdefault('entity_id', str(data.get('_id')))
             result.append(self.model.from_dict(data))
         return result
 
@@ -159,16 +157,15 @@ class MongoDbRepository(BaseRepository):
         Returns:
             VersionedModel: The deleted VersionedModel instance, which is now in a logically deleted state.
         """
-        self.logger.info(f"Deleting entity_id={getattr(instance, 'entity_id', 'N/A')} from {self.table_name}")
+        self.logger.info(
+            f"Deleting entity_id={getattr(instance, 'entity_id', 'N/A')} from {self.table_name}")
 
         instance.prepare_for_save(changed_by_id=self.user_id)
         instance.active = False
 
-        data = instance.as_dict(convert_datetime_to_iso_string=True, convert_uuids=True)
+        data = instance.as_dict(
+            convert_datetime_to_iso_string=True, convert_uuids=True)
         # Remove _id if it exists to prevent immutability error, then set it to entity_id
-        if '_id' in data:
-            del data['_id']
-        data['_id'] = data.get('entity_id')
 
         if instance.previous_version and instance.previous_version != get_uuid_hex(0):
             self._execute_within_context(
@@ -189,8 +186,6 @@ class MongoDbRepository(BaseRepository):
             for k, v in saved.items():
                 if hasattr(instance, k):
                     setattr(instance, k, v)
-            if '_id' in saved:
-                setattr(instance, 'id', str(saved['_id']))
 
         return instance
 
@@ -208,7 +203,8 @@ class MongoDbRepository(BaseRepository):
         :return: The saved VersionedModel instance, which is now in a logically active state.
         :rtype: VersionedModel
         """
-        self.logger.info(f"Creating entity_id={getattr(instance, 'entity_id', 'N/A')} in {self.table_name}")
+        self.logger.info(
+            f"Creating entity_id={getattr(instance, 'entity_id', 'N/A')} in {self.table_name}")
         instance.active = True
         return self.save(instance)
 
@@ -231,15 +227,13 @@ class MongoDbRepository(BaseRepository):
         for instance in instances:
             instance.prepare_for_save(changed_by_id=self.user_id)
             instance.active = True
-            doc = instance.as_dict(convert_datetime_to_iso_string=True, convert_uuids=True)
-            # Remove _id if it exists to prevent immutability error, then set it to entity_id
-            if '_id' in doc:
-                del doc['_id']
-            doc['_id'] = doc.get('entity_id')
+            doc = instance.as_dict(
+                convert_datetime_to_iso_string=True, convert_uuids=True)
             docs.append(doc)
 
         if docs:
-            self.logger.info(f"Inserting {len(docs)} documents into {collection_name}")
+            self.logger.info(
+                f"Inserting {len(docs)} documents into {collection_name}")
             self._execute_within_context(
                 lambda: self.adapter.insert_many(collection_name, docs)
             )
@@ -257,7 +251,7 @@ class MongoDbRepository(BaseRepository):
                     instance.entity_id
                 )
             )
-                
+
         # 1) Un-flag the old 'latest' document(s)
         def unset_old():
             # find any prior version marked latest
@@ -295,7 +289,8 @@ class MongoDbRepository(BaseRepository):
         if send_message:
             self.message_adapter.send_message(
                 self.queue_name,
-                json.dumps(instance.as_dict(convert_datetime_to_iso_string=True))
+                json.dumps(instance.as_dict(
+                    convert_datetime_to_iso_string=True))
             )
 
         return instance

@@ -34,7 +34,7 @@ class MongoDbRepositoryTestCase(unittest.TestCase):
     def test_save_sends_message(self):
         """
         Tests that the save method sends a message to the message queue after saving.
-        
+
         Verifies that the save method sends a message to the message queue with the
         saved entity data and the correct queue name. Also verifies that the saved
         instance is returned with the correct entity_id.
@@ -43,19 +43,22 @@ class MongoDbRepositoryTestCase(unittest.TestCase):
         self.db_adapter_mock.save.return_value = self.model_instance.as_dict()
         self.db_adapter_mock.move_entity_to_audit_table.return_value = None
 
-        saved_instance = self.repository.save(self.model_instance, send_message=True)
+        saved_instance = self.repository.save(
+            self.model_instance, send_message=True)
 
         self.message_adapter_mock.send_message.assert_called_once_with(
             self.queue_name,
-            json.dumps(self.model_instance.as_dict(convert_datetime_to_iso_string=True))
+            json.dumps(self.model_instance.as_dict(
+                convert_datetime_to_iso_string=True))
         )
-        self.assertEqual(saved_instance.entity_id, self.model_instance.entity_id)
+        self.assertEqual(saved_instance.entity_id,
+                         self.model_instance.entity_id)
 
     def test_save_without_message(self):
         """
         Tests that the save method doesn't send a message to the message queue when
         send_message=False is passed.
-        
+
         Verifies that the save method doesn't send a message to the message queue
         when send_message=False is passed. Also verifies that the saved
         instance is returned with the correct entity_id.
@@ -85,7 +88,8 @@ class MongoDbRepositoryTestCase(unittest.TestCase):
         deleted_instance = self.repository.delete(self.model_instance)
 
         self.assertFalse(deleted_instance.active)
-        self.db_adapter_mock.save.assert_called() # Verifies that the save method on the adapter was called
+        # Verifies that the save method on the adapter was called
+        self.db_adapter_mock.save.assert_called()
 
     def test_create_sets_active_true(self):
         """
@@ -97,9 +101,10 @@ class MongoDbRepositoryTestCase(unittest.TestCase):
         """
         # Ensure adapter.save returns data reflecting active: True if create method reconstructs
         data_representing_created_state = self.model_instance.as_dict().copy()
-        data_representing_created_state['active'] = True # Explicitly set for clarity
+        # Explicitly set for clarity
+        data_representing_created_state['active'] = True
         self.db_adapter_mock.save.return_value = data_representing_created_state
-        self.model_instance.active = False # Start with instance as inactive
+        self.model_instance.active = False  # Start with instance as inactive
 
         created_instance = self.repository.create(self.model_instance)
 
@@ -117,21 +122,23 @@ class MongoDbRepositoryTestCase(unittest.TestCase):
         - Confirms that all documents have the `active` flag set to True and the correct `_id` values.
         """
         self.repository._execute_within_context = MagicMock()
-        instances = [TestVersionedModel(entity_id=UUID(int=i)) for i in range(3)]
+        instances = [TestVersionedModel(
+            entity_id=UUID(int=i)) for i in range(3)]
 
         # stub insert_many to return a list of dummy docs
         self.db_adapter_mock.insert_many.return_value = [
-            {'_id': str(instances[0].entity_id), 'active': True},
-            {'_id': str(instances[1].entity_id), 'active': True},
-            {'_id': str(instances[2].entity_id), 'active': True},
+            {'entity_id': str(instances[0].entity_id), 'active': True},
+            {'entity_id': str(instances[1].entity_id), 'active': True},
+            {'entity_id': str(instances[2].entity_id), 'active': True},
         ]
 
-        self.repository.create_many(instances, collection_name="test_collection")
+        self.repository.create_many(
+            instances, collection_name="test_collection")
 
         # assert that _execute_within_context was called
         self.repository._execute_within_context.assert_called_once()
         func_passed_to_execute = self.repository._execute_within_context.call_args[0][0]
-        
+
         # executing func should invoke insert_many
         returned_docs = func_passed_to_execute()
         self.assertEqual(len(returned_docs), 3)
@@ -147,12 +154,12 @@ class MongoDbRepositoryTestCase(unittest.TestCase):
 
         # 3) each doc has expected _id and active=True
         expected_ids = [str(inst.entity_id) for inst in instances]
-        actual_ids   = [doc['_id'] for doc in called_docs]
+        actual_ids = [doc['entity_id'] for doc in called_docs]
         self.assertCountEqual(actual_ids, expected_ids)
 
         for doc in called_docs:
-            self.assertTrue(doc.get('active', False), "Each inserted doc should be active")
-
+            self.assertTrue(doc.get('active', False),
+                            "Each inserted doc should be active")
 
     def test_get_one_returns_instance(self):
         """
@@ -166,13 +173,10 @@ class MongoDbRepositoryTestCase(unittest.TestCase):
         # The adapter should return data that can be converted back to a model
         # Using a more complete representation based on TestVersionedModel.as_dict()
         mock_return_data = self.model_instance.as_dict()
-        # Ensure '_id' is present if MongoDbRepository.get_one or model.from_dict expects it specifically for Mongo
-        if 'entity_id' in mock_return_data and '_id' not in mock_return_data: # Make it more mongo like
-             mock_return_data['_id'] = mock_return_data['entity_id']
-
         self.db_adapter_mock.get_one.return_value = mock_return_data
 
-        result = self.repository.get_one("test_collection", "entity_id_idx", {"entity_id": str(self.model_instance.entity_id)})
+        result = self.repository.get_one("test_collection", "entity_id_idx", {
+                                         "entity_id": str(self.model_instance.entity_id)})
         self.assertIsInstance(result, TestVersionedModel)
         self.assertEqual(result.entity_id, self.model_instance.entity_id)
 
@@ -187,7 +191,8 @@ class MongoDbRepositoryTestCase(unittest.TestCase):
         """
         self.db_adapter_mock.get_one.return_value = None
 
-        result = self.repository.get_one("test_collection", "entity_id_idx", {"entity_id": str(self.model_instance.entity_id)})
+        result = self.repository.get_one("test_collection", "entity_id_idx", {
+                                         "entity_id": str(self.model_instance.entity_id)})
         self.assertIsNone(result)
 
     def test_get_many_returns_instances(self):
@@ -202,12 +207,9 @@ class MongoDbRepositoryTestCase(unittest.TestCase):
         # Provide more complete data for each instance
         instance1_data = TestVersionedModel(entity_id=UUID(int=1)).as_dict()
         instance2_data = TestVersionedModel(entity_id=UUID(int=2)).as_dict()
-        if '_id' not in instance1_data:
-            instance1_data['_id'] = instance1_data['entity_id']
-        if '_id' not in instance2_data:
-            instance2_data['_id'] = instance2_data['entity_id']
 
-        self.db_adapter_mock.get_many.return_value = [instance1_data, instance2_data]
+        self.db_adapter_mock.get_many.return_value = [
+            instance1_data, instance2_data]
 
         result = self.repository.get_many("test_collection", "entity_id_idx")
         self.assertEqual(len(result), 2)
@@ -225,6 +227,7 @@ class MongoDbRepositoryTestCase(unittest.TestCase):
 
         result = self.repository.get_many("test_collection", "entity_id_idx")
         self.assertEqual(result, [])
+
 
 if __name__ == '__main__':
     unittest.main()

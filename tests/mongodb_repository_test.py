@@ -42,9 +42,10 @@ class MongoDbRepositoryTestCase(unittest.TestCase):
         # For this test, assume save might reconstruct, so mock adapter.save's return value
         self.db_adapter_mock.save.return_value = self.model_instance.as_dict()
         self.db_adapter_mock.move_entity_to_audit_table.return_value = None
+        self.db_adapter_mock.get_many.return_value = []
 
         saved_instance = self.repository.save(
-            self.model_instance, send_message=True)
+            self.model_instance, "test_collection", send_message=True)
 
         self.message_adapter_mock.send_message.assert_called_once_with(
             self.queue_name,
@@ -65,8 +66,10 @@ class MongoDbRepositoryTestCase(unittest.TestCase):
         """
         self.db_adapter_mock.save.return_value = self.model_instance.as_dict()
         self.db_adapter_mock.move_entity_to_audit_table.return_value = None
+        self.db_adapter_mock.get_many.return_value = []
 
-        self.repository.save(self.model_instance, send_message=False)
+        self.repository.save(self.model_instance,
+                             "test_collection", send_message=False)
 
         self.message_adapter_mock.send_message.assert_not_called()
 
@@ -85,7 +88,8 @@ class MongoDbRepositoryTestCase(unittest.TestCase):
         self.db_adapter_mock.save.return_value = data_representing_deleted_state
         self.db_adapter_mock.move_entity_to_audit_table.return_value = None
 
-        deleted_instance = self.repository.delete(self.model_instance)
+        deleted_instance = self.repository.delete(
+            self.model_instance, "test_collection")
 
         self.assertFalse(deleted_instance.active)
         # Verifies that the save method on the adapter was called
@@ -104,9 +108,11 @@ class MongoDbRepositoryTestCase(unittest.TestCase):
         # Explicitly set for clarity
         data_representing_created_state['active'] = True
         self.db_adapter_mock.save.return_value = data_representing_created_state
+        self.db_adapter_mock.get_many.return_value = []
         self.model_instance.active = False  # Start with instance as inactive
 
-        created_instance = self.repository.create(self.model_instance)
+        created_instance = self.repository.create(
+            self.model_instance, "test_collection")
 
         self.assertTrue(created_instance.active)
         self.db_adapter_mock.save.assert_called()

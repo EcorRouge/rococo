@@ -146,38 +146,39 @@ class MongoDbRepository(BaseRepository):
 
     def delete(
         self,
-        instance: VersionedModel
+        instance: VersionedModel,
+        collection_name: str
     ) -> VersionedModel:
         """
         Logically deletes a VersionedModel instance from the database by setting its active flag to False.
 
         Args:
             instance (VersionedModel): The VersionedModel instance to delete.
+            collection_name (str): The name of the MongoDB collection to delete from.
 
         Returns:
             VersionedModel: The deleted VersionedModel instance, which is now in a logically deleted state.
         """
         self.logger.info(
-            f"Deleting entity_id={getattr(instance, 'entity_id', 'N/A')} from {self.table_name}")
+            f"Deleting entity_id={getattr(instance, 'entity_id', 'N/A')} from {collection_name}")
 
         instance.prepare_for_save(changed_by_id=self.user_id)
         instance.active = False
 
         data = instance.as_dict(
             convert_datetime_to_iso_string=True, convert_uuids=True)
-        # Remove _id if it exists to prevent immutability error, then set it to entity_id
 
         if instance.previous_version and instance.previous_version != get_uuid_hex(0):
             self._execute_within_context(
                 lambda: self.adapter.move_entity_to_audit_table(
-                    self.table_name,
+                    collection_name,
                     data['entity_id']
                 )
             )
 
         saved = self._execute_within_context(
             lambda: self.adapter.save(
-                self.table_name,
+                collection_name,
                 data
             )
         )
@@ -191,7 +192,8 @@ class MongoDbRepository(BaseRepository):
 
     def create(
         self,
-        instance: VersionedModel
+        instance: VersionedModel,
+        collection_name: str
     ) -> VersionedModel:
         """
         Creates a new VersionedModel instance in the database.
@@ -200,13 +202,15 @@ class MongoDbRepository(BaseRepository):
 
         :param instance: The VersionedModel instance to save.
         :type instance: VersionedModel
+        :param collection_name: The name of the MongoDB collection to create in.
+        :type collection_name: str
         :return: The saved VersionedModel instance, which is now in a logically active state.
         :rtype: VersionedModel
         """
         self.logger.info(
-            f"Creating entity_id={getattr(instance, 'entity_id', 'N/A')} in {self.table_name}")
+            f"Creating entity_id={getattr(instance, 'entity_id', 'N/A')} in {collection_name}")
         instance.active = True
-        return self.save(instance)
+        return self.save(instance, collection_name)
 
     def create_many(
         self,
@@ -241,13 +245,25 @@ class MongoDbRepository(BaseRepository):
     def save(
         self,
         instance: VersionedModel,
+        collection_name: str,
         send_message: bool = False
     ) -> VersionedModel:
+        """
+        Saves a VersionedModel instance to the database.
+
+        Args:
+            instance (VersionedModel): The VersionedModel instance to save.
+            collection_name (str): The name of the MongoDB collection to save to.
+            send_message (bool, optional): Whether to send a message to the message queue after saving. Defaults to False.
+
+        Returns:
+            VersionedModel: The saved VersionedModel instance.
+        """
         # 0) if this isn't the very first version, move the existing latest doc into audit
         if instance.previous_version and instance.previous_version != get_uuid_hex(0):
             self._execute_within_context(
                 lambda: self.adapter.move_entity_to_audit_table(
-                    self.table_name,
+                    collection_name,
                     instance.entity_id
                 )
             )
@@ -256,7 +272,7 @@ class MongoDbRepository(BaseRepository):
         def unset_old():
             # find any prior version marked latest
             old_docs = self.adapter.get_many(
-                table=self.table_name,
+                table=collection_name,
                 conditions={
                     "entity_id": instance.entity_id,
                     "latest": True,
@@ -269,14 +285,14 @@ class MongoDbRepository(BaseRepository):
             for old in old_docs:
                 old["latest"] = False
                 # write back the change
-                self.adapter.save(self.table_name, old)
+                self.adapter.save(collection_name, old)
 
         self._execute_within_context(unset_old)
 
         # 2) Prepare & write the new version
         payload = self._process_data_before_save(instance)
         saved = self._execute_within_context(
-            lambda: self.adapter.save(self.table_name, payload)
+            lambda: self.adapter.save(collection_name, payload)
         )
 
         # 3) Hydrate the returned fields onto our instance

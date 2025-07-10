@@ -234,6 +234,67 @@ class MongoDbRepositoryTestCase(unittest.TestCase):
         result = self.repository.get_many("test_collection", "entity_id_idx")
         self.assertEqual(result, [])
 
+    def test_get_many_with_offset(self):
+        """
+        Tests that the get_many method correctly passes the offset parameter to the adapter.
+
+        Verifies that the get_many method correctly passes the offset parameter to the
+        database adapter's get_many method when specified. This test ensures that
+        pagination functionality works as expected.
+        """
+        # Provide test data
+        instance1_data = TestVersionedModel(entity_id=UUID(int=1)).as_dict()
+        instance2_data = TestVersionedModel(entity_id=UUID(int=2)).as_dict()
+
+        self.db_adapter_mock.get_many.return_value = [
+            instance1_data, instance2_data]
+
+        # Call get_many with offset parameter
+        result = self.repository.get_many(
+            "test_collection", "entity_id_idx", limit=10, offset=5)
+
+        # Verify that the adapter's get_many method was called with the correct parameters
+        self.db_adapter_mock.get_many.assert_called_once_with(
+            table="test_collection",
+            conditions={'active': True},
+            hint="entity_id_idx",
+            limit=10,
+            offset=5
+        )
+
+        # Verify the result
+        self.assertEqual(len(result), 2)
+        for item in result:
+            self.assertIsInstance(item, TestVersionedModel)
+
+    def test_get_many_with_default_offset(self):
+        """
+        Tests that the get_many method uses default offset of 0 when not specified.
+
+        Verifies that the get_many method correctly uses the default offset value of 0
+        when the offset parameter is not provided, maintaining backward compatibility.
+        """
+        # Provide test data
+        instance1_data = TestVersionedModel(entity_id=UUID(int=1)).as_dict()
+
+        self.db_adapter_mock.get_many.return_value = [instance1_data]
+
+        # Call get_many without offset parameter
+        result = self.repository.get_many("test_collection", "entity_id_idx")
+
+        # Verify that the adapter's get_many method was called with offset=0
+        self.db_adapter_mock.get_many.assert_called_once_with(
+            table="test_collection",
+            conditions={'active': True},
+            hint="entity_id_idx",
+            limit=0,    # default limit (0 means no limit)
+            offset=0    # default offset
+        )
+
+        # Verify the result
+        self.assertEqual(len(result), 1)
+        self.assertIsInstance(result[0], TestVersionedModel)
+
 
 if __name__ == '__main__':
     unittest.main()

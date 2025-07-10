@@ -13,6 +13,7 @@ class BaseRepository:
     """
     BaseRepository class
     """
+
     def __init__(
         self,
         adapter: DbAdapter,
@@ -83,6 +84,7 @@ class BaseRepository:
         conditions: Dict[str, Any] = None,
         sort: List[tuple] = None,
         limit: int = 100,
+        offset: int = 0,
         fetch_related: List[str] = None
     ) -> List[VersionedModel]:
         """
@@ -91,6 +93,7 @@ class BaseRepository:
         :param conditions: filter conditions
         :param sort: sort order
         :param limit: maximum number of records to return
+        :param offset: number of records to skip before returning results
         :param fetch_related: list of related fields to fetch
         :return: list of VersionedModel instances
         """
@@ -100,6 +103,7 @@ class BaseRepository:
             conditions,
             sort,
             limit,
+            offset,
             fetch_related=fetch_related
         )
 
@@ -157,12 +161,16 @@ class BaseRepository:
         """
         data = self._process_data_before_save(instance)
         with self.adapter:
-            move_entity_query = self.adapter.get_move_entity_to_audit_table_query(self.table_name, instance.entity_id)
-            save_entity_query = self.adapter.get_save_query(self.table_name, data)
-            self.adapter.run_transaction([move_entity_query, save_entity_query])
+            move_entity_query = self.adapter.get_move_entity_to_audit_table_query(
+                self.table_name, instance.entity_id)
+            save_entity_query = self.adapter.get_save_query(
+                self.table_name, data)
+            self.adapter.run_transaction(
+                [move_entity_query, save_entity_query])
         if send_message:
             # This assumes that the instance is now in post-saved state with all the new DB updates
-            message = json.dumps(instance.as_dict(convert_datetime_to_iso_string=True))
+            message = json.dumps(instance.as_dict(
+                convert_datetime_to_iso_string=True))
             self.message_adapter.send_message(self.queue_name, message)
 
         return instance

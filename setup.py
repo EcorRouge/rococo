@@ -48,7 +48,7 @@ extras_require["all"] = [
 
 setup(
     name='rococo',
-    version='1.0.39',
+    version='1.0.40',
     packages=find_packages(),
     url='https://github.com/EcorRouge/rococo',
     license='MIT',

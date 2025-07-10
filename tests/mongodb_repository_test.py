@@ -287,8 +287,8 @@ class MongoDbRepositoryTestCase(unittest.TestCase):
             table="test_collection",
             conditions={'active': True},
             hint="entity_id_idx",
-            limit=0,    # default limit (0 means no limit)
-            offset=0    # default offset
+            limit=None,    # default limit (0 means no limit)
+            offset=None    # default offset
         )
 
         # Verify the result

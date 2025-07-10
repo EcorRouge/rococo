@@ -355,6 +355,7 @@ class TestBaseRepository:
             conditions,
             sort_order,
             limit,
+            0,     # offset
             fetch_related=fetch_related_list
         )
         repository._process_data_from_db.assert_called_once_with(db_response)
@@ -392,6 +393,7 @@ class TestBaseRepository:
             None,  # conditions
             None,  # sort
             100,   # limit
+            0,     # offset
             fetch_related=None
         )
         repository._process_data_from_db.assert_called_once_with(
@@ -420,6 +422,7 @@ class TestBaseRepository:
             None,  # conditions
             None,  # sort
             100,   # limit
+            0,     # offset
             fetch_related=None
         )
         repository._process_data_from_db.assert_called_once_with([])

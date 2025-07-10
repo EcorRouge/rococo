@@ -191,13 +191,14 @@ class MongoDBAdapter(DbAdapter):
         conditions: Optional[Dict[str, Any]] = None,
         hint: Optional[str] = None,
         sort: Optional[List[Tuple[str, int]]] = None,
-        limit: int = 100,
+        limit: Optional[int] = None,
+        offset: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
         """
         Retrieve multiple documents from the specified MongoDB collection based on given conditions.
 
         This method fetches multiple documents from the MongoDB collection specified by `table`.
-        Additional query parameters such as `hint`, `sort`, and `limit` can be provided to optimize the query
+        Additional query parameters such as `hint`, `sort`, `limit`, and `offset` can be provided to optimize the query
         and define the order of the returned documents.
 
         Args:
@@ -205,7 +206,8 @@ class MongoDBAdapter(DbAdapter):
             conditions (Optional[Dict[str, Any]]): An optional dictionary specifying the conditions to filter the documents.
             hint (Optional[str]): An optional index hint to optimize the query.
             sort (Optional[List[Tuple[str, int]]]): An optional list of tuples specifying the sort order.
-            limit (int): The maximum number of documents to return. Defaults to 100.
+            limit (Optional[int]): The maximum number of documents to return. If None, no limit is applied.
+            offset (Optional[int]): The number of documents to skip before returning results. If None, no offset is applied.
 
         Returns:
             List[Dict[str, Any]]: The list of documents that match the conditions.
@@ -219,7 +221,9 @@ class MongoDBAdapter(DbAdapter):
                                ({'hint': hint} if hint else {}))
             if sort:
                 cursor = cursor.sort(sort)
-            if limit > 0:
+            if offset is not None and offset > 0:
+                cursor = cursor.skip(offset)
+            if limit is not None and limit > 0:
                 cursor = cursor.limit(limit)
             return list(cursor)
         except errors.PyMongoError as e:

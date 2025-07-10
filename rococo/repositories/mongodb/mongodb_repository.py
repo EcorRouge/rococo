@@ -109,7 +109,8 @@ class MongoDbRepository(BaseRepository):
         collection_name: str,
         index: str,
         query: Optional[Dict[str, Any]] = None,
-        limit: int = 0
+        limit: Optional[int] = None,
+        offset: Optional[int] = None
     ) -> List[VersionedModel]:
         """
         Retrieves a list of records from a specified MongoDB collection based on the given query parameters and index.
@@ -118,7 +119,8 @@ class MongoDbRepository(BaseRepository):
             collection_name (str): The name of the collection from which to fetch the records.
             index (str): The index to use for the query, providing a hint for optimization.
             query (Optional[Dict[str, Any]], optional): A dictionary of query parameters to filter the records. Defaults to None.
-            limit (int, optional): The maximum number of records to retrieve. If set to 0, the default limit of 100 is used. Defaults to 0.
+            limit (Optional[int], optional): The maximum number of records to retrieve. If None, no limit is applied. Defaults to None.
+            offset (Optional[int], optional): The number of records to skip before returning results. If None, no offset is applied. Defaults to None.
 
         Returns:
             List[VersionedModel]: A list of model instances, each representing a record from the collection.
@@ -127,14 +129,13 @@ class MongoDbRepository(BaseRepository):
         if query:
             db_conditions.update(query)
 
-        actual_limit = limit if limit > 0 else 100
-
         records_data = self._execute_within_context(
             lambda: self.adapter.get_many(
                 table=collection_name,
                 conditions=db_conditions,
                 hint=index,
-                limit=actual_limit
+                limit=limit,
+                offset=offset
             )
         )
 

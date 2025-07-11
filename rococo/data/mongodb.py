@@ -349,7 +349,6 @@ class MongoDBAdapter(DbAdapter):
             new_doc = data.copy()
             # Ensure flags are set appropriately:
             new_doc["latest"] = True
-            new_doc["active"] = True
 
             # 3) Insert the new version
             insert_result = coll.insert_one(new_doc, session=self._session)

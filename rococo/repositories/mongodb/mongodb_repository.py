@@ -67,7 +67,6 @@ class MongoDbRepository(BaseRepository):
 
         data.pop("_id", None)
 
-        data["active"] = True
         data["latest"] = True
         return data
 

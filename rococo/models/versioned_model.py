@@ -254,6 +254,23 @@ class VersionedModel:
                 result[k] = v.isoformat()
             if convert_uuids and isinstance(v, UUID):
                 result[k] = str(v)
+            # Convert enum values to their string representation
+            if isinstance(v, Enum):
+                result[k] = v.value
+
+            # Convert dataclass fields with 'model' metadata
+            f = next((f for f in fields(type(self)) if f.name == k), None)
+            if f and f.metadata.get('model') and v is not None:
+                model_class = f.metadata['model']
+                if isinstance(v, list):
+                    # Handle list of dataclass objects
+                    result[k] = [
+                        obj.__dict__ if is_dataclass(obj) else obj
+                        for obj in v
+                    ]
+                elif is_dataclass(v):
+                    # Handle single dataclass object
+                    result[k] = v.__dict__
 
         for k in keys_to_remove:
             result.pop(k, None)
@@ -266,6 +283,8 @@ class VersionedModel:
         Load VersionedModel from dict
         """
         clean_data = {k: v for k, v in data.items() if k in cls.fields()}
+        hints = get_type_hints(cls)
+
         for k, v in clean_data.items():
             if k in ["entity_id", "version", "previous_version", "changed_by_id"]:
                 try:
@@ -273,6 +292,47 @@ class VersionedModel:
                         v).hex if v and not isinstance(v, UUID) else v
                 except ValueError:
                     print(f"'{v}' is not a valid UUID.")
+
+            # Handle enum conversion from string values
+            elif v is not None:
+                expected_type = hints.get(k)
+                if expected_type:
+                    # Handle Optional[EnumType] (Union[EnumType, None])
+                    origin = get_origin(expected_type)
+                    if origin is Union:
+                        args = get_args(expected_type)
+                        # Find the non-None type in the Union
+                        enum_type = next((arg for arg in args if arg is not type(
+                            None) and isinstance(arg, type) and issubclass(arg, Enum)), None)
+                        if enum_type and isinstance(v, str):
+                            try:
+                                clean_data[k] = enum_type(v)
+                            except ValueError:
+                                # If the string value doesn't match any enum value, leave as is
+                                pass
+                    # Handle direct enum types
+                    elif isinstance(expected_type, type) and issubclass(expected_type, Enum) and isinstance(v, str):
+                        try:
+                            clean_data[k] = expected_type(v)
+                        except ValueError:
+                            # If the string value doesn't match any enum value, leave as is
+                            pass
+
+                # Handle dataclass conversion from dict values
+                f = next((f for f in fields(cls) if f.name == k), None)
+                if f and f.metadata.get('model') and isinstance(v, (dict, list)):
+                    model_class = f.metadata['model']
+                    if isinstance(v, list):
+                        # Handle list of dict objects -> list of dataclass objects
+                        clean_data[k] = [
+                            model_class(**item) if isinstance(item,
+                                                              dict) else item
+                            for item in v
+                        ]
+                    elif isinstance(v, dict):
+                        # Handle single dict object -> dataclass object
+                        clean_data[k] = model_class(**v)
+
         return cls(**clean_data)
 
     def validate(self):

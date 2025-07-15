@@ -24,7 +24,8 @@ class MySqlRepository(BaseRepository):
             user_id: UUID = None
     ):
         super().__init__(db_adapter, model, message_adapter, queue_name, user_id=user_id)
-        self.table_name = re.sub(r'(?<!^)(?=[A-Z])', '_', model.__name__).lower()
+        self.table_name = re.sub(
+            r'(?<!^)(?=[A-Z])', '_', model.__name__).lower()
         self.model()
 
     def _process_data_before_save(self, instance: VersionedModel):
@@ -35,8 +36,10 @@ class MySqlRepository(BaseRepository):
         # We need raw Python types (UUID objects, datetime objects) to then format them
         # specifically for MySQL. So, convert_uuids=False and convert_datetime_to_iso_string=False.
         raw_data_dict = instance.as_dict(
-            convert_datetime_to_iso_string=False, 
-            convert_uuids=False  # This means UUIDs will be UUID objects, datetimes will be datetime objects
+            convert_datetime_to_iso_string=False,
+            # This means UUIDs will be UUID objects, datetimes will be datetime objects
+            convert_uuids=False,
+            export_properties=self.save_calculated_fields
         )
         # Step 3: Apply MySQL-specific formatting to create the final data dictionary for the adapter.
         # This logic should be comprehensive for all VersionedModel fields and any potential custom fields.
@@ -57,40 +60,46 @@ class MySqlRepository(BaseRepository):
                 # Let's stick to the .hex.replace('-', '') for data to be saved if that's consistent,
                 # or ensure the adapter handles UUID objects correctly if passed (it seems to convert to string).
                 # The original MySqlRepository did: str(field_value).replace('-', '')
-                formatted_data_for_adapter[field_name] = str(field_value).replace('-', '')
+                formatted_data_for_adapter[field_name] = str(
+                    field_value).replace('-', '')
             elif isinstance(field_value, datetime):
-                formatted_data_for_adapter[field_name] = field_value.strftime('%Y-%m-%d %H:%M:%S')
-            elif isinstance(field_value, bool): # e.g., 'active' field
+                formatted_data_for_adapter[field_name] = field_value.strftime(
+                    '%Y-%m-%d %H:%M:%S')
+            elif isinstance(field_value, bool):  # e.g., 'active' field
                 formatted_data_for_adapter[field_name] = 1 if field_value else 0
             # Add handling for lists (e.g., list of UUIDs) if your models require it and
             # they need special formatting for MySQL (e.g., comma-separated string).
             # VersionedModel itself doesn't have list fields by default.
             else:
                 formatted_data_for_adapter[field_name] = field_value
-        
-        return formatted_data_for_adapter
 
+        return formatted_data_for_adapter
 
     def _process_data_from_db(self, data):
         """Method to convert data dictionary fetched from MySQL to a VersionedModel instance."""
 
         def _process_record(data: dict, model):
             model()
-            is_partial = not all(_field.name in data for _field in fields(model))
+            is_partial = not all(
+                _field.name in data for _field in fields(model))
             for field in fields(model):
                 if data.get(field.name) is None:
                     continue
 
                 if field.metadata.get('field_type') == 'entity_id':
-                    field_model_class = field.metadata.get('relationship', {}).get('model') or model
-                    field_table_name = re.sub(r'(?<!^)(?=[A-Z])', '_', field_model_class.__name__).lower()
+                    field_model_class = field.metadata.get(
+                        'relationship', {}).get('model') or model
+                    field_table_name = re.sub(
+                        r'(?<!^)(?=[A-Z])', '_', field_model_class.__name__).lower()
 
                     field_value = data[field.name]
 
                     if isinstance(field_value, list):
-                        data[field.name] = [_process_record(obj, field_model_class) for obj in field_value]
+                        data[field.name] = [_process_record(
+                            obj, field_model_class) for obj in field_value]
                     elif isinstance(field_value, dict):
-                        data[field.name] = _process_record(field_value, field_model_class)
+                        data[field.name] = _process_record(
+                            field_value, field_model_class)
                     elif isinstance(field_value, str):
                         if field.name == 'entity_id':
                             data[field.name] = UUID(field_value).hex
@@ -104,7 +113,8 @@ class MySqlRepository(BaseRepository):
                                 if data_field.startswith('joined_'):
                                     field_data[data_field] = data_value
 
-                            data[field.name] = _process_record(field_data, field_model_class)
+                            data[field.name] = _process_record(
+                                field_data, field_model_class)
                     elif isinstance(field_value, UUID):
                         pass
                     else:
@@ -143,12 +153,17 @@ class MySqlRepository(BaseRepository):
                 else:
                     parent_model = self.model
                     child_field = field_name
-                parent_table_name = re.sub(r'(?<!^)(?=[A-Z])', '_', parent_model.__name__).lower()
-                join_field = next((field for field in fields(parent_model) if field.name == child_field), None)
+                parent_table_name = re.sub(
+                    r'(?<!^)(?=[A-Z])', '_', parent_model.__name__).lower()
+                join_field = next((field for field in fields(
+                    parent_model) if field.name == child_field), None)
                 if join_field is None or join_field.metadata.get('field_type') != 'entity_id':
-                    raise Exception(f"Invalid join field {child_field} specified for model {parent_model.__name__}.")
-                join_model = join_field.metadata.get('relationship').get('model')
-                join_table_name = re.sub(r'(?<!^)(?=[A-Z])', '_', join_model.__name__).lower()
+                    raise Exception(
+                        f"Invalid join field {child_field} specified for model {parent_model.__name__}.")
+                join_model = join_field.metadata.get(
+                    'relationship').get('model')
+                join_table_name = re.sub(
+                    r'(?<!^)(?=[A-Z])', '_', join_model.__name__).lower()
                 join_stmt_list.append(
                     f'INNER JOIN {join_table_name} ON {parent_table_name}.{child_field}={join_table_name}.entity_id AND {join_table_name}.active=true')
                 join_field_list = [
@@ -159,22 +174,28 @@ class MySqlRepository(BaseRepository):
 
         if conditions:
             for condition_name, value in conditions.copy().items():
-                condition_field = next((field for field in fields(self.model) if field.name == condition_name), None)
+                condition_field = next((field for field in fields(
+                    self.model) if field.name == condition_name), None)
                 if condition_field and condition_field.metadata.get('field_type') == 'entity_id':
                     if isinstance(value, VersionedModel):
-                        conditions[condition_name] = str(value.entity_id).replace('-', '')
+                        conditions[condition_name] = str(
+                            value.entity_id).replace('-', '')
                     elif isinstance(value, (str, UUID)):
-                        conditions[condition_name] = str(value).replace('-', '')
+                        conditions[condition_name] = str(
+                            value).replace('-', '')
                     elif isinstance(value, list):
                         # Handle list
                         if len(value) == 0:
-                            raise NotImplementedError("Filtering an attribute with an empty list is not supported.")
+                            raise NotImplementedError(
+                                "Filtering an attribute with an empty list is not supported.")
                         conditions[condition_name] = []
                         for v in value:
                             if isinstance(v, VersionedModel):
-                                conditions[condition_name].append(str(v.entity_id).replace('-', ''))
+                                conditions[condition_name].append(
+                                    str(v.entity_id).replace('-', ''))
                             elif isinstance(v, (str, UUID)):
-                                conditions[condition_name].append(str(v).replace('-', ''))
+                                conditions[condition_name].append(
+                                    str(v).replace('-', ''))
                             else:
                                 raise NotImplementedError
                     elif value is None:
@@ -187,7 +208,8 @@ class MySqlRepository(BaseRepository):
             additional_fields=additional_fields
         )
 
-        self.model()  # Calls __post_init__ of model to import related models and update fields.
+        # Calls __post_init__ of model to import related models and update fields.
+        self.model()
 
         self._process_data_from_db(data)
 
@@ -221,12 +243,17 @@ class MySqlRepository(BaseRepository):
                 else:
                     parent_model = self.model
                     child_field = field_name
-                parent_table_name = re.sub(r'(?<!^)(?=[A-Z])', '_', parent_model.__name__).lower()
-                join_field = next((field for field in fields(parent_model) if field.name == child_field), None)
+                parent_table_name = re.sub(
+                    r'(?<!^)(?=[A-Z])', '_', parent_model.__name__).lower()
+                join_field = next((field for field in fields(
+                    parent_model) if field.name == child_field), None)
                 if join_field is None or join_field.metadata.get('field_type') != 'entity_id':
-                    raise Exception(f"Invalid join field {child_field} specified for model {parent_model.__name__}.")
-                join_model = join_field.metadata.get('relationship').get('model')
-                join_table_name = re.sub(r'(?<!^)(?=[A-Z])', '_', join_model.__name__).lower()
+                    raise Exception(
+                        f"Invalid join field {child_field} specified for model {parent_model.__name__}.")
+                join_model = join_field.metadata.get(
+                    'relationship').get('model')
+                join_table_name = re.sub(
+                    r'(?<!^)(?=[A-Z])', '_', join_model.__name__).lower()
                 join_stmt_list.append(
                     f'INNER JOIN {join_table_name} ON {parent_table_name}.{child_field}={join_table_name}.entity_id AND {join_table_name}.active=true')
                 join_field_list = [
@@ -237,22 +264,28 @@ class MySqlRepository(BaseRepository):
 
         if conditions:
             for condition_name, value in conditions.copy().items():
-                condition_field = next((field for field in fields(self.model) if field.name == condition_name), None)
+                condition_field = next((field for field in fields(
+                    self.model) if field.name == condition_name), None)
                 if condition_field and condition_field.metadata.get('field_type') == 'entity_id':
                     if isinstance(value, VersionedModel):
-                        conditions[condition_name] = str(value.entity_id).replace('-', '')
+                        conditions[condition_name] = str(
+                            value.entity_id).replace('-', '')
                     elif isinstance(value, (str, UUID)):
-                        conditions[condition_name] = str(value).replace('-', '')
+                        conditions[condition_name] = str(
+                            value).replace('-', '')
                     elif isinstance(value, list):
                         # Handle list
                         if len(value) == 0:
-                            raise NotImplementedError("Filtering an attribute with an empty list is not supported.")
+                            raise NotImplementedError(
+                                "Filtering an attribute with an empty list is not supported.")
                         conditions[condition_name] = []
                         for v in value:
                             if isinstance(v, VersionedModel):
-                                conditions[condition_name].append(str(v.entity_id).replace('-', ''))
+                                conditions[condition_name].append(
+                                    str(v.entity_id).replace('-', ''))
                             elif isinstance(v, (str, UUID)):
-                                conditions[condition_name].append(str(v).replace('-', ''))
+                                conditions[condition_name].append(
+                                    str(v).replace('-', ''))
                             else:
                                 raise NotImplementedError
                     elif value is None:
@@ -269,7 +302,8 @@ class MySqlRepository(BaseRepository):
         if isinstance(records, dict):
             records = [records]
 
-        self.model()  # Calls __post_init__ of model to import related models and update fields.
+        # Calls __post_init__ of model to import related models and update fields.
+        self.model()
 
         self._process_data_from_db(records)
 

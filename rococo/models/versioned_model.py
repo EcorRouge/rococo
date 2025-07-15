@@ -301,13 +301,14 @@ class VersionedModel:
         """
         return [f.name for f in fields(cls) if f.name != 'extra']
 
-    def as_dict(self, convert_datetime_to_iso_string: bool = False, convert_uuids: bool = True) -> Dict[str, Any]:
+    def as_dict(self, convert_datetime_to_iso_string: bool = False, convert_uuids: bool = True, export_properties: bool = True) -> Dict[str, Any]:
         """
         Convert this model to a dictionary.
 
         Args:
             convert_datetime_to_iso_string (bool, optional): Whether to convert datetime to ISO strings.
             convert_uuids (bool): Whether to convert UUIDs to strings.
+            export_properties (bool): Whether to include @property methods in the output.
 
         Returns:
             Dict[str, Any]: A dictionary representation of this model.
@@ -376,6 +377,37 @@ class VersionedModel:
 
         # Remove the 'extra' field itself from the result
         result.pop('extra', None)
+
+        # Export properties if requested
+        if export_properties:
+            for attr_name in dir(type(self)):
+                # Skip private attributes and methods
+                if attr_name.startswith('_'):
+                    continue
+
+                # Get the attribute from the class
+                attr = getattr(type(self), attr_name, None)
+
+                # Check if it's a property
+                if isinstance(attr, property):
+                    # Skip if it's already in the result (from regular fields)
+                    if attr_name not in result:
+                        try:
+                            # Get the property value
+                            prop_value = getattr(self, attr_name)
+
+                            # Apply the same conversions as regular fields
+                            if convert_datetime_to_iso_string and isinstance(prop_value, datetime):
+                                prop_value = prop_value.isoformat()
+                            if convert_uuids and isinstance(prop_value, UUID):
+                                prop_value = str(prop_value)
+                            if isinstance(prop_value, Enum):
+                                prop_value = prop_value.value
+
+                            result[attr_name] = prop_value
+                        except Exception:
+                            # Skip properties that raise exceptions when accessed
+                            pass
 
         return result
 

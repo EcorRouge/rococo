@@ -28,6 +28,8 @@ class BaseRepository:
         self.model = model
         self.table_name = model.__name__.lower()
         self.user_id = user_id
+        # Don't save calculated fields (properties) to database by default
+        self.save_calculated_fields = False
 
     def _execute_within_context(
         self,
@@ -45,7 +47,10 @@ class BaseRepository:
     ) -> Dict[str, Any]:
         """Convert a VersionedModel instance to a data dictionary for the adapter."""
         instance.prepare_for_save(changed_by_id=self.user_id)
-        return instance.as_dict(convert_datetime_to_iso_string=True)
+        return instance.as_dict(
+            convert_datetime_to_iso_string=True,
+            export_properties=self.save_calculated_fields
+        )
 
     def _process_data_from_db(
         self,

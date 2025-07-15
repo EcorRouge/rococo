@@ -1254,3 +1254,476 @@ def test_extra_fields_direct_access_with_regular_fields():
     # Regular fields should not be in extra dict
     assert "name" not in model.extra
     assert "regular_field" not in model.extra
+
+
+# Tests for export_properties parameter in as_dict()
+def test_as_dict_export_properties_default():
+    """Test that as_dict() includes properties by default (export_properties=True)"""
+
+    @dataclass
+    class ModelWithProperties(VersionedModel):
+        name: str = "test"
+
+        @property
+        def full_name(self):
+            return f"Full: {self.name}"
+
+        @property
+        def calculated_score(self):
+            return len(self.name) * 10
+
+    model = ModelWithProperties(name="TestName")
+    result = model.as_dict()
+
+    # Properties should be included by default
+    assert "full_name" in result
+    assert result["full_name"] == "Full: TestName"
+    assert "calculated_score" in result
+    assert result["calculated_score"] == 80  # len("TestName") * 10
+
+    # Regular fields should also be present
+    assert "name" in result
+    assert result["name"] == "TestName"
+
+
+def test_as_dict_export_properties_true():
+    """Test that as_dict(export_properties=True) includes properties"""
+
+    @dataclass
+    class ModelWithProperties(VersionedModel):
+        name: str = "test"
+
+        @property
+        def computed_value(self):
+            return f"computed_{self.name}"
+
+    model = ModelWithProperties(name="TestValue")
+    result = model.as_dict(export_properties=True)
+
+    # Properties should be included when explicitly set to True
+    assert "computed_value" in result
+    assert result["computed_value"] == "computed_TestValue"
+    assert "name" in result
+    assert result["name"] == "TestValue"
+
+
+def test_as_dict_export_properties_false():
+    """Test that as_dict(export_properties=False) excludes properties"""
+
+    @dataclass
+    class ModelWithProperties(VersionedModel):
+        name: str = "test"
+
+        @property
+        def computed_value(self):
+            return f"computed_{self.name}"
+
+        @property
+        def another_property(self):
+            return "another_value"
+
+    model = ModelWithProperties(name="TestValue")
+    result = model.as_dict(export_properties=False)
+
+    # Properties should be excluded when set to False
+    assert "computed_value" not in result
+    assert "another_property" not in result
+
+    # Regular fields should still be present
+    assert "name" in result
+    assert result["name"] == "TestValue"
+
+    # Standard VersionedModel fields should be present
+    assert "entity_id" in result
+    assert "version" in result
+
+
+def test_as_dict_export_properties_with_complex_properties():
+    """Test export_properties with properties that return complex objects"""
+
+    @dataclass
+    class ModelWithComplexProperties(VersionedModel):
+        items: list = field(default_factory=list)
+
+        @property
+        def item_count(self):
+            return len(self.items)
+
+        @property
+        def item_summary(self):
+            return {
+                "count": len(self.items),
+                "first_item": self.items[0] if self.items else None
+            }
+
+    model = ModelWithComplexProperties(items=["item1", "item2", "item3"])
+
+    # Test with properties included
+    result_with_props = model.as_dict(export_properties=True)
+    assert "item_count" in result_with_props
+    assert result_with_props["item_count"] == 3
+    assert "item_summary" in result_with_props
+    assert result_with_props["item_summary"]["count"] == 3
+    assert result_with_props["item_summary"]["first_item"] == "item1"
+
+    # Test with properties excluded
+    result_without_props = model.as_dict(export_properties=False)
+    assert "item_count" not in result_without_props
+    assert "item_summary" not in result_without_props
+    assert "items" in result_without_props
+    assert result_without_props["items"] == ["item1", "item2", "item3"]
+
+
+def test_as_dict_export_properties_with_property_exceptions():
+    """Test that properties that raise exceptions are handled gracefully"""
+
+    @dataclass
+    class ModelWithExceptionProperty(VersionedModel):
+        name: str = "test"
+
+        @property
+        def good_property(self):
+            return f"good_{self.name}"
+
+        @property
+        def bad_property(self):
+            raise ValueError("This property always fails")
+
+    model = ModelWithExceptionProperty(name="TestValue")
+
+    # With properties enabled, should handle exceptions gracefully
+    result = model.as_dict(export_properties=True)
+
+    # Good property should be included
+    assert "good_property" in result
+    assert result["good_property"] == "good_TestValue"
+
+    # Bad property should be excluded (exception handled)
+    assert "bad_property" not in result
+
+    # Regular fields should still work
+    assert "name" in result
+    assert result["name"] == "TestValue"
+
+
+def test_as_dict_export_properties_inheritance():
+    """Test export_properties works with inherited properties"""
+
+    @dataclass
+    class BaseModelWithProperty(VersionedModel):
+        base_field: str = "base"
+
+        @property
+        def base_property(self):
+            return f"base_{self.base_field}"
+
+    @dataclass
+    class DerivedModelWithProperty(BaseModelWithProperty):
+        derived_field: str = "derived"
+
+        @property
+        def derived_property(self):
+            return f"derived_{self.derived_field}"
+
+    model = DerivedModelWithProperty(
+        base_field="base_value", derived_field="derived_value")
+
+    # Test with properties included
+    result_with_props = model.as_dict(export_properties=True)
+    assert "base_property" in result_with_props
+    assert result_with_props["base_property"] == "base_base_value"
+    assert "derived_property" in result_with_props
+    assert result_with_props["derived_property"] == "derived_derived_value"
+
+    # Test with properties excluded
+    result_without_props = model.as_dict(export_properties=False)
+    assert "base_property" not in result_without_props
+    assert "derived_property" not in result_without_props
+    assert "base_field" in result_without_props
+    assert "derived_field" in result_without_props
+
+
+# Tests for repository integration with save_calculated_fields
+def test_repository_save_calculated_fields_default():
+    """Test that BaseRepository.save_calculated_fields defaults to False"""
+    from rococo.repositories.base_repository import BaseRepository
+    from rococo.data.base import DbAdapter
+    from rococo.messaging.base import MessageAdapter
+    from unittest.mock import MagicMock
+
+    # Create mock adapters
+    mock_db_adapter = MagicMock(spec=DbAdapter)
+    mock_message_adapter = MagicMock(spec=MessageAdapter)
+
+    @dataclass
+    class TestModel(VersionedModel):
+        name: str = "test"
+
+    # Create repository
+    repo = BaseRepository(
+        adapter=mock_db_adapter,
+        model=TestModel,
+        message_adapter=mock_message_adapter,
+        queue_name="test_queue"
+    )
+
+    # Verify default value
+    assert repo.save_calculated_fields == False
+
+
+def test_repository_process_data_before_save_excludes_properties_by_default():
+    """Test that BaseRepository._process_data_before_save excludes properties by default"""
+    from rococo.repositories.base_repository import BaseRepository
+    from rococo.data.base import DbAdapter
+    from rococo.messaging.base import MessageAdapter
+    from unittest.mock import MagicMock
+    from uuid import uuid4
+
+    # Create mock adapters
+    mock_db_adapter = MagicMock(spec=DbAdapter)
+    mock_message_adapter = MagicMock(spec=MessageAdapter)
+
+    @dataclass
+    class TestModelWithProperties(VersionedModel):
+        name: str = "test"
+
+        @property
+        def computed_field(self):
+            return f"computed_{self.name}"
+
+        @property
+        def calculated_score(self):
+            return len(self.name) * 10
+
+    # Create repository
+    repo = BaseRepository(
+        adapter=mock_db_adapter,
+        model=TestModelWithProperties,
+        message_adapter=mock_message_adapter,
+        queue_name="test_queue",
+        user_id=uuid4()
+    )
+
+    # Create test model
+    model = TestModelWithProperties(name="TestName")
+
+    # Process data before save
+    processed_data = repo._process_data_before_save(model)
+
+    # Properties should be excluded by default (save_calculated_fields=False)
+    assert "computed_field" not in processed_data
+    assert "calculated_score" not in processed_data
+
+    # Regular fields should be present
+    assert "name" in processed_data
+    assert processed_data["name"] == "TestName"
+
+    # Standard VersionedModel fields should be present
+    assert "entity_id" in processed_data
+    assert "version" in processed_data
+
+
+def test_repository_process_data_before_save_includes_properties_when_enabled():
+    """Test that BaseRepository._process_data_before_save includes properties when save_calculated_fields=True"""
+    from rococo.repositories.base_repository import BaseRepository
+    from rococo.data.base import DbAdapter
+    from rococo.messaging.base import MessageAdapter
+    from unittest.mock import MagicMock
+    from uuid import uuid4
+
+    # Create mock adapters
+    mock_db_adapter = MagicMock(spec=DbAdapter)
+    mock_message_adapter = MagicMock(spec=MessageAdapter)
+
+    @dataclass
+    class TestModelWithProperties(VersionedModel):
+        name: str = "test"
+
+        @property
+        def computed_field(self):
+            return f"computed_{self.name}"
+
+        @property
+        def calculated_score(self):
+            return len(self.name) * 10
+
+    # Create repository
+    repo = BaseRepository(
+        adapter=mock_db_adapter,
+        model=TestModelWithProperties,
+        message_adapter=mock_message_adapter,
+        queue_name="test_queue",
+        user_id=uuid4()
+    )
+
+    # Enable saving calculated fields
+    repo.save_calculated_fields = True
+
+    # Create test model
+    model = TestModelWithProperties(name="TestName")
+
+    # Process data before save
+    processed_data = repo._process_data_before_save(model)
+
+    # Properties should be included when save_calculated_fields=True
+    assert "computed_field" in processed_data
+    assert processed_data["computed_field"] == "computed_TestName"
+    assert "calculated_score" in processed_data
+    assert processed_data["calculated_score"] == 80  # len("TestName") * 10
+
+    # Regular fields should still be present
+    assert "name" in processed_data
+    assert processed_data["name"] == "TestName"
+
+
+def test_repository_save_calculated_fields_can_be_set():
+    """Test that BaseRepository.save_calculated_fields can be modified"""
+    from rococo.repositories.base_repository import BaseRepository
+    from rococo.data.base import DbAdapter
+    from rococo.messaging.base import MessageAdapter
+    from unittest.mock import MagicMock
+
+    # Create mock adapters
+    mock_db_adapter = MagicMock(spec=DbAdapter)
+    mock_message_adapter = MagicMock(spec=MessageAdapter)
+
+    @dataclass
+    class TestModel(VersionedModel):
+        name: str = "test"
+
+    # Create repository
+    repo = BaseRepository(
+        adapter=mock_db_adapter,
+        model=TestModel,
+        message_adapter=mock_message_adapter,
+        queue_name="test_queue"
+    )
+
+    # Verify default value
+    assert repo.save_calculated_fields == False
+
+    # Change the value
+    repo.save_calculated_fields = True
+    assert repo.save_calculated_fields == True
+
+    # Change back
+    repo.save_calculated_fields = False
+    assert repo.save_calculated_fields == False
+
+
+def test_repository_integration_with_enum_dataclass_and_properties():
+    """Test repository integration with all enhanced features: enum, dataclass, properties, and extra fields"""
+    from rococo.repositories.base_repository import BaseRepository
+    from rococo.data.base import DbAdapter
+    from rococo.messaging.base import MessageAdapter
+    from unittest.mock import MagicMock
+    from uuid import uuid4
+    from enum import Enum
+    from typing import Optional, List
+
+    class Status(Enum):
+        active = "active"
+        inactive = "inactive"
+
+    @dataclass
+    class ErrorInfo:
+        message: str = "error"
+        code: int = 500
+
+    @dataclass
+    class ComplexModelWithAllFeatures(VersionedModel):
+        allow_extra = True
+        status: Optional[Status] = Status.active
+        error: Optional[ErrorInfo] = field(
+            default=None, metadata={'model': ErrorInfo}
+        )
+        name: str = "test"
+
+        @property
+        def status_display(self):
+            return f"Status: {self.status.value if self.status else 'None'}"
+
+        @property
+        def error_summary(self):
+            if self.error:
+                return f"{self.error.message} ({self.error.code})"
+            return "No errors"
+
+    # Create mock adapters
+    mock_db_adapter = MagicMock(spec=DbAdapter)
+    mock_message_adapter = MagicMock(spec=MessageAdapter)
+
+    # Create repository with properties disabled (default)
+    repo = BaseRepository(
+        adapter=mock_db_adapter,
+        model=ComplexModelWithAllFeatures,
+        message_adapter=mock_message_adapter,
+        queue_name="test_queue",
+        user_id=uuid4()
+    )
+
+    # Create complex model
+    model = ComplexModelWithAllFeatures(
+        status=Status.inactive,
+        error=ErrorInfo(message="Test error", code=404),
+        name="complex_test"
+    )
+    model.extra_field = "extra_value"
+
+    # Test with properties disabled (default repository behavior)
+    processed_data_no_props = repo._process_data_before_save(model)
+
+    # Enum should be converted to string
+    assert processed_data_no_props["status"] == "inactive"
+
+    # Dataclass should be converted to dict
+    assert isinstance(processed_data_no_props["error"], dict)
+    assert processed_data_no_props["error"]["message"] == "Test error"
+    assert processed_data_no_props["error"]["code"] == 404
+
+    # Extra fields should be unwrapped
+    assert processed_data_no_props["extra_field"] == "extra_value"
+
+    # Properties should be excluded
+    assert "status_display" not in processed_data_no_props
+    assert "error_summary" not in processed_data_no_props
+
+    # Test with properties enabled
+    repo.save_calculated_fields = True
+    processed_data_with_props = repo._process_data_before_save(model)
+
+    # All previous assertions should still hold
+    assert processed_data_with_props["status"] == "inactive"
+    assert processed_data_with_props["error"]["message"] == "Test error"
+    assert processed_data_with_props["extra_field"] == "extra_value"
+
+    # Properties should now be included
+    assert "status_display" in processed_data_with_props
+    assert processed_data_with_props["status_display"] == "Status: inactive"
+    assert "error_summary" in processed_data_with_props
+    assert processed_data_with_props["error_summary"] == "Test error (404)"
+
+
+def test_as_dict_partial_instance_with_properties():
+    """Test that partial instances handle properties correctly"""
+
+    @dataclass
+    class ModelWithProperties(VersionedModel):
+        name: str = "test"
+
+        @property
+        def computed_name(self):
+            return f"computed_{self.name}"
+
+    # Create partial instance
+    model = ModelWithProperties(_is_partial=True)
+
+    # as_dict on partial instance should only return entity_id
+    result = model.as_dict()
+    assert result == {'entity_id': model.entity_id}
+
+    # Properties should not be included even if export_properties=True
+    result_with_props = model.as_dict(export_properties=True)
+    assert result_with_props == {'entity_id': model.entity_id}
+    assert "computed_name" not in result_with_props
+    assert "name" not in result_with_props

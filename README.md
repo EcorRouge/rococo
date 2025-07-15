@@ -7,6 +7,52 @@ _Anything worth doing is worth doing well.  Anything worth doing twice is worth 
 [Decision Log](https://ecorrouge.github.io/rococo) - [![Rococo Decisions](https://ecorrouge.github.io/rococo/badge.svg)](https://ecorrouge.github.io/rococo)  
 [How to document new decision](https://github.com/EcorRouge/rococo/tree/main/docs/decision-log-overview.md#how-to-add-new-decision)  
 
+## Table of Contents
+
+- [Basic Usage](#basic-usage)
+  - [Installation](#installation)
+  - [Example](#example)
+- [Models](#models)
+  - [Enum Field Conversion](#enum-field-conversion)
+  - [Dataclass Field Conversion](#dataclass-field-conversion)
+  - [Extra Fields Support](#extra-fields-support)
+    - [Direct Field Access](#direct-field-access)
+  - [Calculated Properties](#calculated-properties)
+    - [Basic Property Usage](#basic-property-usage)
+    - [Repository Integration](#repository-integration)
+    - [Advanced Property Features](#advanced-property-features)
+    - [Property Inheritance](#property-inheritance)
+    - [API Response Usage](#api-response-usage)
+- [Messaging](#messaging)
+  - [RabbitMQ](#rabbitmq)
+  - [SQS](#sqs)
+  - [Processing](#processing)
+- [Data](#data)
+  - [SurrealDB](#surrealdb)
+  - [PostgreSQL](#postgresql)
+  - [Relationships in Surreal DB](#relationships-in-surreal-db)
+    - [Many-to-many relationships](#many-to-many-relationships)
+  - [Relationships in MySQL](#relationships-in-mysql)
+  - [Relationships in PostgreSQL](#relationships-in-postgresql-1)
+- [Repository Usage](#repository-usage)
+  - [How to use the adapter and base Repository in another projects](#how-to-use-the-adapter-and-base-repository-in-another-projects)
+  - [RepositoryFactory](#repositoryfactory)
+  - [Sample usage](#sample-usage)
+- [CLI Tools](#cli-tools)
+  - [Rococo MySQL CLI (`rococo-mysql`)](#rococo-mysql-cli-rococo-mysql)
+    - [Usage](#usage)
+    - [Options](#options)
+    - [Commands](#commands)
+    - [Environment Configuration](#environment-configuration)
+    - [Example](#example-1)
+- [Email Integration](#email-integration)
+  - [Using `email-transmitter` in your project](#using-email-transmitter-in-your-project)
+- [Deployment](#deployment)
+  - [Development Phase](#development-phase)
+  - [Staging/Testing Phase](#stagingtesting-phase)
+  - [Release/Publish Phase](#releasepublish-phase)
+- [Local Development](#local-development)
+
 ## Basic Usage
 
 ### Installation
@@ -260,6 +306,273 @@ print("extra" in result)        # Output: False (extra dict is unwrapped)
 - **Silent Ignoring**: When `allow_extra = False` (default), extra fields are silently ignored
 - **Roundtrip Consistency**: Extra fields maintain consistency through save/load cycles
 - **Integration**: Works alongside enum and dataclass conversion features
+
+#### Calculated Properties
+
+VersionedModel supports calculated properties (Python `@property` decorators) that can be included or excluded from serialization. This is particularly useful for computed fields, API responses, and derived data that shouldn't be stored in the database.
+
+##### Basic Property Usage
+
+```python
+from dataclasses import dataclass
+from rococo.models import VersionedModel
+
+@dataclass
+class User(VersionedModel):
+    first_name: str = "John"
+    last_name: str = "Doe"
+    email: str = "john.doe@example.com"
+    
+    @property
+    def full_name(self) -> str:
+        """Computed property combining first and last name."""
+        return f"{self.first_name} {self.last_name}"
+    
+    @property
+    def display_info(self) -> dict:
+        """Complex property returning structured data."""
+        return {
+            "name": self.full_name,
+            "contact": self.email,
+            "initials": f"{self.first_name[0]}{self.last_name[0]}"
+        }
+
+user = User(first_name="Jane", last_name="Smith", email="jane@example.com")
+
+# Properties are included by default in as_dict()
+result = user.as_dict()
+print(result["full_name"])      # Output: "Jane Smith"
+print(result["display_info"])   # Output: {"name": "Jane Smith", "contact": "jane@example.com", "initials": "JS"}
+
+# Properties can be excluded using export_properties=False
+db_data = user.as_dict(export_properties=False)
+print("full_name" in db_data)   # Output: False
+print("display_info" in db_data) # Output: False
+```
+
+##### Repository Integration
+
+By default, repositories exclude calculated properties when saving to the database to prevent storing computed values. This behavior can be configured:
+
+```python
+from rococo.repositories import BaseRepository
+from rococo.data import PostgreSQLAdapter
+
+# Default behavior: properties excluded from database saves
+repository = BaseRepository(
+    db_adapter=adapter,
+    model=User,
+    message_adapter=message_adapter,
+    queue_name="user_queue"
+)
+
+user = User(first_name="Alice", last_name="Johnson")
+
+# When saving, properties are automatically excluded
+repository.save(user)  # Only stores: first_name, last_name, email, entity_id, version, etc.
+
+# Configure repository to include calculated fields in database saves
+repository.save_calculated_fields = True
+repository.save(user)  # Now also stores: full_name, display_info
+
+# Or configure during initialization
+repository_with_properties = BaseRepository(
+    db_adapter=adapter,
+    model=User,
+    message_adapter=message_adapter,
+    queue_name="user_queue",
+    save_calculated_fields=True  # Include properties in database saves
+)
+```
+
+##### Advanced Property Features
+
+```python
+from dataclasses import dataclass
+from typing import Optional
+from rococo.models import VersionedModel
+
+@dataclass
+class Product(VersionedModel):
+    name: str = "Sample Product"
+    price: float = 0.0
+    tax_rate: float = 0.1
+    category: str = "general"
+    
+    @property
+    def price_with_tax(self) -> float:
+        """Calculate price including tax."""
+        return self.price * (1 + self.tax_rate)
+    
+    @property
+    def category_info(self) -> dict:
+        """Return category metadata."""
+        categories = {
+            "electronics": {"priority": "high", "warranty": "2 years"},
+            "clothing": {"priority": "medium", "warranty": "30 days"},
+            "general": {"priority": "low", "warranty": "1 year"}
+        }
+        return categories.get(self.category, categories["general"])
+    
+    @property
+    def is_expensive(self) -> bool:
+        """Determine if product is considered expensive."""
+        return self.price_with_tax > 100.0
+    
+    @property
+    def error_property(self) -> str:
+        """Property that raises an exception (handled gracefully)."""
+        if self.price < 0:
+            raise ValueError("Price cannot be negative")
+        return "Valid price"
+
+product = Product(name="Laptop", price=899.99, category="electronics")
+
+# All properties are computed and included
+result = product.as_dict()
+print(result["price_with_tax"])  # Output: 989.989 (899.99 * 1.1)
+print(result["category_info"])   # Output: {"priority": "high", "warranty": "2 years"}
+print(result["is_expensive"])    # Output: True
+print(result["error_property"])  # Output: "Valid price"
+
+# Properties with exceptions are handled gracefully
+broken_product = Product(name="Broken", price=-10.0)
+result = broken_product.as_dict()
+print("error_property" in result)  # Output: False (exception was caught and ignored)
+
+# Database save excludes properties by default
+from rococo.repositories import BaseRepository
+repository = BaseRepository(adapter, Product, message_adapter, "product_queue")
+repository.save(product)  # Saves: name, price, tax_rate, category (no computed properties)
+```
+
+##### Property Inheritance
+
+Properties are inherited from base classes and included in serialization:
+
+```python
+from dataclasses import dataclass
+from rococo.models import VersionedModel
+
+@dataclass
+class BaseEntity(VersionedModel):
+    created_by: str = "system"
+    
+    @property
+    def audit_info(self) -> dict:
+        """Base audit information."""
+        return {
+            "created_by": self.created_by,
+            "entity_type": self.__class__.__name__
+        }
+
+@dataclass
+class Document(BaseEntity):
+    title: str = "Untitled"
+    content: str = ""
+    
+    @property
+    def word_count(self) -> int:
+        """Count words in document content."""
+        return len(self.content.split()) if self.content else 0
+    
+    @property
+    def summary(self) -> dict:
+        """Document summary including inherited properties."""
+        base_info = self.audit_info  # Inherited property
+        return {
+            **base_info,
+            "title": self.title,
+            "word_count": self.word_count,
+            "has_content": bool(self.content)
+        }
+
+doc = Document(title="My Document", content="Hello world example", created_by="user123")
+
+result = doc.as_dict()
+print(result["audit_info"])  # Output: {"created_by": "user123", "entity_type": "Document"}
+print(result["word_count"])  # Output: 3
+print(result["summary"])     # Output: Combined information from base and derived properties
+```
+
+##### API Response Usage
+
+Calculated properties are particularly useful for API responses where you need computed fields:
+
+```python
+from dataclasses import dataclass
+from typing import List
+from rococo.models import VersionedModel
+
+@dataclass
+class Order(VersionedModel):
+    customer_name: str = ""
+    items: List[dict] = None
+    discount_percent: float = 0.0
+    
+    def __post_init__(self):
+        if self.items is None:
+            self.items = []
+    
+    @property
+    def subtotal(self) -> float:
+        """Calculate subtotal before discount."""
+        return sum(item.get("price", 0) * item.get("quantity", 0) for item in self.items)
+    
+    @property
+    def discount_amount(self) -> float:
+        """Calculate discount amount."""
+        return self.subtotal * (self.discount_percent / 100)
+    
+    @property
+    def total(self) -> float:
+        """Calculate final total."""
+        return self.subtotal - self.discount_amount
+    
+    @property
+    def api_response(self) -> dict:
+        """Complete API response format."""
+        return {
+            "order_id": str(self.entity_id),
+            "customer": self.customer_name,
+            "item_count": len(self.items),
+            "pricing": {
+                "subtotal": self.subtotal,
+                "discount": self.discount_amount,
+                "total": self.total
+            },
+            "status": "calculated"
+        }
+
+order = Order(
+    customer_name="John Doe",
+    items=[
+        {"name": "Widget", "price": 10.0, "quantity": 2},
+        {"name": "Gadget", "price": 25.0, "quantity": 1}
+    ],
+    discount_percent=10.0
+)
+
+# For API responses, include all calculated properties
+api_data = order.as_dict(export_properties=True)
+print(api_data["subtotal"])      # Output: 45.0
+print(api_data["total"])         # Output: 40.5
+print(api_data["api_response"])  # Output: Complete formatted response
+
+# For database storage, exclude calculated properties
+from rococo.repositories import BaseRepository
+repository = BaseRepository(adapter, Order, message_adapter, "order_queue")
+repository.save(order)  # Saves: customer_name, items, discount_percent (no calculated fields)
+```
+
+**Key Features:**
+- **Automatic Inclusion**: Properties are included in `as_dict()` by default (`export_properties=True`)
+- **Database Optimization**: Repositories exclude properties from database saves by default (`save_calculated_fields=False`)
+- **Configurable Behavior**: Control property inclusion with `export_properties` parameter and repository settings
+- **Exception Handling**: Properties that raise exceptions are gracefully excluded from serialization
+- **Inheritance Support**: Properties from base classes are automatically included
+- **API Friendly**: Perfect for computed fields in API responses without database storage overhead
+- **Performance Aware**: Properties are only computed when accessed, not stored redundantly
 
 #### Messaging
 

@@ -48,6 +48,219 @@ OUTPUT:
 }
 ```
 
+#### Enum Field Conversion
+
+VersionedModel automatically converts enum fields to and from their string values when using `as_dict()` and `from_dict()`:
+
+```python
+from enum import Enum
+from typing import Optional
+from dataclasses import dataclass
+from rococo.models import VersionedModel
+
+class OrganizationImportStatus(Enum):
+    uploading = "uploading"
+    canceled = "canceled"
+    pending = "pending"
+
+@dataclass
+class OrganizationImport(VersionedModel):
+    status: Optional[OrganizationImportStatus] = OrganizationImportStatus.pending
+
+# Enum to dict conversion
+model = OrganizationImport(status=OrganizationImportStatus.uploading)
+result = model.as_dict()
+print(result['status'])  # Output: "uploading" (string)
+
+# Dict to enum conversion
+data = {"status": "canceled"}
+restored = OrganizationImport.from_dict(data)
+print(restored.status)  # Output: OrganizationImportStatus.canceled (enum)
+
+# Roundtrip conversion maintains consistency
+original = OrganizationImport(status=OrganizationImportStatus.uploading)
+dict_data = original.as_dict()
+restored = OrganizationImport.from_dict(dict_data)
+assert restored.status == original.status  # True
+```
+
+#### Dataclass Field Conversion
+
+VersionedModel can automatically convert dataclass fields to and from dictionaries using the `metadata={'model': DataclassType}` field specification:
+
+```python
+from dataclasses import dataclass, field
+from typing import Optional, List
+from rococo.models import VersionedModel
+
+@dataclass
+class OrganizationImportError:
+    message: Optional[str] = None
+    code: Optional[int] = None
+
+@dataclass
+class OrganizationImport(VersionedModel):
+    # Single dataclass field with metadata
+    runtime_error: Optional[OrganizationImportError] = field(
+        default=None, metadata={'model': OrganizationImportError}
+    )
+    # List of dataclass fields with metadata
+    errors: Optional[List[OrganizationImportError]] = field(
+        default_factory=list, metadata={'model': OrganizationImportError}
+    )
+
+# Dataclass to dict conversion
+error = OrganizationImportError(message="Test error", code=500)
+errors = [OrganizationImportError(message="Error 1", code=400)]
+model = OrganizationImport(runtime_error=error, errors=errors)
+
+result = model.as_dict()
+print(result['runtime_error'])  # Output: {'message': 'Test error', 'code': 500}
+print(result['errors'])         # Output: [{'message': 'Error 1', 'code': 400}]
+
+# Dict to dataclass conversion
+data = {
+    'runtime_error': {'message': 'Restored error', 'code': 404},
+    'errors': [{'message': 'List error', 'code': 422}]
+}
+restored = OrganizationImport.from_dict(data)
+
+print(type(restored.runtime_error))  # Output: <class 'OrganizationImportError'>
+print(restored.runtime_error.message)  # Output: "Restored error"
+print(len(restored.errors))  # Output: 1
+print(restored.errors[0].message)  # Output: "List error"
+
+# Roundtrip conversion maintains consistency
+original = OrganizationImport(
+    runtime_error=OrganizationImportError(message="Original", code=200),
+    errors=[OrganizationImportError(message="Original error", code=400)]
+)
+dict_data = original.as_dict()
+restored = OrganizationImport.from_dict(dict_data)
+
+assert restored.runtime_error.message == original.runtime_error.message  # True
+assert restored.errors[0].code == original.errors[0].code  # True
+```
+
+**Note**: Only fields with `metadata={'model': DataclassType}` are automatically converted. Fields without this metadata remain unchanged during conversion.
+
+#### Extra Fields Support
+
+VersionedModel supports "extra" fields similar to Pydantic, allowing models to accept and store additional fields that are not explicitly defined in the model schema:
+
+```python
+from dataclasses import dataclass
+from rococo.models import VersionedModel
+
+# Model with extra fields enabled
+@dataclass
+class ModelWithExtra(VersionedModel):
+    allow_extra = True  # Enable extra fields support
+    name: str = "test"
+
+# Load model with extra fields from dict
+data = {
+    "name": "test_model",
+    "custom_field": "custom_value",
+    "dynamic_config": {"setting": "value"},
+    "score": 95.5
+}
+
+model = ModelWithExtra.from_dict(data)
+print(model.name)  # Output: "test_model"
+print(model.extra)  # Output: {"custom_field": "custom_value", "dynamic_config": {...}, "score": 95.5}
+
+# Convert back to dict - extra fields are unwrapped
+result = model.as_dict()
+print(result["name"])           # Output: "test_model"
+print(result["custom_field"])   # Output: "custom_value"
+print(result["score"])          # Output: 95.5
+print("extra" in result)        # Output: False (extra field itself is not included)
+
+# Model without extra fields (default behavior)
+@dataclass
+class ModelWithoutExtra(VersionedModel):
+    name: str = "test"
+
+model_no_extra = ModelWithoutExtra.from_dict(data)
+print(model_no_extra.name)   # Output: "test_model"
+print(model_no_extra.extra)  # Output: {} (extra fields are ignored)
+
+# Roundtrip conversion maintains consistency
+original = ModelWithExtra(name="original")
+original.extra = {"dynamic_field": "dynamic_value", "score": 95.5}
+
+dict_data = original.as_dict()
+restored = ModelWithExtra.from_dict(dict_data)
+
+assert restored.name == original.name                    # True
+assert restored.extra == original.extra                  # True
+assert restored.extra["dynamic_field"] == "dynamic_value"  # True
+```
+
+##### Direct Field Access
+
+Extra fields can be accessed directly as attributes on the model instance, providing a seamless experience similar to regular model fields:
+
+```python
+from dataclasses import dataclass
+from rococo.models import VersionedModel
+
+@dataclass
+class ModelWithExtra(VersionedModel):
+    allow_extra = True
+    name: str = "test"
+
+# Load model with extra fields
+data = {
+    "name": "test_model",
+    "custom_field": "custom_value",
+    "score": 95.5,
+    "config": {"theme": "dark", "notifications": True}
+}
+
+model = ModelWithExtra.from_dict(data)
+
+# Direct attribute access to extra fields
+print(model.name)           # Output: "test_model" (regular field)
+print(model.custom_field)   # Output: "custom_value" (extra field)
+print(model.score)          # Output: 95.5 (extra field)
+print(model.config)         # Output: {"theme": "dark", "notifications": True} (extra field)
+
+# Setting extra fields directly as attributes
+model.dynamic_field = "dynamic_value"
+model.priority = 10
+
+print(model.dynamic_field)  # Output: "dynamic_value"
+print(model.priority)       # Output: 10
+
+# Extra fields are automatically included in the extra dict
+print(model.extra)
+# Output: {
+#     "custom_field": "custom_value",
+#     "score": 95.5,
+#     "config": {"theme": "dark", "notifications": True},
+#     "dynamic_field": "dynamic_value",
+#     "priority": 10
+# }
+
+# Direct access works seamlessly with as_dict()
+result = model.as_dict()
+print(result["custom_field"])   # Output: "custom_value"
+print(result["dynamic_field"])  # Output: "dynamic_value"
+print("extra" in result)        # Output: False (extra dict is unwrapped)
+```
+
+**Key Features:**
+- **Configurable**: Set `allow_extra = True` to enable extra fields support
+- **Transparent Storage**: Extra fields are stored in the `extra` dict attribute
+- **Direct Access**: Access extra fields directly as attributes (e.g., `model.custom_field`)
+- **Dynamic Assignment**: Set extra fields directly as attributes (e.g., `model.new_field = value`)
+- **Database Friendly**: Extra fields are unwrapped in `as_dict()` for seamless database storage
+- **Silent Ignoring**: When `allow_extra = False` (default), extra fields are silently ignored
+- **Roundtrip Consistency**: Extra fields maintain consistency through save/load cycles
+- **Integration**: Works alongside enum and dataclass conversion features
+
 #### Messaging
 
 ##### RabbitMQ
@@ -1071,4 +1284,4 @@ To install local Rococo version in other project, upload to your PyPi:
 [pypi]
     username = __token__
     password = THE_TOKEN_PROVIDED_BY_PYPI
-3) run the command: twine upload --config-file=./.pypirc dist/*  
+3) run the command: twine upload --config-file=./.pypirc dist/*

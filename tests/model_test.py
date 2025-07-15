@@ -863,3 +863,394 @@ def test_dataclass_field_without_metadata():
     # Without metadata, the dict should remain as dict
     assert isinstance(restored.runtime_error, dict)
     assert restored.runtime_error['message'] == "Test error"
+
+
+# Tests for extra fields support
+def test_extra_fields_allowed():
+    """Test that models with allow_extra=True accept extra fields"""
+
+    @dataclass
+    class ModelWithExtra(VersionedModel):
+        allow_extra = True
+        name: str = "test"
+
+    # Test from_dict with extra fields
+    data = {
+        "entity_id": "test-id",
+        "name": "test_model",
+        "extra_field1": "extra_value1",
+        "extra_field2": 42,
+        "extra_field3": {"nested": "data"}
+    }
+
+    model = ModelWithExtra.from_dict(data)
+
+    # Regular fields should be set normally
+    assert model.name == "test_model"
+
+    # Extra fields should be stored in the extra dict (inherited from VersionedModel)
+    assert "extra_field1" in model.extra
+    assert model.extra["extra_field1"] == "extra_value1"
+    assert model.extra["extra_field2"] == 42
+    assert model.extra["extra_field3"] == {"nested": "data"}
+
+
+def test_extra_fields_in_as_dict():
+    """Test that extra fields are unwrapped in as_dict()"""
+
+    @dataclass
+    class ModelWithExtra(VersionedModel):
+        allow_extra = True
+        name: str = "test"
+
+    # Create model with extra fields
+    model = ModelWithExtra(name="test_model")
+    model.extra = {
+        "extra_field1": "extra_value1",
+        "extra_field2": 42,
+        "extra_field3": {"nested": "data"}
+    }
+
+    result = model.as_dict()
+
+    print(f"Result={result}")
+
+    # Regular fields should be present
+    assert result["name"] == "test_model"
+
+    # Extra fields should be unwrapped (not nested under 'extra')
+    assert result["extra_field1"] == "extra_value1"
+    assert result["extra_field2"] == 42
+    assert result["extra_field3"] == {"nested": "data"}
+
+    # The 'extra' field itself should not be in the result
+    assert "extra" not in result
+
+
+def test_extra_fields_roundtrip():
+    """Test that extra fields maintain consistency through roundtrip"""
+
+    @dataclass
+    class ModelWithExtra(VersionedModel):
+        allow_extra = True
+        name: str = "test"
+
+    # Create original model with extra fields
+    original = ModelWithExtra(name="original_model")
+    original.extra = {
+        "dynamic_field": "dynamic_value",
+        "computed_score": 95.5,
+        "metadata": {"source": "api", "version": "1.0"}
+    }
+
+    # Convert to dict and back
+    dict_data = original.as_dict()
+    restored = ModelWithExtra.from_dict(dict_data)
+
+    # Verify all data is correctly restored
+    assert restored.name == original.name
+    assert restored.extra == original.extra
+    assert restored.extra["dynamic_field"] == "dynamic_value"
+    assert restored.extra["computed_score"] == 95.5
+    assert restored.extra["metadata"]["source"] == "api"
+
+
+def test_extra_fields_not_allowed():
+    """Test that models without allow_extra ignore extra fields"""
+
+    @dataclass
+    class ModelWithoutExtra(VersionedModel):
+        # allow_extra is False by default
+        name: str = "test"
+
+    # Test from_dict with extra fields - should be ignored
+    data = {
+        "entity_id": "test-id",
+        "name": "test_model",
+        "extra_field1": "should_be_ignored",
+        "extra_field2": 42
+    }
+
+    model = ModelWithoutExtra.from_dict(data)
+
+    # Regular fields should be set normally
+    assert model.name == "test_model"
+
+    # Extra fields should be ignored (not cause errors)
+    assert not hasattr(model, 'extra_field1')
+    assert not hasattr(model, 'extra_field2')
+
+    # The extra dict should remain empty
+    assert model.extra == {}
+
+
+def test_extra_fields_with_explicit_extra_field():
+    """Test that models can have explicit 'extra' field data in from_dict"""
+
+    @dataclass
+    class ModelWithExplicitExtra(VersionedModel):
+        allow_extra = True
+        name: str = "test"
+
+    # Test from_dict with both explicit extra and additional fields
+    data = {
+        "entity_id": "test-id",
+        "name": "test_model",
+        "extra": {"explicit": "extra_data"},
+        "additional_field": "additional_value"
+    }
+
+    restored = ModelWithExplicitExtra.from_dict(data)
+
+    # Both explicit extra and additional fields should be in extra
+    assert "explicit" in restored.extra
+    assert restored.extra["explicit"] == "extra_data"
+    assert "additional_field" in restored.extra
+    assert restored.extra["additional_field"] == "additional_value"
+
+
+def test_extra_fields_empty():
+    """Test that empty extra fields work correctly"""
+
+    @dataclass
+    class ModelWithExtra(VersionedModel):
+        allow_extra = True
+        name: str = "test"
+
+    # Test with no extra fields
+    data = {
+        "entity_id": "test-id",
+        "name": "test_model"
+    }
+
+    model = ModelWithExtra.from_dict(data)
+    assert model.extra == {}
+
+    # Test as_dict with empty extra
+    result = model.as_dict()
+    assert "extra" not in result
+    assert result["name"] == "test_model"
+
+
+def test_extra_fields_with_enum_and_dataclass():
+    """Test that extra fields work alongside enum and dataclass conversion"""
+    from typing import Optional
+    from enum import Enum
+
+    class Status(Enum):
+        active = "active"
+        inactive = "inactive"
+
+    @dataclass
+    class ErrorInfo:
+        message: str = "error"
+
+    @dataclass
+    class ComplexModelWithExtra(VersionedModel):
+        allow_extra = True
+        status: Optional[Status] = Status.active
+        error: Optional[ErrorInfo] = field(
+            default=None, metadata={'model': ErrorInfo}
+        )
+
+    # Test from_dict with mixed field types
+    data = {
+        "entity_id": "test-id",
+        "status": "inactive",  # Should become enum
+        "error": {"message": "test error"},  # Should become dataclass
+        "custom_field": "custom_value",  # Should go to extra
+        "dynamic_config": {"setting": "value"}  # Should go to extra
+    }
+
+    model = ComplexModelWithExtra.from_dict(data)
+
+    # Verify enum conversion
+    assert model.status == Status.inactive
+    assert isinstance(model.status, Status)
+
+    # Verify dataclass conversion
+    assert isinstance(model.error, ErrorInfo)
+    assert model.error.message == "test error"
+
+    # Verify extra fields
+    assert model.extra["custom_field"] == "custom_value"
+    assert model.extra["dynamic_config"] == {"setting": "value"}
+
+    # Test as_dict roundtrip
+    result = model.as_dict()
+
+    # Enum should be string
+    assert result["status"] == "inactive"
+
+    # Dataclass should be dict
+    assert result["error"] == {"message": "test error"}
+
+    # Extra fields should be unwrapped
+    assert result["custom_field"] == "custom_value"
+    assert result["dynamic_config"] == {"setting": "value"}
+    assert "extra" not in result
+
+
+def test_extra_fields_base_class_inheritance():
+    """Test that extra field is properly inherited from VersionedModel"""
+
+    @dataclass
+    class SimpleModel(VersionedModel):
+        allow_extra = True
+        name: str = "test"
+
+    # Verify that extra field exists and is properly typed
+    model = SimpleModel(name="test")
+    assert hasattr(model, 'extra')
+    assert isinstance(model.extra, dict)
+    assert model.extra == {}
+
+    # Verify it works with assignment
+    model.extra["test_key"] = "test_value"
+    assert model.extra["test_key"] == "test_value"
+
+
+# Tests for direct attribute access to extra fields
+def test_extra_fields_direct_attribute_access():
+    """Test that extra fields can be accessed directly as attributes"""
+
+    @dataclass
+    class ModelWithExtra(VersionedModel):
+        allow_extra = True
+        name: str = "test"
+
+    # Load model with extra fields from dict
+    data = {
+        "name": "test_model",
+        "custom_field": "custom_value",
+        "dynamic_config": {"setting": "value"},
+        "score": 95.5
+    }
+
+    model = ModelWithExtra.from_dict(data)
+
+    # Test direct attribute access to extra fields
+    assert model.custom_field == "custom_value"
+    assert model.dynamic_config == {"setting": "value"}
+    assert model.score == 95.5
+
+    # Test that regular fields still work
+    assert model.name == "test_model"
+
+
+def test_extra_fields_direct_attribute_setting():
+    """Test that extra fields can be set directly as attributes"""
+
+    @dataclass
+    class ModelWithExtra(VersionedModel):
+        allow_extra = True
+        name: str = "test"
+
+    model = ModelWithExtra(name="test_model")
+
+    # Set extra fields directly as attributes
+    model.new_field = "new_value"
+    model.rating = 4.5
+    model.config = {"enabled": True}
+
+    # Verify they are stored in the extra dict
+    assert model.extra["new_field"] == "new_value"
+    assert model.extra["rating"] == 4.5
+    assert model.extra["config"] == {"enabled": True}
+
+    # Verify direct access works
+    assert model.new_field == "new_value"
+    assert model.rating == 4.5
+    assert model.config == {"enabled": True}
+
+
+def test_extra_fields_direct_access_without_allow_extra():
+    """Test that models without allow_extra don't allow direct extra field access"""
+
+    @dataclass
+    class ModelWithoutExtra(VersionedModel):
+        name: str = "test"
+
+    data = {
+        "name": "test_model",
+        "custom_field": "custom_value"
+    }
+
+    model = ModelWithoutExtra.from_dict(data)
+
+    # Extra fields should not be accessible directly
+    with pytest.raises(AttributeError):
+        _ = model.custom_field
+
+    # Setting extra fields should work but they go to regular attributes
+    model.test_field = "test_value"
+    assert model.test_field == "test_value"
+    # They should not be in the extra dict
+    assert model.extra == {}
+
+
+def test_extra_fields_direct_access_roundtrip():
+    """Test that direct attribute access works through roundtrip conversion"""
+
+    @dataclass
+    class ModelWithExtra(VersionedModel):
+        allow_extra = True
+        name: str = "test"
+
+    # Create model and set extra fields directly
+    original = ModelWithExtra(name="original_model")
+    original.dynamic_field = "dynamic_value"
+    original.score = 95.5
+
+    # Convert to dict and back
+    dict_data = original.as_dict()
+    restored = ModelWithExtra.from_dict(dict_data)
+
+    # Verify direct access works on restored model
+    assert restored.dynamic_field == "dynamic_value"
+    assert restored.score == 95.5
+    assert restored.name == "original_model"
+
+
+def test_extra_fields_direct_access_attribute_error():
+    """Test that accessing non-existent extra fields raises AttributeError"""
+
+    @dataclass
+    class ModelWithExtra(VersionedModel):
+        allow_extra = True
+        name: str = "test"
+
+    model = ModelWithExtra(name="test_model")
+
+    # Accessing non-existent field should raise AttributeError
+    with pytest.raises(AttributeError, match="'ModelWithExtra' object has no attribute 'non_existent'"):
+        _ = model.non_existent
+
+
+def test_extra_fields_direct_access_with_regular_fields():
+    """Test that direct access doesn't interfere with regular model fields"""
+
+    @dataclass
+    class ModelWithExtra(VersionedModel):
+        allow_extra = True
+        name: str = "test"
+        regular_field: str = "regular"
+
+    model = ModelWithExtra(name="test_model", regular_field="regular_value")
+
+    # Set extra field with same name as regular field - should not interfere
+    model.extra_field = "extra_value"
+
+    # Regular fields should work normally
+    assert model.name == "test_model"
+    assert model.regular_field == "regular_value"
+
+    # Extra field should work via direct access
+    assert model.extra_field == "extra_value"
+
+    # Extra field should be in extra dict
+    assert model.extra["extra_field"] == "extra_value"
+
+    # Regular fields should not be in extra dict
+    assert "name" not in model.extra
+    assert "regular_field" not in model.extra

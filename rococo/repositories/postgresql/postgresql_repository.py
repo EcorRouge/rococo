@@ -19,6 +19,7 @@ def adjust_conditions(conditions: Dict[str, Any]) -> Dict[str, Any]:
             conditions[key] = [str(id) for id in value]
     return conditions
 
+
 class PostgreSQLRepository(BaseRepository):
     """PostgreSQLRepository class"""
 
@@ -31,13 +32,18 @@ class PostgreSQLRepository(BaseRepository):
             user_id: UUID = None
     ):
         super().__init__(db_adapter, model, message_adapter, queue_name, user_id=user_id)
-        self.table_name = re.sub(r'(?<!^)(?=[A-Z])', '_', model.__name__).lower()
+        self.table_name = re.sub(
+            r'(?<!^)(?=[A-Z])', '_', model.__name__).lower()
         self.model()
 
     def _process_data_before_save(self, instance: VersionedModel):
         """Method to convert VersionedModel instance to a data dictionary that can be saved to PostgreSQL"""
         super()._process_data_before_save(instance)
-        data = instance.as_dict(convert_datetime_to_iso_string=False, convert_uuids=False)
+        data = instance.as_dict(
+            convert_datetime_to_iso_string=False,
+            convert_uuids=False,
+            export_properties=self.save_calculated_fields
+        )
         for field in fields(instance):
             if data.get(field.name) is None:
                 continue
@@ -48,7 +54,8 @@ class PostgreSQLRepository(BaseRepository):
                 if isinstance(field_value, VersionedModel):
                     field_value = str(field_value.entity_id).replace('-', '')
                 elif isinstance(field_value, dict):
-                    field_value = str(field_value.get('entity_id')).replace('-', '')
+                    field_value = str(field_value.get(
+                        'entity_id')).replace('-', '')
                 elif isinstance(field_value, str):
                     field_value = field_value.replace('-', '')
 
@@ -61,7 +68,7 @@ class PostgreSQLRepository(BaseRepository):
         return data
 
     def get_one(
-        self, 
+        self,
         conditions: Dict[str, Any] = None,
         fetch_related: List[str] = None
     ) -> Union[VersionedModel, None]:
@@ -89,7 +96,7 @@ class PostgreSQLRepository(BaseRepository):
                     )
                     if related_entities is not None:
                         related_instances[related_field] = related_entities
-        
+
             # Replace related_instances in the main instance
             for key, value in related_instances.items():
                 setattr(instance, key, value)
@@ -105,7 +112,7 @@ class PostgreSQLRepository(BaseRepository):
         fetch_related: List[str] = None
     ) -> List[VersionedModel]:
         """Get many records, with optional related fields fetched"""
-        
+
         if conditions is not None:
             conditions = adjust_conditions(conditions)
         # Fetch the records
@@ -141,8 +148,8 @@ class PostgreSQLRepository(BaseRepository):
     def get_count(
         self,
         # collection_name: str, # Use self.table_name for consistency
-        index: Optional[str] = None, # index (for hint) can be optional
-        query: Optional[Dict[str, Any]] = None # query can be optional
+        index: Optional[str] = None,  # index (for hint) can be optional
+        query: Optional[Dict[str, Any]] = None  # query can be optional
     ) -> int:
         """
         Retrieves the count of records in the repository's table that match the given query parameters.
@@ -156,17 +163,19 @@ class PostgreSQLRepository(BaseRepository):
             int: The count of matching records.
         """
         # Prepare the actual conditions for the database query
-        db_conditions = {'latest': True, 'active': True} # Default conditions from BaseRepository
-        if query: # Ensure query is not None before updating
-            actual_query = adjust_conditions(query.copy()) # Adjust UUIDs in query
+        # Default conditions from BaseRepository
+        db_conditions = {'latest': True, 'active': True}
+        if query:  # Ensure query is not None before updating
+            actual_query = adjust_conditions(
+                query.copy())  # Adjust UUIDs in query
             db_conditions.update(actual_query)
-        else: # Ensure adjust_conditions is called even if query is None but db_conditions has UUIDs (not in this default)
+        # Ensure adjust_conditions is called even if query is None but db_conditions has UUIDs (not in this default)
+        else:
             db_conditions = adjust_conditions(db_conditions)
-
 
         # Prepare the options dictionary for the adapter
         adapter_options: Dict[str, Any] = {}
-        if index: # If an index (hint) is provided, add it to options
+        if index:  # If an index (hint) is provided, add it to options
             adapter_options['hint'] = index
 
         # Call the adapter's get_count method with table, conditions, and options
@@ -174,38 +183,40 @@ class PostgreSQLRepository(BaseRepository):
         # PostgreSQLAdapter.get_count signature (from previous context):
         # def get_count(self, table: str, conditions: Dict[str, Any], options: Optional[Dict[str, Any]] = None) -> int:
         count = self._execute_within_context(
-            self.adapter.get_count, # type: ignore
-            self.table_name, # Use self.table_name for the repository's primary table
+            self.adapter.get_count,  # type: ignore
+            self.table_name,  # Use self.table_name for the repository's primary table
             db_conditions,
             options=adapter_options if adapter_options else None
         )
         return count
 
     def fetch_related_entities_for_field(
-        self, 
-        instance: VersionedModel, 
+        self,
+        instance: VersionedModel,
         related_field: str
     ) -> Union[List, Optional[VersionedModel]]:
         """Fetch related entities for a given field in the instance."""
-        
+
         related_value = getattr(instance, related_field)
 
         if related_value is None or (isinstance(related_value, list) and len(related_value) == 0):
             return None
 
         field_metadata = next((
-            field.metadata for field in fields(instance) 
+            field.metadata for field in fields(instance)
             if field.name == related_field
         ), None)
 
         if field_metadata and 'relationship' in field_metadata:
             relation_model = field_metadata['relationship']['model']
-            relation_table_name = re.sub(r'(?<!^)(?=[A-Z])', '_', relation_model.__name__).lower()
+            relation_table_name = re.sub(
+                r'(?<!^)(?=[A-Z])', '_', relation_model.__name__).lower()
             field_type = field_metadata['field_type']
-            
+
             # Determine the relation type
-            relation_type = field_metadata['relationship'].get('relation_type', None)
-            relation_conditions = { f"{field_type}": related_value }
+            relation_type = field_metadata['relationship'].get(
+                'relation_type', None)
+            relation_conditions = {f"{field_type}": related_value}
             relation_conditions = adjust_conditions(relation_conditions)
 
             if relation_type in ['one_to_many', 'many_to_many']:
@@ -216,7 +227,7 @@ class PostgreSQLRepository(BaseRepository):
 
                 if related_records is not None:
                     return [
-                        relation_model.from_dict(rel_record) 
+                        relation_model.from_dict(rel_record)
                         for rel_record in related_records
                     ]
 

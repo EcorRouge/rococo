@@ -91,6 +91,7 @@ class VersionedModel:
     changed_by_id: str = field(default_factory=lambda: get_uuid_hex(
         0), metadata={'field_type': 'uuid'})
     changed_on: datetime = field(default_factory=default_datetime)
+    extra: Dict[str, Any] = field(default_factory=dict)
 
     _is_partial: InitVar[bool] = False
 
@@ -155,17 +156,110 @@ class VersionedModel:
         For many-to-many fields, this method raises an AttributeError if the
         field has not been loaded yet (i.e. its value is None).
         """
-        if name in VersionedModel.fields():
-            if object.__getattribute__(self, '_is_partial') and name != 'entity_id':
-                raise AttributeError(
-                    f"Attribute '{name}' is not available in a partial instance.")
+        # Skip checks for private attributes and special methods to avoid recursion
+        if name.startswith('_') or name in ['fields']:
+            return object.__getattribute__(self, name)
 
-        # Raise error if m2m field is accessed before loading
+        # Handle partial instance restrictions first
+        try:
+            is_partial = object.__getattribute__(self, '_is_partial')
+        except AttributeError:
+            # _is_partial not set yet, continue normally
+            pass
+
+        if is_partial and name in VersionedModel.fields() and name != 'entity_id':
+            raise AttributeError(
+                f"Attribute '{name}' is not available in a partial instance.")
+
+        # Check for m2m field restrictions
+        try:
+            f = next((f for f in fields(type(self)) if f.name == name), None)
+            if f and f.metadata.get('field_type') == 'm2m_list':
+                # Try to get the value using object.__getattribute__
+                try:
+                    value = object.__getattribute__(self, name)
+                    if value is None:
+                        raise AttributeError(
+                            f"Many-to-many field '{name}' is not loaded.")
+                    return value
+                except AttributeError:
+                    # Field doesn't exist, so it's definitely not loaded
+                    raise AttributeError(
+                        f"Many-to-many field '{name}' is not loaded.")
+        except (TypeError, StopIteration):
+            # fields() might not be available during initialization, continue normally
+            pass
+
+        # Get the value normally
+        return object.__getattribute__(self, name)
+
+    def __getattr__(self, name):
+        """
+        Called when an attribute is not found through normal lookup.
+        This handles extra fields for models that allow them.
+        """
+
         f = next((f for f in fields(type(self)) if f.name == name), None)
-        value = object.__getattribute__(self, name)
-        if f and f.metadata.get('field_type') == 'm2m_list' and value is None:
-            raise AttributeError(f"Many-to-many field '{name}' is not loaded.")
-        return value
+        if f and f.metadata.get('field_type') == 'm2m_list':
+            raise AttributeError(
+                f"Many-to-many field '{name}' is not loaded.")
+
+        # Handle partial instance restrictions first
+        try:
+            is_partial = object.__getattribute__(self, '_is_partial')
+        except AttributeError:
+            # _is_partial not set yet, continue normally
+            pass
+
+        if is_partial and name in VersionedModel.fields() and name != 'entity_id':
+            raise AttributeError(
+                f"Attribute '{name}' is not available in a partial instance.")
+
+        try:
+            extra = object.__getattribute__(self, 'extra')
+        except AttributeError:
+            # extra not initialized yet
+            raise AttributeError(
+                f"'{type(self).__name__}' object has no attribute '{name}'")
+
+        # Check if the field is directly in extra
+        if name in extra:
+            return extra[name]
+
+        # Check if the field is nested under 'extra' key (for backward compatibility)
+        if 'extra' in extra and isinstance(extra['extra'], dict) and name in extra['extra']:
+            return extra['extra'][name]
+
+        raise AttributeError(
+            f"'{type(self).__name__}' object has no attribute '{name}'")
+
+    def __setattr__(self, name: str, value):
+        """
+        Allow setting extra fields directly as attributes.
+        If the field is not a defined model field and allow_extra is True,
+        store it in the extra dict.
+        """
+        # Get model fields (but handle the case where fields() might not be available yet)
+        try:
+            model_fields = self.fields()
+        except:
+            # During initialization, fields() might not work yet
+            model_fields = [f.name for f in fields(type(self))]
+
+        # Always allow setting defined model fields and private attributes
+        if name.startswith('_') or name in model_fields:
+            object.__setattr__(self, name, value)
+        elif getattr(type(self), 'allow_extra', False) and name != 'extra':
+            # Initialize extra dict if it doesn't exist
+            try:
+                extra = object.__getattribute__(self, 'extra')
+            except AttributeError:
+                object.__setattr__(self, 'extra', {})
+                extra = object.__getattribute__(self, 'extra')
+            extra[name] = value
+        else:
+            # Default behavior - set the attribute normally
+            object.__setattr__(self, name, value)
 
     def __repr__(self) -> str:
         """
@@ -205,15 +299,16 @@ class VersionedModel:
         Returns:
             List[str]: A list of field names.
         """
-        return [f.name for f in fields(cls)]
+        return [f.name for f in fields(cls) if f.name != 'extra']
 
-    def as_dict(self, convert_datetime_to_iso_string: bool = False, convert_uuids: bool = True) -> Dict[str, Any]:
+    def as_dict(self, convert_datetime_to_iso_string: bool = False, convert_uuids: bool = True, export_properties: bool = True) -> Dict[str, Any]:
         """
         Convert this model to a dictionary.
 
         Args:
             convert_datetime_to_iso_string (bool, optional): Whether to convert datetime to ISO strings.
             convert_uuids (bool): Whether to convert UUIDs to strings.
+            export_properties (bool): Whether to include @property methods in the output.
 
         Returns:
             Dict[str, Any]: A dictionary representation of this model.
@@ -254,9 +349,65 @@ class VersionedModel:
                 result[k] = v.isoformat()
             if convert_uuids and isinstance(v, UUID):
                 result[k] = str(v)
+            # Convert enum values to their string representation
+            if isinstance(v, Enum):
+                result[k] = v.value
+
+            # Convert dataclass fields with 'model' metadata
+            f = next((f for f in fields(type(self)) if f.name == k), None)
+            if f and f.metadata.get('model') and v is not None:
+                model_class = f.metadata['model']
+                if isinstance(v, list):
+                    # Handle list of dataclass objects
+                    result[k] = [
+                        obj.__dict__ if is_dataclass(obj) else obj
+                        for obj in v
+                    ]
+                elif is_dataclass(v):
+                    # Handle single dataclass object
+                    result[k] = v.__dict__
 
         for k in keys_to_remove:
             result.pop(k, None)
+
+        # Handle extra fields - unwrap them into the result dict
+        if hasattr(self, 'extra') and self.extra:
+            for extra_key, extra_value in self.extra.items():
+                result[extra_key] = extra_value
+
+        # Remove the 'extra' field itself from the result
+        result.pop('extra', None)
+
+        # Export properties if requested
+        if export_properties:
+            for attr_name in dir(type(self)):
+                # Skip private attributes and methods
+                if attr_name.startswith('_'):
+                    continue
+
+                # Get the attribute from the class
+                attr = getattr(type(self), attr_name, None)
+
+                # Check if it's a property
+                if isinstance(attr, property):
+                    # Skip if it's already in the result (from regular fields)
+                    if attr_name not in result:
+                        try:
+                            # Get the property value
+                            prop_value = getattr(self, attr_name)
+
+                            # Apply the same conversions as regular fields
+                            if convert_datetime_to_iso_string and isinstance(prop_value, datetime):
+                                prop_value = prop_value.isoformat()
+                            if convert_uuids and isinstance(prop_value, UUID):
+                                prop_value = str(prop_value)
+                            if isinstance(prop_value, Enum):
+                                prop_value = prop_value.value
+
+                            result[attr_name] = prop_value
+                        except Exception:
+                            # Skip properties that raise exceptions when accessed
+                            pass
 
         return result
 
@@ -266,6 +417,8 @@ class VersionedModel:
         Load VersionedModel from dict
         """
         clean_data = {k: v for k, v in data.items() if k in cls.fields()}
+        hints = get_type_hints(cls)
+
         for k, v in clean_data.items():
             if k in ["entity_id", "version", "previous_version", "changed_by_id"]:
                 try:
@@ -273,7 +426,69 @@ class VersionedModel:
                         v).hex if v and not isinstance(v, UUID) else v
                 except ValueError:
                     print(f"'{v}' is not a valid UUID.")
-        return cls(**clean_data)
+
+            # Handle enum conversion from string values
+            elif v is not None:
+                expected_type = hints.get(k)
+                if expected_type:
+                    # Handle Optional[EnumType] (Union[EnumType, None])
+                    origin = get_origin(expected_type)
+                    if origin is Union:
+                        args = get_args(expected_type)
+                        # Find the non-None type in the Union
+                        enum_type = next((arg for arg in args if arg is not type(
+                            None) and isinstance(arg, type) and issubclass(arg, Enum)), None)
+                        if enum_type and isinstance(v, str):
+                            try:
+                                clean_data[k] = enum_type(v)
+                            except ValueError:
+                                # If the string value doesn't match any enum value, leave as is
+                                pass
+                    # Handle direct enum types
+                    elif isinstance(expected_type, type) and issubclass(expected_type, Enum) and isinstance(v, str):
+                        try:
+                            clean_data[k] = expected_type(v)
+                        except ValueError:
+                            # If the string value doesn't match any enum value, leave as is
+                            pass
+
+                # Handle dataclass conversion from dict values
+                f = next((f for f in fields(cls) if f.name == k), None)
+                if f and f.metadata.get('model') and isinstance(v, (dict, list)):
+                    model_class = f.metadata['model']
+                    if isinstance(v, list):
+                        # Handle list of dict objects -> list of dataclass objects
+                        clean_data[k] = [
+                            model_class(**item) if isinstance(item,
+                                                              dict) else item
+                            for item in v
+                        ]
+                    elif isinstance(v, dict):
+                        # Handle single dict object -> dataclass object
+                        clean_data[k] = model_class(**v)
+
+        # Handle extra fields if the model allows them
+        extra_data = {}
+        if getattr(cls, 'allow_extra', False):
+            # Collect fields that are not in the model definition
+            model_fields = cls.fields()
+            for k, v in data.items():
+                if k not in model_fields and k != 'extra':  # Don't include 'extra' itself
+                    extra_data[k] = v
+
+            # Also handle explicit 'extra' field from data
+            if 'extra' in data and isinstance(data['extra'], dict):
+                extra_data.update(data['extra'])
+
+        # Create the instance
+        instance = cls(**clean_data)
+
+        # Set extra fields directly (not nested)
+        if extra_data:
+            # Replace the entire extra dict to avoid nesting
+            instance.extra = extra_data
+
+        return instance
 
     def validate(self):
         """

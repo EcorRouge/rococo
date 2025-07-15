@@ -27,7 +27,7 @@ class TestVersionedModel(VersionedModel):
     name: str = None
     # active and changed_on are inherited from VersionedModel
 
-    def as_dict(self, convert_datetime_to_iso_string=False, convert_uuids=True):
+    def as_dict(self, convert_datetime_to_iso_string=False, convert_uuids=True, export_properties=True):
         data_dict = {}
         for f_info in fields(self):
             val = getattr(self, f_info.name, None)
@@ -306,7 +306,7 @@ def test_save_new_instance(mock_model_as_dict, mock_model_prepare_for_save, repo
         changed_by_id=test_user_id)
     # Now, as_dict is called only ONCE by the improved _process_data_before_save
     model_instance.as_dict.assert_called_once_with(
-        convert_datetime_to_iso_string=False, convert_uuids=False)
+        convert_datetime_to_iso_string=False, convert_uuids=False, export_properties=False)
 
     mock_adapter.get_move_entity_to_audit_table_query.assert_called_once_with(
         repository.table_name,
@@ -373,7 +373,7 @@ def test_delete_instance(mock_model_as_dict, mock_model_prepare_for_save, reposi
         changed_by_id=test_user_id)
     # as_dict called once by the save operation within delete
     model_instance.as_dict.assert_called_once_with(
-        convert_datetime_to_iso_string=False, convert_uuids=False)
+        convert_datetime_to_iso_string=False, convert_uuids=False, export_properties=False)
 
     mock_adapter.get_save_query.assert_called_once_with(
         repository.table_name, expected_data_for_adapter_delete

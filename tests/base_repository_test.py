@@ -136,7 +136,7 @@ class TestVersionedModel(VersionedModel):
 
         return cls(**processed_data)
 
-    def as_dict(self, convert_datetime_to_iso_string=False, convert_uuids=True):
+    def as_dict(self, convert_datetime_to_iso_string=False, convert_uuids=True, export_properties=True):
         """
         Convert the TestVersionedModel instance to a dictionary.
 
@@ -146,6 +146,7 @@ class TestVersionedModel(VersionedModel):
         Args:
             convert_uuids_to_string (bool, optional): Whether to convert UUID fields to strings.
             convert_datetime_to_iso_string (bool, optional): Whether to convert datetime fields to ISO strings.
+            export_properties (bool, optional): Whether to include calculated properties. Defaults to True.
 
         Returns:
             dict: A dictionary representation of the model instance, excluding None values.
@@ -534,7 +535,7 @@ class TestBaseRepository:
         instance_to_save.prepare_for_save.assert_called_once_with(
             changed_by_id=repository.user_id)
         instance_to_save.as_dict.assert_called_once_with(
-            convert_datetime_to_iso_string=True)
+            convert_datetime_to_iso_string=True, export_properties=False)
 
         # 2. Verify adapter calls
         mock_db_adapter.get_move_entity_to_audit_table_query.assert_called_once_with(
@@ -603,7 +604,8 @@ class TestBaseRepository:
         assert model_instance_mocker.as_dict.call_count == 2
         calls = model_instance_mocker.as_dict.call_args_list
         # First call (for DB save)
-        assert calls[0] == mocker.call(convert_datetime_to_iso_string=True)
+        assert calls[0] == mocker.call(
+            convert_datetime_to_iso_string=True, export_properties=False)
         # Second call (for message)
         assert calls[1] == mocker.call(convert_datetime_to_iso_string=True)
 
@@ -665,7 +667,7 @@ class TestBaseRepository:
 
         # Verify that as_dict was called (via the internal save call)
         instance_to_delete.as_dict.assert_called_once_with(
-            convert_datetime_to_iso_string=True)
+            convert_datetime_to_iso_string=True, export_properties=False)
 
         # Verify adapter calls for the save operation within delete
         mock_db_adapter.get_move_entity_to_audit_table_query.assert_called_once_with(

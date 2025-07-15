@@ -33,7 +33,7 @@ class TestVersionedModel(VersionedModel):
 
     # active and changed_on are inherited
 
-    def as_dict(self, convert_datetime_to_iso_string=False, convert_uuids=True):
+    def as_dict(self, convert_datetime_to_iso_string=False, convert_uuids=True, export_properties=True):
         # This as_dict should be robust enough for different calls
         data_dict = {}
         for f_info in fields(self):
@@ -374,9 +374,10 @@ def test_save_new_instance(mock_model_as_dict, mock_model_prepare_for_save, repo
         changed_by_id=test_user_id)
 
     assert mock_model_as_dict.call_count == 2
-    mock_model_as_dict.assert_any_call(convert_datetime_to_iso_string=True)
     mock_model_as_dict.assert_any_call(
-        convert_datetime_to_iso_string=False, convert_uuids=False)
+        convert_datetime_to_iso_string=True, export_properties=False)
+    mock_model_as_dict.assert_any_call(
+        convert_datetime_to_iso_string=False, convert_uuids=False, export_properties=False)
 
     mock_adapter.get_save_query.assert_called_once_with(
         repository.table_name,
@@ -506,9 +507,10 @@ def test_save_with_message(mock_model_as_dict, mock_model_prepare_for_save, repo
     calls = mock_model_as_dict.call_args_list
     # Order of these two can be tricky if super() is called first vs last in _process_data_before_save
     # Based on current PostgreSQLRepository: super() is first.
-    calls[0].assert_called_with(convert_datetime_to_iso_string=True)
+    calls[0].assert_called_with(
+        convert_datetime_to_iso_string=True, export_properties=False)
     calls[1].assert_called_with(
-        convert_datetime_to_iso_string=False, convert_uuids=False)
+        convert_datetime_to_iso_string=False, convert_uuids=False, export_properties=False)
     calls[2].assert_called_with(
         convert_datetime_to_iso_string=True)  # BaseRepo message call
 

@@ -29,7 +29,8 @@ class SurrealDbRepository(BaseRepository):
         try:
             prefix, uuid = surreal_id.split(':', 1)
         except ValueError:
-            raise ValueError(f"Invalid input format or no UUID found in the input string: {surreal_id}")
+            raise ValueError(
+                f"Invalid input format or no UUID found in the input string: {surreal_id}")
         if prefix != table_name:
             raise ValueError(f"Expected table name {table_name}, got {prefix}")
         return uuid
@@ -37,7 +38,11 @@ class SurrealDbRepository(BaseRepository):
     def _process_data_before_save(self, instance: SurrealVersionedModel) -> Dict[str, Any]:
         """Convert VersionedModel instance to a dict suitable for SurrealDB"""
         super()._process_data_before_save(instance)
-        data = instance.as_dict(convert_datetime_to_iso_string=True, convert_uuids=True)
+        data = instance.as_dict(
+            convert_datetime_to_iso_string=True,
+            convert_uuids=True,
+            export_properties=self.save_calculated_fields
+        )
 
         # Map entity_id -> id (plain), other record_id fields with backticks
         for field in fields(instance):
@@ -89,9 +94,11 @@ class SurrealDbRepository(BaseRepository):
                 if ftype == 'm2m_list':
                     child_cls = rel.get('model') or model_cls
                     if isinstance(val, list):
-                        rec[field_def.name] = [_process_record(item, child_cls) for item in val]
+                        rec[field_def.name] = [_process_record(
+                            item, child_cls) for item in val]
                     else:
-                        raise NotImplementedError(f"Expected list for m2m_list field '{field_def.name}'")
+                        raise NotImplementedError(
+                            f"Expected list for m2m_list field '{field_def.name}'")
 
                 elif ftype == 'record_id':
                     child_cls = rel.get('model') or model_cls
@@ -101,14 +108,17 @@ class SurrealDbRepository(BaseRepository):
                         rec[field_def.name] = _process_record(val, child_cls)
                     elif isinstance(val, str):
                         # simple reference "table:uuid" or with backticks
-                        uuid = self._extract_uuid_from_surreal_id(val, child_table)
+                        uuid = self._extract_uuid_from_surreal_id(
+                            val, child_table)
                         if field_def.name == 'entity_id':
                             rec[field_def.name] = uuid
                         else:
                             # create a partial instance for the relation
-                            rec[field_def.name] = child_cls(entity_id=uuid, _is_partial=True)
+                            rec[field_def.name] = child_cls(
+                                entity_id=uuid, _is_partial=True)
                     else:
-                        raise NotImplementedError(f"Unsupported type for record_id field '{field_def.name}'")
+                        raise NotImplementedError(
+                            f"Unsupported type for record_id field '{field_def.name}'")
 
             # finally, build the model instance
             return model_cls.from_dict(rec)
@@ -155,7 +165,8 @@ class SurrealDbRepository(BaseRepository):
                     if name == 'entity_id':
                         conditions['id'] = conditions.pop('entity_id')
                         name = 'id'
-                    prefix = field_def.metadata.get('relationship', {}).get('model', self.model)
+                    prefix = field_def.metadata.get(
+                        'relationship', {}).get('model', self.model)
                     prefix = (
                         prefix.__name__.lower()
                         if isinstance(prefix, type)
@@ -226,7 +237,8 @@ class SurrealDbRepository(BaseRepository):
                     if name == 'entity_id':
                         conditions['id'] = conditions.pop('entity_id')
                         name = 'id'
-                    prefix = field_def.metadata.get('relationship', {}).get('model', self.model)
+                    prefix = field_def.metadata.get(
+                        'relationship', {}).get('model', self.model)
                     prefix = (
                         prefix.__name__.lower()
                         if isinstance(prefix, type)

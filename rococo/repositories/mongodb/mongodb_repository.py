@@ -171,7 +171,7 @@ class MongoDbRepository(BaseRepository):
         instance.active = False
 
         data = instance.as_dict(
-            convert_datetime_to_iso_string=True, convert_uuids=True)
+            convert_datetime_to_iso_string=True, convert_uuids=True, export_properties=self.save_calculated_fields)
 
         if instance.previous_version and instance.previous_version != get_uuid_hex(0):
             self._execute_within_context(

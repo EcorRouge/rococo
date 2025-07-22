@@ -7,6 +7,12 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Union, get_type_hints, get_origin, get_args
 from enum import Enum
 
+# Constants for VersionedModel field groups
+BIG_6_FIELDS = {'entity_id', 'version', 'previous_version',
+                'changed_on', 'changed_by_id', 'active'}
+BIG_6_UUID_FIELDS = ['entity_id', 'version',
+                     'previous_version', 'changed_by_id']
+
 
 def default_datetime():
     """
@@ -409,18 +415,51 @@ class VersionedModel:
                             # Skip properties that raise exceptions when accessed
                             pass
 
-        return result
+        # Apply field aliases for serialization (only for custom fields, not Big 6)
+        aliased_result = {}
+        for k, v in result.items():
+            if k not in BIG_6_FIELDS:
+                f = next((f for f in fields(type(self)) if f.name == k), None)
+                if f and f.metadata.get('alias'):
+                    # Use alias as the key in the output
+                    aliased_result[f.metadata['alias']] = v
+                else:
+                    # Use original field name
+                    aliased_result[k] = v
+            else:
+                # Big 6 fields always use original names
+                aliased_result[k] = v
+
+        return aliased_result
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "VersionedModel":
         """
         Load VersionedModel from dict
         """
-        clean_data = {k: v for k, v in data.items() if k in cls.fields()}
+        # Handle field aliases for deserialization (only for custom fields, not Big 6)
+        # Create a mapping from alias to field name for custom fields
+        alias_to_field = {}
+        for f in fields(cls):
+            if f.name not in BIG_6_FIELDS and f.metadata.get('alias'):
+                alias_to_field[f.metadata['alias']] = f.name
+
+        # Convert aliased keys back to field names
+        converted_data = {}
+        for k, v in data.items():
+            if k in alias_to_field:
+                # Use the original field name
+                converted_data[alias_to_field[k]] = v
+            else:
+                # Use the key as-is
+                converted_data[k] = v
+
+        clean_data = {k: v for k, v in converted_data.items()
+                      if k in cls.fields()}
         hints = get_type_hints(cls)
 
         for k, v in clean_data.items():
-            if k in ["entity_id", "version", "previous_version", "changed_by_id"]:
+            if k in BIG_6_UUID_FIELDS:
                 try:
                     clean_data[k] = UUID(
                         v).hex if v and not isinstance(v, UUID) else v

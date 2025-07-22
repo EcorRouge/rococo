@@ -17,6 +17,11 @@ _Anything worth doing is worth doing well.  Anything worth doing twice is worth 
   - [Dataclass Field Conversion](#dataclass-field-conversion)
   - [Extra Fields Support](#extra-fields-support)
     - [Direct Field Access](#direct-field-access)
+  - [Field Aliases](#field-aliases)
+    - [Basic Alias Usage](#basic-alias-usage)
+    - [Alias Restrictions](#alias-restrictions)
+    - [Complex Type Integration](#complex-type-integration)
+    - [Roundtrip Consistency](#roundtrip-consistency)
   - [Calculated Properties](#calculated-properties)
     - [Basic Property Usage](#basic-property-usage)
     - [Repository Integration](#repository-integration)
@@ -36,6 +41,10 @@ _Anything worth doing is worth doing well.  Anything worth doing twice is worth 
   - [Relationships in PostgreSQL](#relationships-in-postgresql-1)
 - [Repository Usage](#repository-usage)
   - [How to use the adapter and base Repository in another projects](#how-to-use-the-adapter-and-base-repository-in-another-projects)
+  - [Repository Configuration Options](#repository-configuration-options)
+    - [Auditing Control](#auditing-control)
+    - [TTL (Time To Live) Fields for MongoDB](#ttl-time-to-live-fields-for-mongodb)
+    - [Calculated Fields Control](#calculated-fields-control)
   - [RepositoryFactory](#repositoryfactory)
   - [Sample usage](#sample-usage)
 - [CLI Tools](#cli-tools)
@@ -306,6 +315,246 @@ print("extra" in result)        # Output: False (extra dict is unwrapped)
 - **Silent Ignoring**: When `allow_extra = False` (default), extra fields are silently ignored
 - **Roundtrip Consistency**: Extra fields maintain consistency through save/load cycles
 - **Integration**: Works alongside enum and dataclass conversion features
+
+#### Field Aliases
+
+VersionedModel supports field aliases that allow different property naming during serialization and deserialization. This is useful for API compatibility, database schema differences, or when you need different field names in your application versus external systems.
+
+##### Basic Alias Usage
+
+```python
+from dataclasses import dataclass, field
+from rococo.models import VersionedModel
+
+@dataclass
+class User(VersionedModel):
+    # Use aliases for external API compatibility
+    full_name: str = field(default="", metadata={'alias': 'name'})
+    email_address: str = field(default="", metadata={'alias': 'email'})
+    user_score: int = field(default=0, metadata={'alias': 'rating'})
+    # Field without alias uses original name
+    description: str = "No description"
+
+user = User(
+    full_name="John Doe",
+    email_address="john@example.com", 
+    user_score=95,
+    description="Test user"
+)
+
+# Serialization uses aliases
+result = user.as_dict()
+print(result)
+# Output: {
+#     "name": "John Doe",           # aliased from full_name
+#     "email": "john@example.com",  # aliased from email_address  
+#     "rating": 95,                 # aliased from user_score
+#     "description": "Test user",   # no alias, original name used
+#     "entity_id": "...",           # Big 6 fields always use original names
+#     "version": "...",
+#     "active": True,
+#     # ... other Big 6 fields
+# }
+
+# Deserialization handles aliases
+api_data = {
+    "name": "Jane Smith",
+    "email": "jane@example.com", 
+    "rating": 88,
+    "description": "API user",
+    "entity_id": "test-id"
+}
+
+restored_user = User.from_dict(api_data)
+print(restored_user.full_name)      # Output: "Jane Smith"
+print(restored_user.email_address)  # Output: "jane@example.com"
+print(restored_user.user_score)     # Output: 88
+```
+
+##### Alias Restrictions
+
+Field aliases have important restrictions to maintain data integrity:
+
+```python
+from dataclasses import dataclass, field
+from rococo.models import VersionedModel
+
+@dataclass
+class RestrictedAliasModel(VersionedModel):
+    # ❌ Big 6 fields cannot use aliases (these will be ignored)
+    entity_id: str = field(default_factory=get_uuid_hex, metadata={'alias': 'id'})
+    version: str = field(default_factory=get_uuid_hex, metadata={'alias': 'ver'})
+    active: bool = field(default=True, metadata={'alias': 'is_active'})
+    
+    # ✅ Custom fields can use aliases
+    custom_field: str = field(default="test", metadata={'alias': 'custom_name'})
+
+model = RestrictedAliasModel(custom_field="test value")
+result = model.as_dict()
+
+# Big 6 fields always use original names (aliases ignored)
+assert "entity_id" in result  # ✅ Original name used
+assert "version" in result    # ✅ Original name used  
+assert "active" in result     # ✅ Original name used
+assert "id" not in result     # ❌ Alias ignored
+assert "ver" not in result    # ❌ Alias ignored
+assert "is_active" not in result  # ❌ Alias ignored
+
+# Custom fields use aliases
+assert "custom_name" in result    # ✅ Alias used
+assert "custom_field" not in result  # ❌ Original name not used
+```
+
+**Big 6 Fields (No Aliases Allowed):**
+- `entity_id`
+- `version` 
+- `previous_version`
+- `changed_on`
+- `changed_by_id`
+- `active`
+
+##### Complex Type Integration
+
+Field aliases work seamlessly with other VersionedModel features:
+
+```python
+from dataclasses import dataclass, field
+from typing import Optional, List
+from enum import Enum
+from rococo.models import VersionedModel
+
+class Priority(Enum):
+    low = "low"
+    medium = "medium" 
+    high = "high"
+
+@dataclass
+class TaskDetails:
+    estimated_hours: int = 0
+    complexity: str = "simple"
+
+@dataclass
+class Task(VersionedModel):
+    allow_extra = True  # Enable extra fields
+    
+    # Aliased fields with complex types
+    task_title: str = field(default="", metadata={'alias': 'title'})
+    task_priority: Priority = field(default=Priority.medium, metadata={'alias': 'priority'})
+    task_details: Optional[TaskDetails] = field(
+        default=None, 
+        metadata={'alias': 'details', 'model': TaskDetails}
+    )
+    assigned_users: List[str] = field(default_factory=list, metadata={'alias': 'assignees'})
+    
+    @property
+    def display_name(self) -> str:
+        """Computed property (not aliased)."""
+        return f"[{self.task_priority.value.upper()}] {self.task_title}"
+
+# Create task with complex data
+task = Task(
+    task_title="Implement feature X",
+    task_priority=Priority.high,
+    task_details=TaskDetails(estimated_hours=8, complexity="complex"),
+    assigned_users=["user1", "user2"]
+)
+
+# Add extra field
+task.custom_metadata = {"source": "api", "version": "2.0"}
+
+# Serialization with aliases
+result = task.as_dict()
+print(result)
+# Output: {
+#     "title": "Implement feature X",        # aliased from task_title
+#     "priority": "high",                    # aliased from task_priority (enum → string)
+#     "details": {                           # aliased from task_details (dataclass → dict)
+#         "estimated_hours": 8,
+#         "complexity": "complex"
+#     },
+#     "assignees": ["user1", "user2"],       # aliased from assigned_users
+#     "custom_metadata": {                   # extra field (no alias)
+#         "source": "api", 
+#         "version": "2.0"
+#     },
+#     "display_name": "[HIGH] Implement feature X",  # computed property (no alias)
+#     "entity_id": "...",                    # Big 6 field (no alias)
+#     # ... other fields
+# }
+
+# Deserialization with aliases
+api_data = {
+    "title": "Updated task",
+    "priority": "low", 
+    "details": {"estimated_hours": 4, "complexity": "simple"},
+    "assignees": ["user3"],
+    "project_id": "proj-123"  # extra field
+}
+
+restored_task = Task.from_dict(api_data)
+print(restored_task.task_title)     # Output: "Updated task"
+print(restored_task.task_priority)  # Output: Priority.low
+print(restored_task.task_details.estimated_hours)  # Output: 4
+print(restored_task.assigned_users) # Output: ["user3"]
+print(restored_task.extra["project_id"])  # Output: "proj-123"
+```
+
+##### Roundtrip Consistency
+
+Field aliases maintain perfect consistency through serialization and deserialization cycles:
+
+```python
+from dataclasses import dataclass, field
+from rococo.models import VersionedModel
+
+@dataclass
+class Product(VersionedModel):
+    product_name: str = field(default="", metadata={'alias': 'name'})
+    product_price: float = field(default=0.0, metadata={'alias': 'price'})
+    product_category: str = field(default="", metadata={'alias': 'category'})
+
+# Create original product
+original = Product(
+    product_name="Laptop",
+    product_price=999.99,
+    product_category="Electronics"
+)
+
+# Serialize using aliases
+serialized_data = original.as_dict()
+print("Serialized:", serialized_data)
+# Output: {
+#     "name": "Laptop",
+#     "price": 999.99, 
+#     "category": "Electronics",
+#     "entity_id": "...",
+#     # ... other fields
+# }
+
+# Deserialize from aliased data
+restored = Product.from_dict(serialized_data)
+
+# Verify perfect roundtrip consistency
+assert restored.product_name == original.product_name        # ✅ "Laptop"
+assert restored.product_price == original.product_price      # ✅ 999.99
+assert restored.product_category == original.product_category # ✅ "Electronics"
+assert restored.entity_id == original.entity_id             # ✅ Same ID
+
+# Serialize again to verify consistency
+re_serialized = restored.as_dict()
+assert serialized_data == re_serialized  # ✅ Perfect roundtrip consistency
+
+print("Roundtrip successful! ✅")
+```
+
+**Key Features:**
+- **Flexible Naming**: Use different field names for internal models vs external APIs
+- **Big 6 Protection**: Core VersionedModel fields always use original names for data integrity
+- **Complex Type Support**: Works with enums, dataclasses, extra fields, and computed properties
+- **Roundtrip Consistency**: Perfect data integrity through serialization/deserialization cycles
+- **Backward Compatibility**: Models without aliases work exactly as before
+- **Mixed Data Support**: Handles data containing both aliased and original field names
+- **Error Resilience**: Invalid or empty aliases are gracefully ignored
 
 #### Calculated Properties
 
@@ -1346,6 +1595,149 @@ class LoginMethodRepository(BaseRepository):
     It also takes in a message adapter and queue name for RabbitMQ and SQS messaging which can later be used in the save() method by passing a boolean.
 
     The save() method takes a LoginMethod object as input and saves it to the database. The get_one() method takes a dictionary of conditions as input and returns a single LoginMethod object that matches those conditions. The get_many() method takes a dictionary of conditions as input and returns a list of LoginMethod objects that match those conditions.
+
+### Repository Configuration Options
+
+All repositories inherit from `BaseRepository` and support several configuration options that control their behavior:
+
+#### Auditing Control
+
+By default, repositories use audit tables to maintain version history. This can be controlled using the `use_audit_table` property:
+
+```python
+from rococo.repositories import BaseRepository
+from rococo.data import PostgreSQLAdapter
+
+# Default behavior: auditing enabled
+repository = BaseRepository(
+    adapter=db_adapter,
+    model=MyModel,
+    message_adapter=message_adapter,
+    queue_name="my_queue"
+)
+
+print(repository.use_audit_table)  # Output: True
+
+# Disable auditing for this repository
+repository.use_audit_table = False
+
+# When saving, previous versions won't be moved to audit tables
+repository.save(my_model_instance)
+```
+
+#### TTL (Time To Live) Fields for MongoDB
+
+**MongoDB repositories only** support TTL (Time To Live) functionality for automatic document expiration. This is particularly useful for implementing data retention policies on deleted records:
+
+```python
+from rococo.repositories.mongodb import MongoDbRepository
+from rococo.data import MongoDBAdapter
+
+# Create MongoDB repository with TTL configuration
+repository = MongoDbRepository(
+    db_adapter=mongodb_adapter,
+    model=MyModel,
+    message_adapter=message_adapter,
+    queue_name="my_queue"
+)
+
+# Configure TTL for deleted records
+repository.ttl_field = "expires_at"      # Field name for TTL timestamp
+repository.ttl_minutes = 30              # TTL duration in minutes
+
+# When deleting a record, TTL timestamp will be automatically added
+my_model = MyModel(name="Test Record")
+repository.create(my_model, "my_collection")
+
+# Delete the record - TTL field will be added automatically
+deleted_model = repository.delete(my_model, "my_collection")
+
+# The deleted document will now have an "expires_at" field set to
+# current_time + 30 minutes, and MongoDB will automatically remove
+# the document after that time expires
+```
+
+**TTL Configuration Details:**
+
+- **`ttl_field`**: The name of the field that will store the TTL timestamp (e.g., "expires_at", "delete_after")
+- **`ttl_minutes`**: The number of minutes from deletion time when the document should expire
+- **MongoDB Index**: You need to create a TTL index on the specified field in MongoDB:
+  ```javascript
+  // In MongoDB shell
+  db.my_collection.createIndex({"expires_at": 1}, {expireAfterSeconds: 0})
+  ```
+
+**TTL Usage Examples:**
+
+```python
+# Different TTL configurations for different use cases
+class UserRepository(MongoDbRepository):
+    def __init__(self, db_adapter, message_adapter, queue_name):
+        super().__init__(db_adapter, User, message_adapter, queue_name)
+        # Deleted users expire after 90 days
+        self.ttl_field = "scheduled_deletion"
+        self.ttl_minutes = 90 * 24 * 60  # 90 days in minutes
+
+class SessionRepository(MongoDbRepository):
+    def __init__(self, db_adapter, message_adapter, queue_name):
+        super().__init__(db_adapter, Session, message_adapter, queue_name)
+        # Deleted sessions expire after 1 hour
+        self.ttl_field = "expires_at"
+        self.ttl_minutes = 60  # 1 hour
+
+class LogRepository(MongoDbRepository):
+    def __init__(self, db_adapter, message_adapter, queue_name):
+        super().__init__(db_adapter, LogEntry, message_adapter, queue_name)
+        # Deleted logs expire after 7 days
+        self.ttl_field = "cleanup_after"
+        self.ttl_minutes = 7 * 24 * 60  # 7 days in minutes
+
+# Usage
+user_repo = UserRepository(mongodb_adapter, message_adapter, "user_queue")
+session_repo = SessionRepository(mongodb_adapter, message_adapter, "session_queue")
+log_repo = LogRepository(mongodb_adapter, message_adapter, "log_queue")
+
+# When deleting, each repository will apply its own TTL settings
+user_repo.delete(user_instance, "users")        # Expires in 90 days
+session_repo.delete(session_instance, "sessions")  # Expires in 1 hour
+log_repo.delete(log_instance, "logs")           # Expires in 7 days
+```
+
+**Important Notes:**
+- TTL functionality is **only available for MongoDB repositories** (`MongoDbRepository`)
+- TTL fields are only added during `delete()` operations, not during regular saves
+- If `ttl_field` is `None` (default), no TTL timestamp is added
+- The actual document expiration is handled by MongoDB's TTL feature, not by the repository
+- You must create appropriate TTL indexes in MongoDB for the expiration to work
+
+#### Calculated Fields Control
+
+Control whether computed properties are included in database saves:
+
+```python
+# Default behavior: calculated fields excluded from database saves
+repository = BaseRepository(
+    adapter=db_adapter,
+    model=MyModel,
+    message_adapter=message_adapter,
+    queue_name="my_queue"
+)
+
+print(repository.save_calculated_fields)  # Output: False
+
+# Include calculated fields in database saves
+repository.save_calculated_fields = True
+
+# Now @property methods will be included when saving to database
+repository.save(my_model_instance)
+```
+
+**Key Repository Configuration Features:**
+- **Auditing Control**: Enable/disable audit table usage with `use_audit_table`
+- **TTL Support**: MongoDB-only feature for automatic document expiration using `ttl_field` and `ttl_minutes`
+- **Calculated Fields**: Control computed property inclusion in database saves with `save_calculated_fields`
+- **Database Agnostic**: Most features work across all supported databases (PostgreSQL, MySQL, SurrealDB, MongoDB)
+- **Flexible Configuration**: Settings can be configured per repository instance for different data retention policies
 
 #### RepositoryFactory
 

@@ -1,7 +1,7 @@
 import json
 import logging
 from uuid import UUID
-from typing import Any, Dict, List, Optional, Type
+from typing import Any, Dict, List, Optional, Type, Tuple
 from rococo.data import MongoDBAdapter
 from rococo.messaging import MessageAdapter
 from rococo.repositories import BaseRepository
@@ -111,6 +111,7 @@ class MongoDbRepository(BaseRepository):
         collection_name: str,
         index: str,
         query: Optional[Dict[str, Any]] = None,
+        sort: Optional[List[Tuple[str, int]]] = None,
         limit: Optional[int] = None,
         offset: Optional[int] = None
     ) -> List[VersionedModel]:
@@ -136,6 +137,7 @@ class MongoDbRepository(BaseRepository):
                 table=collection_name,
                 conditions=db_conditions,
                 hint=index,
+                sort=sort,
                 limit=limit,
                 offset=offset
             )

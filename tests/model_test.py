@@ -7,7 +7,7 @@ from dataclasses import dataclass, field, fields
 import pytest
 from unittest.mock import patch, MagicMock
 from rococo.models import VersionedModel
-from rococo.models.versioned_model import ModelValidationError
+from rococo.models.versioned_model import ModelValidationError, get_uuid_hex
 
 
 def test_prepare_for_save():
@@ -1727,3 +1727,417 @@ def test_as_dict_partial_instance_with_properties():
     assert result_with_props == {'entity_id': model.entity_id}
     assert "computed_name" not in result_with_props
     assert "name" not in result_with_props
+
+
+# Tests for field alias functionality
+def test_field_alias_in_as_dict():
+    """Test that field aliases are used in as_dict() output"""
+
+    @dataclass
+    class ModelWithAliases(VersionedModel):
+        name: str = field(default="test", metadata={'alias': 'display_name'})
+        user_email: str = field(
+            default="test@example.com", metadata={'alias': 'email'})
+        score: int = field(default=100, metadata={'alias': 'rating'})
+        # Field without alias
+        description: str = "test description"
+
+    model = ModelWithAliases(
+        name="Test User",
+        user_email="user@test.com",
+        score=95,
+        description="A test user"
+    )
+
+    result = model.as_dict()
+
+    # Aliased fields should use their aliases as keys
+    assert "display_name" in result
+    assert result["display_name"] == "Test User"
+    assert "email" in result
+    assert result["email"] == "user@test.com"
+    assert "rating" in result
+    assert result["rating"] == 95
+
+    # Original field names should not be present for aliased fields
+    assert "name" not in result
+    assert "user_email" not in result
+    assert "score" not in result
+
+    # Non-aliased fields should use original names
+    assert "description" in result
+    assert result["description"] == "A test user"
+
+    # Big 6 fields should always use original names (no aliases)
+    assert "entity_id" in result
+    assert "version" in result
+    assert "active" in result
+    assert "changed_on" in result
+    assert "changed_by_id" in result
+
+
+def test_field_alias_in_from_dict():
+    """Test that field aliases are handled correctly in from_dict()"""
+
+    @dataclass
+    class ModelWithAliases(VersionedModel):
+        name: str = field(default="test", metadata={'alias': 'display_name'})
+        user_email: str = field(
+            default="test@example.com", metadata={'alias': 'email'})
+        score: int = field(default=100, metadata={'alias': 'rating'})
+        description: str = "test description"
+
+    # Create data using aliases
+    data = {
+        "entity_id": "test-id",
+        "display_name": "Test User",
+        "email": "user@test.com",
+        "rating": 95,
+        "description": "A test user",
+        # Big 6 fields should use original names
+        "active": True,
+        "version": "test-version"
+    }
+
+    model = ModelWithAliases.from_dict(data)
+
+    # Fields should be correctly mapped from aliases to original field names
+    assert model.name == "Test User"
+    assert model.user_email == "user@test.com"
+    assert model.score == 95
+    assert model.description == "A test user"
+
+    # Big 6 fields should work normally
+    assert model.entity_id == "test-id"
+    assert model.active == True
+    assert model.version == "test-version"
+
+
+def test_field_alias_roundtrip_conversion():
+    """Test that field aliases work correctly through as_dict -> from_dict roundtrip"""
+
+    @dataclass
+    class ModelWithAliases(VersionedModel):
+        full_name: str = field(default="test", metadata={'alias': 'name'})
+        contact_email: str = field(
+            default="test@example.com", metadata={'alias': 'email'})
+        user_score: int = field(default=100, metadata={'alias': 'score'})
+        notes: str = "test notes"
+
+    # Create original model
+    original = ModelWithAliases(
+        full_name="John Doe",
+        contact_email="john@example.com",
+        user_score=85,
+        notes="Test user notes"
+    )
+
+    # Convert to dict (should use aliases)
+    dict_data = original.as_dict()
+
+    # Verify aliases are used in dict
+    assert "name" in dict_data
+    assert dict_data["name"] == "John Doe"
+    assert "email" in dict_data
+    assert dict_data["email"] == "john@example.com"
+    assert "score" in dict_data
+    assert dict_data["score"] == 85
+    assert "notes" in dict_data
+    assert dict_data["notes"] == "Test user notes"
+
+    # Original field names should not be in dict
+    assert "full_name" not in dict_data
+    assert "contact_email" not in dict_data
+    assert "user_score" not in dict_data
+
+    # Convert back from dict (should handle aliases)
+    restored = ModelWithAliases.from_dict(dict_data)
+
+    # Verify all data is correctly restored
+    assert restored.full_name == original.full_name
+    assert restored.contact_email == original.contact_email
+    assert restored.user_score == original.user_score
+    assert restored.notes == original.notes
+    assert restored.entity_id == original.entity_id
+    assert restored.active == original.active
+
+
+def test_field_alias_with_mixed_data():
+    """Test field aliases work when data contains both aliased and original field names"""
+
+    @dataclass
+    class ModelWithAliases(VersionedModel):
+        user_name: str = field(default="test", metadata={'alias': 'name'})
+        user_age: int = field(default=25, metadata={'alias': 'age'})
+
+    # Data with mixed aliased and original field names
+    data = {
+        "entity_id": "test-id",
+        "name": "Alice",  # Using alias
+        "user_age": 30,   # Using original field name
+        "active": True
+    }
+
+    model = ModelWithAliases.from_dict(data)
+
+    # Alias should take precedence, but original field name should also work
+    assert model.user_name == "Alice"  # From alias 'name'
+    assert model.user_age == 30        # From original field name
+    assert model.entity_id == "test-id"
+    assert model.active == True
+
+
+def test_field_alias_big_6_fields_not_aliased():
+    """Test that Big 6 fields (entity_id, version, etc.) are never aliased"""
+
+    @dataclass
+    class ModelWithAliases(VersionedModel):
+        # Try to add aliases to Big 6 fields (should be ignored)
+        entity_id: str = field(
+            default_factory=get_uuid_hex, metadata={'alias': 'id'})
+        version: str = field(default_factory=lambda: get_uuid_hex(
+            0), metadata={'alias': 'ver'})
+        active: bool = field(default=True, metadata={'alias': 'is_active'})
+        # Custom field with alias
+        name: str = field(default="test", metadata={'alias': 'display_name'})
+
+    model = ModelWithAliases(name="Test User")
+    result = model.as_dict()
+
+    # Big 6 fields should always use original names, never aliases
+    assert "entity_id" in result
+    assert "version" in result
+    assert "active" in result
+    assert "id" not in result
+    assert "ver" not in result
+    assert "is_active" not in result
+
+    # Custom fields should use aliases
+    assert "display_name" in result
+    assert result["display_name"] == "Test User"
+    assert "name" not in result
+
+
+def test_field_alias_with_none_values():
+    """Test field aliases work correctly with None values"""
+
+    @dataclass
+    class ModelWithAliases(VersionedModel):
+        optional_name: str = field(default=None, metadata={'alias': 'name'})
+        optional_score: int = field(default=None, metadata={'alias': 'rating'})
+
+    model = ModelWithAliases(optional_name=None, optional_score=None)
+    result = model.as_dict()
+
+    # Aliases should be used even for None values
+    assert "name" in result
+    assert result["name"] is None
+    assert "rating" in result
+    assert result["rating"] is None
+
+    # Original field names should not be present
+    assert "optional_name" not in result
+    assert "optional_score" not in result
+
+
+def test_field_alias_with_complex_types():
+    """Test field aliases work with complex field types (enums, dataclasses, etc.)"""
+    from enum import Enum
+    from typing import Optional
+
+    class Status(Enum):
+        active = "active"
+        inactive = "inactive"
+
+    @dataclass
+    class ContactInfo:
+        phone: str = "555-0123"
+        address: str = "123 Main St"
+
+    @dataclass
+    class ModelWithComplexAliases(VersionedModel):
+        user_status: Optional[Status] = field(
+            default=Status.active, metadata={'alias': 'status'})
+        contact_details: Optional[ContactInfo] = field(
+            default=None,
+            metadata={'alias': 'contact', 'model': ContactInfo}
+        )
+        tags: list = field(default_factory=list, metadata={'alias': 'labels'})
+
+    contact = ContactInfo(phone="555-9999", address="456 Oak Ave")
+    model = ModelWithComplexAliases(
+        user_status=Status.inactive,
+        contact_details=contact,
+        tags=["important", "customer"]
+    )
+
+    result = model.as_dict()
+
+    # Enum field should use alias and be converted to string
+    assert "status" in result
+    assert result["status"] == "inactive"
+    assert "user_status" not in result
+
+    # Dataclass field should use alias and be converted to dict
+    assert "contact" in result
+    assert isinstance(result["contact"], dict)
+    assert result["contact"]["phone"] == "555-9999"
+    assert result["contact"]["address"] == "456 Oak Ave"
+    assert "contact_details" not in result
+
+    # List field should use alias
+    assert "labels" in result
+    assert result["labels"] == ["important", "customer"]
+    assert "tags" not in result
+
+    # Test roundtrip
+    restored = ModelWithComplexAliases.from_dict(result)
+    assert restored.user_status == Status.inactive
+    assert isinstance(restored.contact_details, ContactInfo)
+    assert restored.contact_details.phone == "555-9999"
+    assert restored.tags == ["important", "customer"]
+
+
+def test_field_alias_with_extra_fields():
+    """Test field aliases work correctly with extra fields"""
+
+    @dataclass
+    class ModelWithAliasesAndExtra(VersionedModel):
+        allow_extra = True
+        name: str = field(default="test", metadata={'alias': 'display_name'})
+        score: int = field(default=100, metadata={'alias': 'rating'})
+
+    # Create model with extra fields
+    model = ModelWithAliasesAndExtra(name="Test User", score=95)
+    model.extra = {
+        "custom_field": "custom_value",
+        "dynamic_data": {"nested": "value"}
+    }
+
+    result = model.as_dict()
+
+    # Aliased fields should use aliases
+    assert "display_name" in result
+    assert result["display_name"] == "Test User"
+    assert "rating" in result
+    assert result["rating"] == 95
+
+    # Extra fields should be unwrapped normally
+    assert "custom_field" in result
+    assert result["custom_field"] == "custom_value"
+    assert "dynamic_data" in result
+    assert result["dynamic_data"] == {"nested": "value"}
+
+    # Test roundtrip with extra fields
+    restored = ModelWithAliasesAndExtra.from_dict(result)
+    assert restored.name == "Test User"
+    assert restored.score == 95
+    assert restored.extra["custom_field"] == "custom_value"
+    assert restored.extra["dynamic_data"] == {"nested": "value"}
+
+
+def test_field_alias_with_properties():
+    """Test field aliases work correctly with @property methods"""
+
+    @dataclass
+    class ModelWithAliasesAndProperties(VersionedModel):
+        first_name: str = field(default="John", metadata={'alias': 'fname'})
+        last_name: str = field(default="Doe", metadata={'alias': 'lname'})
+
+        @property
+        def full_name(self):
+            return f"{self.first_name} {self.last_name}"
+
+        @property
+        def initials(self):
+            return f"{self.first_name[0]}.{self.last_name[0]}."
+
+    model = ModelWithAliasesAndProperties(
+        first_name="Alice", last_name="Smith")
+
+    # Test with properties included (default)
+    result_with_props = model.as_dict(export_properties=True)
+
+    # Aliased fields should use aliases
+    assert "fname" in result_with_props
+    assert result_with_props["fname"] == "Alice"
+    assert "lname" in result_with_props
+    assert result_with_props["lname"] == "Smith"
+
+    # Properties should be included with original names (no aliases for properties)
+    assert "full_name" in result_with_props
+    assert result_with_props["full_name"] == "Alice Smith"
+    assert "initials" in result_with_props
+    assert result_with_props["initials"] == "A.S."
+
+    # Test with properties excluded
+    result_without_props = model.as_dict(export_properties=False)
+
+    # Only aliased fields should be present
+    assert "fname" in result_without_props
+    assert "lname" in result_without_props
+    assert "full_name" not in result_without_props
+    assert "initials" not in result_without_props
+
+
+def test_field_alias_empty_alias():
+    """Test that empty or invalid aliases are ignored"""
+
+    @dataclass
+    class ModelWithEmptyAlias(VersionedModel):
+        name: str = field(default="test", metadata={
+                          'alias': ''})  # Empty alias
+        score: int = field(default=100, metadata={'alias': None})  # None alias
+        description: str = field(default="desc", metadata={
+                                 'alias': 'desc_text'})  # Valid alias
+
+    model = ModelWithEmptyAlias(name="Test", score=95, description="Test desc")
+    result = model.as_dict()
+
+    # Empty and None aliases should be ignored, use original field names
+    assert "name" in result
+    assert result["name"] == "Test"
+    assert "score" in result
+    assert result["score"] == 95
+
+    # Valid alias should be used
+    assert "desc_text" in result
+    assert result["desc_text"] == "Test desc"
+    assert "description" not in result
+
+
+def test_field_alias_inheritance():
+    """Test field aliases work correctly with model inheritance"""
+
+    @dataclass
+    class BaseModelWithAlias(VersionedModel):
+        base_field: str = field(default="base", metadata={
+                                'alias': 'base_alias'})
+
+    @dataclass
+    class DerivedModelWithAlias(BaseModelWithAlias):
+        derived_field: str = field(default="derived", metadata={
+                                   'alias': 'derived_alias'})
+        # Override base field with different alias
+        base_field: str = field(default="base", metadata={
+                                'alias': 'new_base_alias'})
+
+    model = DerivedModelWithAlias(
+        base_field="base_value", derived_field="derived_value")
+    result = model.as_dict()
+
+    # Derived class aliases should be used
+    assert "new_base_alias" in result
+    assert result["new_base_alias"] == "base_value"
+    assert "derived_alias" in result
+    assert result["derived_alias"] == "derived_value"
+
+    # Original field names and old aliases should not be present
+    assert "base_field" not in result
+    assert "derived_field" not in result
+    assert "base_alias" not in result
+
+    # Test roundtrip
+    restored = DerivedModelWithAlias.from_dict(result)
+    assert restored.base_field == "base_value"
+    assert restored.derived_field == "derived_value"

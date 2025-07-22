@@ -1,7 +1,8 @@
 import json
 import logging
+from datetime import datetime, timezone, timedelta
 from uuid import UUID
-from typing import Any, Dict, List, Optional, Type
+from typing import Any, Dict, List, Optional, Type, Tuple
 from rococo.data import MongoDBAdapter
 from rococo.messaging import MessageAdapter
 from rococo.repositories import BaseRepository
@@ -111,6 +112,7 @@ class MongoDbRepository(BaseRepository):
         collection_name: str,
         index: str,
         query: Optional[Dict[str, Any]] = None,
+        sort: Optional[List[Tuple[str, int]]] = None,
         limit: Optional[int] = None,
         offset: Optional[int] = None
     ) -> List[VersionedModel]:
@@ -136,6 +138,7 @@ class MongoDbRepository(BaseRepository):
                 table=collection_name,
                 conditions=db_conditions,
                 hint=index,
+                sort=sort,
                 limit=limit,
                 offset=offset
             )
@@ -171,9 +174,13 @@ class MongoDbRepository(BaseRepository):
         instance.active = False
 
         data = instance.as_dict(
-            convert_datetime_to_iso_string=True, convert_uuids=True)
+            convert_datetime_to_iso_string=True, convert_uuids=True, export_properties=self.save_calculated_fields)
 
-        if instance.previous_version and instance.previous_version != get_uuid_hex(0):
+        if self.ttl_field:
+            data[self.ttl_field] = datetime.now(
+                timezone.utc) + timedelta(minutes=self.ttl_minutes)
+
+        if self.use_audit_table and instance.previous_version and instance.previous_version != get_uuid_hex(0):
             self._execute_within_context(
                 lambda: self.adapter.move_entity_to_audit_table(
                     collection_name,

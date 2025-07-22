@@ -30,6 +30,12 @@ class BaseRepository:
         self.user_id = user_id
         # Don't save calculated fields (properties) to database by default
         self.save_calculated_fields = False
+        # Enable auditing by default
+        self.use_audit_table = True
+        # Ttl field for delete() method
+        self.ttl_field = None
+        # Ttl (in minutes) for deleted records
+        self.ttl_minutes = 0
 
     def _execute_within_context(
         self,

@@ -4,6 +4,7 @@ Extended MongoDbRepository test cases
 
 import json
 import unittest
+from datetime import datetime, timezone, timedelta
 from uuid import UUID
 from unittest.mock import MagicMock
 from .base_repository_test import TestVersionedModel
@@ -258,6 +259,7 @@ class MongoDbRepositoryTestCase(unittest.TestCase):
             table="test_collection",
             conditions={'active': True},
             hint="entity_id_idx",
+            sort=None,
             limit=10,
             offset=5
         )
@@ -287,6 +289,7 @@ class MongoDbRepositoryTestCase(unittest.TestCase):
             table="test_collection",
             conditions={'active': True},
             hint="entity_id_idx",
+            sort=None,
             limit=None,    # default limit (0 means no limit)
             offset=None    # default offset
         )
@@ -294,6 +297,189 @@ class MongoDbRepositoryTestCase(unittest.TestCase):
         # Verify the result
         self.assertEqual(len(result), 1)
         self.assertIsInstance(result[0], TestVersionedModel)
+
+    def test_ttl_functionality_on_delete(self):
+        """
+        Test TTL (Time To Live) functionality with ttl_field and ttl_minutes properties.
+
+        This test verifies that when ttl_field and ttl_minutes are set on the repository,
+        the delete method correctly adds a TTL timestamp to the document data.
+        """
+        # Set up TTL properties on the repository
+        self.repository.ttl_field = "expires_at"
+        self.repository.ttl_minutes = 30
+
+        # Create a test instance
+        test_instance = TestVersionedModel(entity_id=UUID(int=123))
+        test_instance.active = True
+
+        # Mock the adapter methods
+        self.db_adapter_mock.move_entity_to_audit_table.return_value = None
+
+        # Capture the data passed to adapter.save to verify TTL field is added
+        saved_data = None
+
+        def capture_save_data(collection_name, data):
+            nonlocal saved_data
+            saved_data = data
+            return data
+
+        self.db_adapter_mock.save.side_effect = capture_save_data
+
+        # Record the time before calling delete to verify TTL calculation
+        before_delete_time = datetime.now(timezone.utc)
+
+        # Call delete method
+        result = self.repository.delete(test_instance, "test_collection")
+
+        # Record the time after calling delete
+        after_delete_time = datetime.now(timezone.utc)
+
+        # Verify that the instance is marked as inactive
+        self.assertFalse(result.active)
+
+        # Verify that adapter.save was called
+        self.db_adapter_mock.save.assert_called_once()
+
+        # Verify that the TTL field was added to the saved data
+        self.assertIsNotNone(saved_data)
+        self.assertIn("expires_at", saved_data)
+
+        # Verify that the TTL timestamp is correctly calculated
+        # It should be approximately 30 minutes from the current time
+        expected_ttl_time = before_delete_time + timedelta(minutes=30)
+        actual_ttl_time = saved_data["expires_at"]
+
+        # Convert string back to datetime if it was serialized
+        if isinstance(actual_ttl_time, str):
+            actual_ttl_time = datetime.fromisoformat(
+                actual_ttl_time.replace('Z', '+00:00'))
+
+        # Allow for a small time difference (up to 1 minute) due to test execution time
+        time_difference = abs(
+            (actual_ttl_time - expected_ttl_time).total_seconds())
+        self.assertLess(time_difference, 60,
+                        f"TTL timestamp should be approximately 30 minutes from delete time. "
+                        f"Expected: {expected_ttl_time}, Actual: {actual_ttl_time}")
+
+        # Verify that the TTL time is after the delete time
+        self.assertGreater(actual_ttl_time, before_delete_time)
+
+    def test_ttl_functionality_not_applied_when_ttl_field_not_set(self):
+        """
+        Test that TTL functionality is not applied when ttl_field is not set.
+
+        This test verifies that when ttl_field is None (default), the delete method
+        does not add any TTL timestamp to the document data.
+        """
+        # Ensure TTL properties are not set (default state)
+        self.repository.ttl_field = None
+        self.repository.ttl_minutes = 30  # This should be ignored when ttl_field is None
+
+        # Create a test instance
+        test_instance = TestVersionedModel(entity_id=UUID(int=456))
+        test_instance.active = True
+
+        # Mock the adapter methods
+        self.db_adapter_mock.move_entity_to_audit_table.return_value = None
+
+        # Capture the data passed to adapter.save
+        saved_data = None
+
+        def capture_save_data(collection_name, data):
+            nonlocal saved_data
+            saved_data = data
+            return data
+
+        self.db_adapter_mock.save.side_effect = capture_save_data
+
+        # Call delete method
+        result = self.repository.delete(test_instance, "test_collection")
+
+        # Verify that the instance is marked as inactive
+        self.assertFalse(result.active)
+
+        # Verify that adapter.save was called
+        self.db_adapter_mock.save.assert_called_once()
+
+        # Verify that no TTL field was added to the saved data
+        self.assertIsNotNone(saved_data)
+        self.assertNotIn("expires_at", saved_data)
+
+        # Verify that no field with a datetime value representing TTL was added
+        for key, value in saved_data.items():
+            if isinstance(value, (str, datetime)):
+                # If it's a datetime string, it shouldn't be a future timestamp
+                # (beyond a reasonable margin for the test execution time)
+                if isinstance(value, str):
+                    try:
+                        parsed_time = datetime.fromisoformat(
+                            value.replace('Z', '+00:00'))
+                        # Allow for small execution time but not 30 minutes in the future
+                        time_diff = (
+                            parsed_time - datetime.now(timezone.utc)).total_seconds()
+                        self.assertLess(time_diff, 300,  # 5 minutes max for test execution
+                                        f"Found unexpected future timestamp in field '{key}': {value}")
+                    except (ValueError, TypeError):
+                        # Not a datetime string, ignore
+                        pass
+
+    def test_ttl_functionality_with_different_field_name_and_minutes(self):
+        """
+        Test TTL functionality with custom field name and different TTL minutes.
+
+        This test verifies that the TTL functionality works correctly with
+        different field names and TTL durations.
+        """
+        # Set up TTL properties with custom values
+        self.repository.ttl_field = "delete_after"
+        self.repository.ttl_minutes = 60  # 1 hour
+
+        # Create a test instance
+        test_instance = TestVersionedModel(entity_id=UUID(int=789))
+        test_instance.active = True
+
+        # Mock the adapter methods
+        self.db_adapter_mock.move_entity_to_audit_table.return_value = None
+
+        # Capture the data passed to adapter.save
+        saved_data = None
+
+        def capture_save_data(collection_name, data):
+            nonlocal saved_data
+            saved_data = data
+            return data
+
+        self.db_adapter_mock.save.side_effect = capture_save_data
+
+        # Record the time before calling delete
+        before_delete_time = datetime.now(timezone.utc)
+
+        # Call delete method
+        result = self.repository.delete(test_instance, "test_collection")
+
+        # Verify that the instance is marked as inactive
+        self.assertFalse(result.active)
+
+        # Verify that the custom TTL field was added
+        self.assertIsNotNone(saved_data)
+        self.assertIn("delete_after", saved_data)
+
+        # Verify that the TTL timestamp is correctly calculated for 60 minutes
+        expected_ttl_time = before_delete_time + timedelta(minutes=60)
+        actual_ttl_time = saved_data["delete_after"]
+
+        # Convert string back to datetime if it was serialized
+        if isinstance(actual_ttl_time, str):
+            actual_ttl_time = datetime.fromisoformat(
+                actual_ttl_time.replace('Z', '+00:00'))
+
+        # Allow for a small time difference due to test execution time
+        time_difference = abs(
+            (actual_ttl_time - expected_ttl_time).total_seconds())
+        self.assertLess(time_difference, 60,
+                        f"TTL timestamp should be approximately 60 minutes from delete time. "
+                        f"Expected: {expected_ttl_time}, Actual: {actual_ttl_time}")
 
 
 if __name__ == '__main__':

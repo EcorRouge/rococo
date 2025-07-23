@@ -1,5 +1,6 @@
 from typing import Any, Dict, List, Optional, Tuple, Union
 from pymongo import MongoClient, ReturnDocument, errors
+from pymongo.database import Database
 from pymongo.collection import Collection
 from pymongo.client_session import ClientSession
 from pymongo.read_concern import ReadConcern
@@ -35,7 +36,7 @@ class MongoDBAdapter(DbAdapter):
         options.update(client_options)
         self.client: MongoClient = MongoClient(mongo_uri, **options)
         self.db_name: str = mongo_database
-        self.db: Any = None
+        self.db: Database = None
         self._session: Optional[ClientSession] = None
 
     def __enter__(self) -> 'MongoDBAdapter':
@@ -478,6 +479,34 @@ class MongoDBAdapter(DbAdapter):
             return coll.create_index(columns, **options)
         except errors.PyMongoError as e:
             raise RuntimeError(f"create_index failed: {e}") from e
+
+    def aggregate(
+        self,
+        table: str,
+        pipeline: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """
+        Execute an aggregation pipeline and return raw results.
+
+        This method executes a MongoDB aggregation pipeline on the specified collection
+        and returns the unmodified results as a list of dictionaries.
+
+        Args:
+            table (str): The name of the collection to aggregate on.
+            pipeline (List[Dict[str, Any]]): MongoDB aggregation pipeline stages.
+
+        Returns:
+            List[Dict[str, Any]]: Raw aggregation results.
+
+        Raises:
+            RuntimeError: If the aggregation fails due to a PyMongoError.
+        """
+        try:
+            coll = self._get_collection(table)
+            cursor = coll.aggregate(pipeline, session=self._session)
+            return list(cursor)
+        except errors.PyMongoError as e:
+            raise RuntimeError(f"aggregate failed: {e}") from e
 
     def get_move_entity_to_audit_table_query(self, table: str, entity_id: str):
         """

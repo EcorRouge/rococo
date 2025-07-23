@@ -202,6 +202,60 @@ class MongoDbRepository(BaseRepository):
 
         return instance
 
+    def aggregate(
+        self,
+        collection_name: str,
+        pipeline: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """
+        Execute an aggregation pipeline and return raw results.
+
+        This method executes a MongoDB aggregation pipeline on the specified collection
+        and returns the unmodified results as a list of dictionaries. This is useful
+        when you need raw aggregation results that may contain custom fields from
+        $project stages or other transformations.
+
+        Args:
+            collection_name (str): The name of the collection to aggregate on.
+            pipeline (List[Dict[str, Any]]): MongoDB aggregation pipeline stages.
+
+        Returns:
+            List[Dict[str, Any]]: Raw aggregation results.
+        """
+
+        return self._execute_within_context(
+            lambda: self.adapter.aggregate(collection_name, pipeline)
+        )
+
+    def aggregate_objects(
+        self,
+        collection_name: str,
+        pipeline: List[Dict[str, Any]]
+    ) -> List[VersionedModel]:
+        """
+        Execute an aggregation pipeline and return deserialized VersionedModel objects.
+
+        This method is a wrapper around the aggregate method that deserializes the
+        raw results into VersionedModel instances. Use this when your aggregation
+        pipeline returns documents that can be converted to your model objects.
+
+        Args:
+            collection_name (str): The name of the collection to aggregate on.
+            pipeline (List[Dict[str, Any]]): MongoDB aggregation pipeline stages.
+
+        Returns:
+            List[VersionedModel]: List of deserialized model instances.
+        """
+        raw_results = self.aggregate(collection_name, pipeline)
+
+        if not raw_results:
+            return []
+
+        result = []
+        for data in raw_results:
+            result.append(self.model.from_dict(data))
+        return result
+
     def create(
         self,
         instance: VersionedModel,
@@ -272,7 +326,7 @@ class MongoDbRepository(BaseRepository):
             VersionedModel: The saved VersionedModel instance.
         """
         # 1) if this isn't the very first version, move the existing latest doc into audit
-        if instance.previous_version and instance.previous_version != get_uuid_hex(0):
+        if self.use_audit_table and instance.previous_version and instance.previous_version != get_uuid_hex(0):
             self._execute_within_context(
                 lambda: self.adapter.move_entity_to_audit_table(
                     collection_name,

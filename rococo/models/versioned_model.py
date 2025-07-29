@@ -1,11 +1,15 @@
 import pkgutil
 import os
 import importlib
+import logging
 from uuid import uuid4, UUID
 from dataclasses import dataclass, field, fields, InitVar, is_dataclass
 from datetime import datetime, timezone
+from dateutil.parser import isoparse
 from typing import Any, Dict, List, Union, get_type_hints, get_origin, get_args
 from enum import Enum
+
+logger = logging.getLogger(__name__)
 
 # Constants for VersionedModel field groups
 BIG_6_FIELDS = {'entity_id', 'version', 'previous_version',
@@ -148,7 +152,8 @@ class VersionedModel:
                                      for u in value[1:-1].split(',') if u.strip()]
                         setattr(self, f.name, uuid_list)
                     except ValueError:
-                        print(f"Invalid UUIDs in list for field '{f.name}'")
+                        logger.info(
+                            f"Invalid UUIDs in list for field '{f.name}'")
 
     def __getattribute__(self, name):
         """
@@ -464,9 +469,9 @@ class VersionedModel:
                     clean_data[k] = UUID(
                         v).hex if v and not isinstance(v, UUID) else v
                 except ValueError:
-                    print(f"'{v}' is not a valid UUID.")
+                    logger.info(f"'{v}' is not a valid UUID.")
 
-            # Handle enum conversion from string values
+            # Handle enum conversion from string values and datetime conversion from ISO strings
             elif v is not None:
                 expected_type = hints.get(k)
                 if expected_type:
@@ -483,12 +488,28 @@ class VersionedModel:
                             except ValueError:
                                 # If the string value doesn't match any enum value, leave as is
                                 pass
+                        # Find datetime type in the Union for Optional[datetime]
+                        datetime_type = next(
+                            (arg for arg in args if arg is datetime), None)
+                        if datetime_type and isinstance(v, str):
+                            try:
+                                clean_data[k] = isoparse(v)
+                            except (ValueError, TypeError):
+                                # If the string value can't be parsed as datetime, leave as is
+                                pass
                     # Handle direct enum types
                     elif isinstance(expected_type, type) and issubclass(expected_type, Enum) and isinstance(v, str):
                         try:
                             clean_data[k] = expected_type(v)
                         except ValueError:
                             # If the string value doesn't match any enum value, leave as is
+                            pass
+                    # Handle direct datetime types
+                    elif expected_type is datetime and isinstance(v, str):
+                        try:
+                            clean_data[k] = isoparse(v)
+                        except (ValueError, TypeError):
+                            # If the string value can't be parsed as datetime, leave as is
                             pass
 
                 # Handle dataclass conversion from dict values

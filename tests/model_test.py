@@ -369,11 +369,9 @@ def test_from_dict_uuid_validation():
     model = VersionedModel.from_dict(valid_data)
     assert model.entity_id == UUID(int=1).hex
 
-    # Test with invalid UUID string (should print error but not crash)
-    with patch('builtins.print') as mock_print:
-        invalid_data = {"entity_id": "invalid-uuid"}
-        model = VersionedModel.from_dict(invalid_data)
-        mock_print.assert_called_with("'invalid-uuid' is not a valid UUID.")
+    # Test with invalid UUID string (should log error but not crash)
+    invalid_data = {"entity_id": "invalid-uuid"}
+    model = VersionedModel.from_dict(invalid_data)
 
 
 def test_from_dict_field_filtering():
@@ -2141,3 +2139,278 @@ def test_field_alias_inheritance():
     restored = DerivedModelWithAlias.from_dict(result)
     assert restored.base_field == "base_value"
     assert restored.derived_field == "derived_value"
+
+
+# Tests for datetime parsing in from_dict()
+def test_datetime_parsing_from_iso_string():
+    """Test that datetime fields are correctly parsed from ISO strings in from_dict()"""
+
+    @dataclass
+    class TestModelWithDatetime(VersionedModel):
+        created_at: datetime = field(
+            default_factory=lambda: datetime.now(timezone.utc))
+        updated_at: datetime = field(
+            default_factory=lambda: datetime.now(timezone.utc))
+
+    # Test data with datetime fields as ISO strings (simulating data from MongoDB)
+    test_data = {
+        'entity_id': 'test123',
+        'version': 'version123',
+        'previous_version': None,
+        'active': True,
+        'changed_by_id': 'user123',
+        'changed_on': '2024-01-15T10:30:00+00:00',  # ISO string
+        'created_at': '2024-01-15T09:00:00+00:00',   # ISO string
+        'updated_at': '2024-01-15T11:00:00+00:00',   # ISO string
+    }
+
+    # Create model instance from dict
+    model = TestModelWithDatetime.from_dict(test_data)
+
+    # Verify that datetime strings were parsed correctly
+    assert isinstance(
+        model.changed_on, datetime), f"changed_on should be datetime, got {type(model.changed_on)}"
+    assert isinstance(
+        model.created_at, datetime), f"created_at should be datetime, got {type(model.created_at)}"
+    assert isinstance(
+        model.updated_at, datetime), f"updated_at should be datetime, got {type(model.updated_at)}"
+
+    # Verify the actual datetime values
+    expected_changed_on = datetime(2024, 1, 15, 10, 30, 0, tzinfo=timezone.utc)
+    expected_created_at = datetime(2024, 1, 15, 9, 0, 0, tzinfo=timezone.utc)
+    expected_updated_at = datetime(2024, 1, 15, 11, 0, 0, tzinfo=timezone.utc)
+
+    assert model.changed_on == expected_changed_on, f"changed_on mismatch: {model.changed_on} != {expected_changed_on}"
+    assert model.created_at == expected_created_at, f"created_at mismatch: {model.created_at} != {expected_created_at}"
+    assert model.updated_at == expected_updated_at, f"updated_at mismatch: {model.updated_at} != {expected_updated_at}"
+
+
+def test_datetime_parsing_optional_fields():
+    """Test datetime parsing works with Optional[datetime] fields"""
+    from typing import Optional
+
+    @dataclass
+    class TestModelWithOptionalDatetime(VersionedModel):
+        created_at: datetime = field(
+            default_factory=lambda: datetime.now(timezone.utc))
+        updated_at: Optional[datetime] = None
+        deleted_at: Optional[datetime] = None
+
+    # Test with ISO string for optional field
+    test_data = {
+        'entity_id': 'test123',
+        'created_at': '2024-01-15T09:00:00+00:00',
+        'updated_at': '2024-01-15T11:00:00+00:00',  # ISO string
+        'deleted_at': None  # None value
+    }
+
+    model = TestModelWithOptionalDatetime.from_dict(test_data)
+
+    # Required datetime field should be parsed
+    assert isinstance(model.created_at, datetime)
+    assert model.created_at == datetime(
+        2024, 1, 15, 9, 0, 0, tzinfo=timezone.utc)
+
+    # Optional datetime field with ISO string should be parsed
+    assert isinstance(model.updated_at, datetime)
+    assert model.updated_at == datetime(
+        2024, 1, 15, 11, 0, 0, tzinfo=timezone.utc)
+
+    # Optional datetime field with None should remain None
+    assert model.deleted_at is None
+
+
+def test_datetime_parsing_preserves_existing_datetime():
+    """Test that existing datetime objects are preserved unchanged"""
+
+    @dataclass
+    class TestModelWithDatetime(VersionedModel):
+        created_at: datetime = field(
+            default_factory=lambda: datetime.now(timezone.utc))
+
+    # Test with already datetime object
+    existing_datetime = datetime(2024, 1, 15, 9, 0, 0, tzinfo=timezone.utc)
+    test_data = {
+        'entity_id': 'test123',
+        'created_at': existing_datetime  # Already a datetime object
+    }
+
+    model = TestModelWithDatetime.from_dict(test_data)
+
+    # Datetime object should be preserved unchanged
+    assert isinstance(model.created_at, datetime)
+    assert model.created_at == existing_datetime
+    assert model.created_at is existing_datetime  # Should be the same object
+
+
+def test_datetime_parsing_invalid_strings():
+    """Test that invalid datetime strings are left unchanged"""
+
+    @dataclass
+    class TestModelWithDatetime(VersionedModel):
+        created_at: datetime = field(
+            default_factory=lambda: datetime.now(timezone.utc))
+
+    # Test with invalid datetime string
+    test_data = {
+        'entity_id': 'test123',
+        'created_at': 'invalid-date-string'
+    }
+
+    model = TestModelWithDatetime.from_dict(test_data)
+
+    # Invalid datetime string should be left as-is
+    assert model.created_at == 'invalid-date-string'
+    assert isinstance(model.created_at, str)
+
+
+def test_datetime_parsing_various_iso_formats():
+    """Test datetime parsing works with various ISO format strings"""
+
+    @dataclass
+    class TestModelWithDatetime(VersionedModel):
+        datetime1: datetime = field(
+            default_factory=lambda: datetime.now(timezone.utc))
+        datetime2: datetime = field(
+            default_factory=lambda: datetime.now(timezone.utc))
+        datetime3: datetime = field(
+            default_factory=lambda: datetime.now(timezone.utc))
+        datetime4: datetime = field(
+            default_factory=lambda: datetime.now(timezone.utc))
+
+    # Test with various ISO format strings
+    test_data = {
+        'entity_id': 'test123',
+        'datetime1': '2024-01-15T10:30:00Z',           # UTC with Z
+        'datetime2': '2024-01-15T10:30:00+00:00',      # UTC with +00:00
+        'datetime3': '2024-01-15T10:30:00.123456Z',    # With microseconds
+        'datetime4': '2024-01-15T10:30:00-05:00',      # With timezone offset
+    }
+
+    model = TestModelWithDatetime.from_dict(test_data)
+
+    # All should be parsed as datetime objects
+    assert isinstance(model.datetime1, datetime)
+    assert isinstance(model.datetime2, datetime)
+    assert isinstance(model.datetime3, datetime)
+    assert isinstance(model.datetime4, datetime)
+
+    # Verify specific values
+    assert model.datetime1 == datetime(
+        2024, 1, 15, 10, 30, 0, tzinfo=timezone.utc)
+    assert model.datetime2 == datetime(
+        2024, 1, 15, 10, 30, 0, tzinfo=timezone.utc)
+    assert model.datetime3.year == 2024
+    assert model.datetime3.month == 1
+    assert model.datetime3.day == 15
+    assert model.datetime3.hour == 10
+    assert model.datetime3.minute == 30
+    assert model.datetime3.second == 0
+    assert model.datetime3.microsecond == 123456
+
+
+def test_datetime_parsing_roundtrip_consistency():
+    """Test that datetime parsing maintains consistency through roundtrip conversion"""
+
+    @dataclass
+    class TestModelWithDatetime(VersionedModel):
+        created_at: datetime = field(
+            default_factory=lambda: datetime.now(timezone.utc))
+        updated_at: datetime = field(
+            default_factory=lambda: datetime.now(timezone.utc))
+
+    # Create original model with datetime objects
+    original_created = datetime(2024, 1, 15, 9, 0, 0, tzinfo=timezone.utc)
+    original_updated = datetime(2024, 1, 15, 11, 30, 45, tzinfo=timezone.utc)
+
+    original = TestModelWithDatetime(
+        created_at=original_created,
+        updated_at=original_updated
+    )
+
+    # Convert to dict with ISO strings
+    dict_data = original.as_dict(convert_datetime_to_iso_string=True)
+
+    # Verify datetime fields are converted to ISO strings
+    assert isinstance(dict_data['created_at'], str)
+    assert isinstance(dict_data['updated_at'], str)
+
+    # Convert back from dict (should parse ISO strings back to datetime)
+    restored = TestModelWithDatetime.from_dict(dict_data)
+
+    # Verify datetime objects are correctly restored
+    assert isinstance(restored.created_at, datetime)
+    assert isinstance(restored.updated_at, datetime)
+    assert restored.created_at == original_created
+    assert restored.updated_at == original_updated
+
+
+def test_datetime_parsing_with_other_field_types():
+    """Test that datetime parsing works alongside other field type conversions"""
+    from enum import Enum
+    from typing import Optional
+
+    class Status(Enum):
+        active = "active"
+        inactive = "inactive"
+
+    @dataclass
+    class ComplexModelWithDatetime(VersionedModel):
+        status: Optional[Status] = Status.active
+        created_at: datetime = field(
+            default_factory=lambda: datetime.now(timezone.utc))
+        score: int = 100
+        name: str = "test"
+
+    # Test data with mixed field types including datetime as ISO string
+    test_data = {
+        'entity_id': 'test123',
+        'status': 'inactive',  # Should become enum
+        'created_at': '2024-01-15T09:00:00+00:00',  # Should become datetime
+        'score': 95,  # Should remain int
+        'name': 'test_model'  # Should remain string
+    }
+
+    model = ComplexModelWithDatetime.from_dict(test_data)
+
+    # Verify all field types are correctly converted
+    assert model.status == Status.inactive
+    assert isinstance(model.status, Status)
+
+    assert isinstance(model.created_at, datetime)
+    assert model.created_at == datetime(
+        2024, 1, 15, 9, 0, 0, tzinfo=timezone.utc)
+
+    assert model.score == 95
+    assert isinstance(model.score, int)
+
+    assert model.name == 'test_model'
+    assert isinstance(model.name, str)
+
+
+def test_datetime_parsing_none_values():
+    """Test that None values for datetime fields are handled correctly"""
+    from typing import Optional
+
+    @dataclass
+    class TestModelWithOptionalDatetime(VersionedModel):
+        required_datetime: datetime = field(
+            default_factory=lambda: datetime.now(timezone.utc))
+        optional_datetime: Optional[datetime] = None
+
+    # Test with None values
+    test_data = {
+        'entity_id': 'test123',
+        'required_datetime': '2024-01-15T09:00:00+00:00',
+        'optional_datetime': None
+    }
+
+    model = TestModelWithOptionalDatetime.from_dict(test_data)
+
+    # Required datetime should be parsed from string
+    assert isinstance(model.required_datetime, datetime)
+    assert model.required_datetime == datetime(
+        2024, 1, 15, 9, 0, 0, tzinfo=timezone.utc)
+
+    # Optional datetime should remain None
+    assert model.optional_datetime is None

@@ -249,7 +249,15 @@ class VersionedModel:
         Allow setting extra fields directly as attributes.
         If the field is not a defined model field and allow_extra is True,
         store it in the extra dict.
+        Skip setting calculated properties (properties without setters).
         """
+        # Check if this is a calculated property (property without setter)
+        if not name.startswith('_'):
+            attr = getattr(type(self), name, None)
+            if isinstance(attr, property) and attr.fset is None:
+                # This is a calculated property (read-only), skip setting it
+                return
+
         # Get model fields (but handle the case where fields() might not be available yet)
         try:
             model_fields = self.fields()
@@ -543,10 +551,19 @@ class VersionedModel:
         # Create the instance
         instance = cls(**clean_data)
 
-        # Set extra fields directly (not nested)
+        # Set extra fields directly (not nested), but skip calculated properties
         if extra_data:
+            filtered_extra_data = {}
+            for k, v in extra_data.items():
+                # Check if this is a calculated property (property without setter)
+                attr = getattr(cls, k, None)
+                if isinstance(attr, property) and attr.fset is None:
+                    # This is a calculated property (read-only), skip setting it
+                    continue
+                filtered_extra_data[k] = v
+
             # Replace the entire extra dict to avoid nesting
-            instance.extra = extra_data
+            instance.extra = filtered_extra_data
 
         return instance
 

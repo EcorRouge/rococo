@@ -266,7 +266,7 @@ class MongoDbRepositoryTestCase(unittest.TestCase):
         # Verify that the adapter's get_many method was called with the correct parameters
         self.db_adapter_mock.get_many.assert_called_once_with(
             table="test_collection",
-            conditions={'active': True},
+            conditions={'active': True, 'latest': True},
             hint="entity_id_idx",
             sort=None,
             limit=10,
@@ -297,7 +297,7 @@ class MongoDbRepositoryTestCase(unittest.TestCase):
         # Verify that the adapter's get_many method was called with offset=0
         self.db_adapter_mock.get_many.assert_called_once_with(
             table="test_collection",
-            conditions={'active': True},
+            conditions={'active': True, 'latest': True},
             hint="entity_id_idx",
             sort=None,
             limit=None,    # default limit (0 means no limit)

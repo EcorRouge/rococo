@@ -91,8 +91,11 @@ class MongoDbRepository(BaseRepository):
         Returns:
             Optional[VersionedModel]: An instance of the model if a matching record is found, otherwise None.
         """
-        db_conditions = {"active": True, "latest": True}
-        db_conditions.update(query or {})
+        db_conditions = query.copy() if query else {}
+        if "latest" not in db_conditions:
+            db_conditions["latest"] = True
+        if "active" not in db_conditions:
+            db_conditions["active"] = True
 
         data = self._execute_within_context(
             lambda: self.adapter.get_one(
@@ -129,9 +132,11 @@ class MongoDbRepository(BaseRepository):
         Returns:
             List[VersionedModel]: A list of model instances, each representing a record from the collection.
         """
-        db_conditions = {'active': True}
-        if query:
-            db_conditions.update(query)
+        db_conditions = query.copy() if query else {}
+        if "latest" not in db_conditions:
+            db_conditions["latest"] = True
+        if "active" not in db_conditions:
+            db_conditions["active"] = True
 
         records_data = self._execute_within_context(
             lambda: self.adapter.get_many(

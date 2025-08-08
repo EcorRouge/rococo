@@ -85,6 +85,8 @@ class SqsConnection(MessageAdapter):
 
         consume_config = self._read_consume_config()
 
+        logger.info(f"Use consume config: {consume_config}")
+
         while True:
             logger.info("Fetching messages from SQS queue: %s...", queue_name)
             if 'VISIBILITY_TIMEOUT' in consume_config:

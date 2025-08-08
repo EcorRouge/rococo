@@ -93,15 +93,17 @@ class SqsConnection(MessageAdapter):
                 responses = queue.receive_messages(
                     AttributeNames=['All'],
                     MaxNumberOfMessages=1,
-                    WaitTimeSeconds=consume_config.get('LISTEN_INTERVAL', 20),
-                    VisibilityTimeout=consume_config.get(
-                        'VISIBILITY_TIMEOUT', 30)
+                    WaitTimeSeconds=int(
+                        consume_config.get('LISTEN_INTERVAL', 20)),
+                    VisibilityTimeout=int(
+                        consume_config.get('VISIBILITY_TIMEOUT', 30))
                 )
             else:
                 responses = queue.receive_messages(
                     AttributeNames=['All'],
                     MaxNumberOfMessages=1,
-                    WaitTimeSeconds=consume_config.get('LISTEN_INTERVAL', 20)
+                    WaitTimeSeconds=int(
+                        consume_config.get('LISTEN_INTERVAL', 20))
                 )
 
             if not responses:

@@ -24,4 +24,3 @@ urllib3==2.5.0
 websockets>=10.4
 pymongo==4.6.3
 psycopg2-binary==2.9.10
-requests==2.32.3

@@ -32,6 +32,7 @@ class MongoDBAdapter(DbAdapter):
             'serverSelectionTimeoutMS': 5000,
             'connectTimeoutMS': 5000,
             'maxPoolSize': 100,
+            'tz_aware': True,
         }
         options.update(client_options)
         self.client: MongoClient = MongoClient(mongo_uri, **options)

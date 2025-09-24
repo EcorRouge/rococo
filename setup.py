@@ -11,6 +11,10 @@ extras_require["messaging"] = [
     'pika>=1.3.2,<1.4'
 ]
 
+extras_require["faxing"] = [
+    'requests>=2.31.0,<3.0'
+]
+
 extras_require["data-common"] = [
     'DBUtils>=3.1,<4.0'
 ]
@@ -43,12 +47,13 @@ extras_require["all"] = [
     *extras_require["data"],
     *extras_require["emailing"],
     *extras_require["messaging"],
+    *extras_require["faxing"],
 ]
 
 
 setup(
     name='rococo',
-    version='1.1.2',
+    version='1.1.7',
     packages=find_packages(),
     url='https://github.com/EcorRouge/rococo',
     license='MIT',

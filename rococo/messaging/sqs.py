@@ -48,7 +48,7 @@ class SqsConnection(MessageAdapter):
 
     def send_message(self, queue_name: str, message: dict):
         """Sends a message to the specified SQS queue.
-        
+
         Args:
             queue_name (str): The name of the queue to send the message to.
             message (dict): The message to send.
@@ -58,7 +58,8 @@ class SqsConnection(MessageAdapter):
         else:
             queue = self._sqs.create_queue(QueueName=queue_name)
 
-        queue.send_message(QueueUrl=queue_name, MessageBody=json.dumps(message))
+        queue.send_message(QueueUrl=queue_name,
+                           MessageBody=json.dumps(message))
 
     def consume_messages(self, queue_name: str, callback_function: callable = None):
         """Consumes messages from the specified SQS queue.
@@ -82,17 +83,34 @@ class SqsConnection(MessageAdapter):
         logger.info("Connecting to SQS queue: %s...", queue_name)
         queue = self._sqs.create_queue(QueueName=queue_name)
 
+        consume_config = self._read_consume_config()
+
+        logger.info(f"Use consume config: {consume_config}")
+
         while True:
             logger.info("Fetching messages from SQS queue: %s...", queue_name)
-            responses = queue.receive_messages(
-                AttributeNames=['All'],
-                MaxNumberOfMessages=1,
-                WaitTimeSeconds=20
-            )
+            if 'VISIBILITY_TIMEOUT' in consume_config:
+                responses = queue.receive_messages(
+                    AttributeNames=['All'],
+                    MaxNumberOfMessages=1,
+                    WaitTimeSeconds=int(
+                        consume_config.get('LISTEN_INTERVAL', 20)),
+                    VisibilityTimeout=int(
+                        consume_config.get('VISIBILITY_TIMEOUT', 30))
+                )
+            else:
+                responses = queue.receive_messages(
+                    AttributeNames=['All'],
+                    MaxNumberOfMessages=1,
+                    WaitTimeSeconds=int(
+                        consume_config.get('LISTEN_INTERVAL', 20))
+                )
+
             if not responses:
                 logger.info("No messages left in queue.")
-                if self._read_consume_config().get('EXIT_WHEN_FINISHED') == '1':
-                    logger.info("EXIT_WHEN_FINISHED=1 and no messages left in queue. Exiting...")
+                if consume_config.get('EXIT_WHEN_FINISHED') == '1':
+                    logger.info(
+                        "EXIT_WHEN_FINISHED=1 and no messages left in queue. Exiting...")
                     return
                 continue
 

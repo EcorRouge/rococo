@@ -3,12 +3,17 @@ Extended MongoDbRepository test cases
 """
 
 import json
+import uuid
 import unittest
 from datetime import datetime, timezone, timedelta
-from uuid import UUID
 from unittest.mock import MagicMock
-from .base_repository_test import TestVersionedModel
 from rococo.repositories.mongodb.mongodb_repository import MongoDbRepository
+from rococo.models import VersionedModel
+
+
+class TestVersionedModel(VersionedModel):
+    def __post_init__(self, _is_partial):
+        return super().__post_init__(_is_partial)
 
 
 class MongoDbRepositoryTestCase(unittest.TestCase):
@@ -22,7 +27,7 @@ class MongoDbRepositoryTestCase(unittest.TestCase):
         self.db_adapter_mock = MagicMock()
         self.message_adapter_mock = MagicMock()
         self.queue_name = "test_queue"
-        self.model_data = {"entity_id": UUID(int=8)}
+        self.model_data = {"entity_id": uuid.uuid4().hex}
         self.model_instance = TestVersionedModel(**self.model_data)
 
         self.repository = MongoDbRepository(
@@ -130,13 +135,13 @@ class MongoDbRepositoryTestCase(unittest.TestCase):
         """
         self.repository._execute_within_context = MagicMock()
         instances = [TestVersionedModel(
-            entity_id=UUID(int=i)) for i in range(3)]
+            entity_id=uuid.uuid4().hex) for i in range(3)]
 
         # stub insert_many to return a list of dummy docs
         self.db_adapter_mock.insert_many.return_value = [
-            {'entity_id': str(instances[0].entity_id), 'active': True},
-            {'entity_id': str(instances[1].entity_id), 'active': True},
-            {'entity_id': str(instances[2].entity_id), 'active': True},
+            {'entity_id': instances[0].entity_id, 'active': True},
+            {'entity_id': instances[1].entity_id, 'active': True},
+            {'entity_id': instances[2].entity_id, 'active': True},
         ]
 
         self.repository.create_many(
@@ -179,13 +184,13 @@ class MongoDbRepositoryTestCase(unittest.TestCase):
         """
         # The adapter should return data that can be converted back to a model
         # Using a more complete representation based on TestVersionedModel.as_dict()
-        mock_return_data = self.model_instance.as_dict()
+        mock_return_data = self.model_instance.as_dict(convert_uuids=True)
         self.db_adapter_mock.get_one.return_value = mock_return_data
 
         result = self.repository.get_one("test_collection", "entity_id_idx", {
-                                         "entity_id": str(self.model_instance.entity_id)})
+                                         "entity_id": self.model_instance.entity_id})
         self.assertIsInstance(result, TestVersionedModel)
-        self.assertEqual(result.entity_id, self.model_instance.entity_id)
+        self.assertEqual(result.entity_id, mock_return_data["entity_id"])
 
     def test_get_one_returns_none(self):
         """
@@ -212,8 +217,10 @@ class MongoDbRepositoryTestCase(unittest.TestCase):
         The method should return a list of instances of the model with the correct entity_id.
         """
         # Provide more complete data for each instance
-        instance1_data = TestVersionedModel(entity_id=UUID(int=1)).as_dict()
-        instance2_data = TestVersionedModel(entity_id=UUID(int=2)).as_dict()
+        instance1_data = TestVersionedModel(
+            entity_id=uuid.uuid4().hex).as_dict()
+        instance2_data = TestVersionedModel(
+            entity_id=uuid.uuid4().hex).as_dict()
 
         self.db_adapter_mock.get_many.return_value = [
             instance1_data, instance2_data]
@@ -244,8 +251,10 @@ class MongoDbRepositoryTestCase(unittest.TestCase):
         pagination functionality works as expected.
         """
         # Provide test data
-        instance1_data = TestVersionedModel(entity_id=UUID(int=1)).as_dict()
-        instance2_data = TestVersionedModel(entity_id=UUID(int=2)).as_dict()
+        instance1_data = TestVersionedModel(
+            entity_id=uuid.uuid4().hex).as_dict()
+        instance2_data = TestVersionedModel(
+            entity_id=uuid.uuid4().hex).as_dict()
 
         self.db_adapter_mock.get_many.return_value = [
             instance1_data, instance2_data]
@@ -257,7 +266,7 @@ class MongoDbRepositoryTestCase(unittest.TestCase):
         # Verify that the adapter's get_many method was called with the correct parameters
         self.db_adapter_mock.get_many.assert_called_once_with(
             table="test_collection",
-            conditions={'active': True},
+            conditions={'active': True, 'latest': True},
             hint="entity_id_idx",
             sort=None,
             limit=10,
@@ -277,7 +286,8 @@ class MongoDbRepositoryTestCase(unittest.TestCase):
         when the offset parameter is not provided, maintaining backward compatibility.
         """
         # Provide test data
-        instance1_data = TestVersionedModel(entity_id=UUID(int=1)).as_dict()
+        instance1_data = TestVersionedModel(
+            entity_id=uuid.uuid4().hex).as_dict()
 
         self.db_adapter_mock.get_many.return_value = [instance1_data]
 
@@ -287,7 +297,7 @@ class MongoDbRepositoryTestCase(unittest.TestCase):
         # Verify that the adapter's get_many method was called with offset=0
         self.db_adapter_mock.get_many.assert_called_once_with(
             table="test_collection",
-            conditions={'active': True},
+            conditions={'active': True, 'latest': True},
             hint="entity_id_idx",
             sort=None,
             limit=None,    # default limit (0 means no limit)
@@ -310,7 +320,7 @@ class MongoDbRepositoryTestCase(unittest.TestCase):
         self.repository.ttl_minutes = 30
 
         # Create a test instance
-        test_instance = TestVersionedModel(entity_id=UUID(int=123))
+        test_instance = TestVersionedModel(entity_id=uuid.uuid4().hex)
         test_instance.active = True
 
         # Mock the adapter methods
@@ -377,7 +387,7 @@ class MongoDbRepositoryTestCase(unittest.TestCase):
         self.repository.ttl_minutes = 30  # This should be ignored when ttl_field is None
 
         # Create a test instance
-        test_instance = TestVersionedModel(entity_id=UUID(int=456))
+        test_instance = TestVersionedModel(entity_id=uuid.uuid4().hex)
         test_instance.active = True
 
         # Mock the adapter methods
@@ -436,7 +446,7 @@ class MongoDbRepositoryTestCase(unittest.TestCase):
         self.repository.ttl_minutes = 60  # 1 hour
 
         # Create a test instance
-        test_instance = TestVersionedModel(entity_id=UUID(int=789))
+        test_instance = TestVersionedModel(entity_id=uuid.uuid4().hex)
         test_instance.active = True
 
         # Mock the adapter methods
@@ -480,6 +490,419 @@ class MongoDbRepositoryTestCase(unittest.TestCase):
         self.assertLess(time_difference, 60,
                         f"TTL timestamp should be approximately 60 minutes from delete time. "
                         f"Expected: {expected_ttl_time}, Actual: {actual_ttl_time}")
+
+    def test_datetime_parsing_in_get_one(self):
+        """
+        Test that datetime fields stored as ISO strings in MongoDB are correctly parsed back to datetime objects.
+
+        This test simulates the scenario where datetime fields were incorrectly saved as strings
+        in MongoDB and verifies that the from_dict method correctly parses them back to datetime objects.
+        """
+        from dataclasses import dataclass, field
+
+        @dataclass
+        class TestModelWithDatetime(TestVersionedModel):
+            created_at: datetime = field(
+                default_factory=lambda: datetime.now(timezone.utc))
+            updated_at: datetime = field(
+                default_factory=lambda: datetime.now(timezone.utc))
+
+        # Create repository with the datetime model
+        datetime_repository = MongoDbRepository(
+            db_adapter=self.db_adapter_mock,
+            model=TestModelWithDatetime,
+            message_adapter=self.message_adapter_mock,
+            queue_name=self.queue_name
+        )
+
+        # Mock data with datetime fields as ISO strings (simulating MongoDB storage issue)
+        mock_data_with_datetime_strings = {
+            'entity_id': uuid.uuid4().hex,
+            'version': uuid.uuid4().hex,
+            'previous_version': None,
+            'active': True,
+            'changed_by_id': uuid.uuid4().hex,
+            'changed_on': '2024-01-15T10:30:00+00:00',  # ISO string
+            'created_at': '2024-01-15T09:00:00+00:00',   # ISO string
+            'updated_at': '2024-01-15T11:00:00+00:00',   # ISO string
+        }
+
+        # Mock the adapter to return data with datetime strings
+        self.db_adapter_mock.get_one.return_value = mock_data_with_datetime_strings
+
+        # Call get_one
+        result = datetime_repository.get_one(
+            "test_collection", "entity_id_idx", {"entity_id": mock_data_with_datetime_strings["entity_id"]})
+
+        # Verify that the result is an instance of the model
+        self.assertIsInstance(result, TestModelWithDatetime)
+
+        # Verify that datetime strings were parsed back to datetime objects
+        self.assertIsInstance(result.changed_on, datetime)
+        self.assertIsInstance(result.created_at, datetime)
+        self.assertIsInstance(result.updated_at, datetime)
+
+        # Verify the actual datetime values
+        expected_changed_on = datetime(
+            2024, 1, 15, 10, 30, 0, tzinfo=timezone.utc)
+        expected_created_at = datetime(
+            2024, 1, 15, 9, 0, 0, tzinfo=timezone.utc)
+        expected_updated_at = datetime(
+            2024, 1, 15, 11, 0, 0, tzinfo=timezone.utc)
+
+        self.assertEqual(result.changed_on, expected_changed_on)
+        self.assertEqual(result.created_at, expected_created_at)
+        self.assertEqual(result.updated_at, expected_updated_at)
+
+    def test_datetime_parsing_in_get_many(self):
+        """
+        Test that datetime fields stored as ISO strings are correctly parsed in get_many results.
+        """
+        from dataclasses import dataclass, field
+
+        @dataclass
+        class TestModelWithDatetime(TestVersionedModel):
+            created_at: datetime = field(
+                default_factory=lambda: datetime.now(timezone.utc))
+
+        # Create repository with the datetime model
+        datetime_repository = MongoDbRepository(
+            db_adapter=self.db_adapter_mock,
+            model=TestModelWithDatetime,
+            message_adapter=self.message_adapter_mock,
+            queue_name=self.queue_name
+        )
+
+        # Mock data with multiple records containing datetime strings
+        mock_data_list = [
+            {
+                'entity_id': uuid.uuid4().hex,
+                'version': uuid.uuid4().hex,
+                'active': True,
+                'changed_by_id': uuid.uuid4().hex,
+                'changed_on': '2024-01-15T10:00:00+00:00',
+                'created_at': '2024-01-15T09:00:00+00:00',
+            },
+            {
+                'entity_id': uuid.uuid4().hex,
+                'version': uuid.uuid4().hex,
+                'active': True,
+                'changed_by_id': uuid.uuid4().hex,
+                'changed_on': '2024-01-15T11:00:00+00:00',
+                'created_at': '2024-01-15T10:00:00+00:00',
+            }
+        ]
+
+        # Mock the adapter to return data with datetime strings
+        self.db_adapter_mock.get_many.return_value = mock_data_list
+
+        # Call get_many
+        results = datetime_repository.get_many(
+            "test_collection", "entity_id_idx")
+
+        # Verify that we got the expected number of results
+        self.assertEqual(len(results), 2)
+
+        # Verify that all results are instances of the model
+        for result in results:
+            self.assertIsInstance(result, TestModelWithDatetime)
+
+            # Verify that datetime strings were parsed back to datetime objects
+            self.assertIsInstance(result.changed_on, datetime)
+            self.assertIsInstance(result.created_at, datetime)
+
+    def test_datetime_parsing_with_optional_fields(self):
+        """
+        Test datetime parsing works correctly with Optional[datetime] fields.
+        """
+        from dataclasses import dataclass, field
+        from typing import Optional
+
+        @dataclass
+        class TestModelWithOptionalDatetime(TestVersionedModel):
+            created_at: datetime = field(
+                default_factory=lambda: datetime.now(timezone.utc))
+            updated_at: Optional[datetime] = None
+            deleted_at: Optional[datetime] = None
+
+        # Create repository with the optional datetime model
+        datetime_repository = MongoDbRepository(
+            db_adapter=self.db_adapter_mock,
+            model=TestModelWithOptionalDatetime,
+            message_adapter=self.message_adapter_mock,
+            queue_name=self.queue_name
+        )
+
+        # Mock data with some optional datetime fields as strings and some as None
+        mock_data = {
+            'entity_id': uuid.uuid4().hex,
+            'version': uuid.uuid4().hex,
+            'active': True,
+            'changed_by_id': uuid.uuid4().hex,
+            'changed_on': '2024-01-15T10:30:00+00:00',
+            'created_at': '2024-01-15T09:00:00+00:00',   # Required field as string
+            'updated_at': '2024-01-15T11:00:00+00:00',   # Optional field as string
+            'deleted_at': None                            # Optional field as None
+        }
+
+        # Mock the adapter to return data
+        self.db_adapter_mock.get_one.return_value = mock_data
+
+        # Call get_one
+        result = datetime_repository.get_one(
+            "test_collection", "entity_id_idx", {"entity_id": uuid.uuid4().hex})
+
+        # Verify that the result is an instance of the model
+        self.assertIsInstance(result, TestModelWithOptionalDatetime)
+
+        # Verify required datetime field was parsed
+        self.assertIsInstance(result.created_at, datetime)
+        self.assertEqual(result.created_at, datetime(
+            2024, 1, 15, 9, 0, 0, tzinfo=timezone.utc))
+
+        # Verify optional datetime field with string was parsed
+        self.assertIsInstance(result.updated_at, datetime)
+        self.assertEqual(result.updated_at, datetime(
+            2024, 1, 15, 11, 0, 0, tzinfo=timezone.utc))
+
+        # Verify optional datetime field with None remained None
+        self.assertIsNone(result.deleted_at)
+
+    def test_datetime_parsing_preserves_existing_datetime_objects(self):
+        """
+        Test that existing datetime objects are preserved and not converted to strings.
+        """
+        from dataclasses import dataclass, field
+
+        @dataclass
+        class TestModelWithDatetime(TestVersionedModel):
+            created_at: datetime = field(
+                default_factory=lambda: datetime.now(timezone.utc))
+
+        # Create repository with the datetime model
+        datetime_repository = MongoDbRepository(
+            db_adapter=self.db_adapter_mock,
+            model=TestModelWithDatetime,
+            message_adapter=self.message_adapter_mock,
+            queue_name=self.queue_name
+        )
+
+        # Mock data with datetime objects (not strings)
+        existing_datetime = datetime(2024, 1, 15, 9, 0, 0, tzinfo=timezone.utc)
+        mock_data = {
+            'entity_id': uuid.uuid4().hex,
+            'version': uuid.uuid4().hex,
+            'active': True,
+            'changed_by_id': uuid.uuid4().hex,
+            'changed_on': existing_datetime,  # Already a datetime object
+            'created_at': existing_datetime,  # Already a datetime object
+        }
+
+        # Mock the adapter to return data
+        self.db_adapter_mock.get_one.return_value = mock_data
+
+        # Call get_one
+        result = datetime_repository.get_one(
+            "test_collection", "entity_id_idx", {"entity_id": uuid.uuid4().hex})
+
+        # Verify that the result is an instance of the model
+        self.assertIsInstance(result, TestModelWithDatetime)
+
+        # Verify that datetime objects were preserved
+        self.assertIsInstance(result.changed_on, datetime)
+        self.assertIsInstance(result.created_at, datetime)
+        self.assertEqual(result.changed_on, existing_datetime)
+        self.assertEqual(result.created_at, existing_datetime)
+
+    def test_datetime_parsing_handles_invalid_strings(self):
+        """
+        Test that invalid datetime strings are left unchanged and don't cause errors.
+        """
+        from dataclasses import dataclass, field
+
+        @dataclass
+        class TestModelWithDatetime(TestVersionedModel):
+            created_at: datetime = field(
+                default_factory=lambda: datetime.now(timezone.utc))
+
+        # Create repository with the datetime model
+        datetime_repository = MongoDbRepository(
+            db_adapter=self.db_adapter_mock,
+            model=TestModelWithDatetime,
+            message_adapter=self.message_adapter_mock,
+            queue_name=self.queue_name
+        )
+
+        # Mock data with invalid datetime string
+        mock_data = {
+            'entity_id': uuid.uuid4().hex,
+            'version': uuid.uuid4().hex,
+            'active': True,
+            'changed_by_id': uuid.uuid4().hex,
+            'changed_on': '2024-01-15T10:30:00+00:00',  # Valid ISO string
+            'created_at': 'invalid-date-string',         # Invalid datetime string
+        }
+
+        # Mock the adapter to return data
+        self.db_adapter_mock.get_one.return_value = mock_data
+
+        # Call get_one - should not raise an exception
+        result = datetime_repository.get_one(
+            "test_collection", "entity_id_idx", {"entity_id": mock_data["entity_id"]})
+
+        # Verify that the result is an instance of the model
+        self.assertIsInstance(result, TestModelWithDatetime)
+
+        # Verify that valid datetime string was parsed
+        self.assertIsInstance(result.changed_on, datetime)
+        self.assertEqual(result.changed_on, datetime(
+            2024, 1, 15, 10, 30, 0, tzinfo=timezone.utc))
+
+        # Verify that invalid datetime string was left as-is
+        self.assertEqual(result.created_at, 'invalid-date-string')
+        self.assertIsInstance(result.created_at, str)
+
+    def test_datetime_parsing_with_various_iso_formats(self):
+        """
+        Test that various ISO datetime formats are correctly parsed.
+        """
+        from dataclasses import dataclass, field
+
+        @dataclass
+        class TestModelWithMultipleDatetimes(TestVersionedModel):
+            datetime1: datetime = field(
+                default_factory=lambda: datetime.now(timezone.utc))
+            datetime2: datetime = field(
+                default_factory=lambda: datetime.now(timezone.utc))
+            datetime3: datetime = field(
+                default_factory=lambda: datetime.now(timezone.utc))
+            datetime4: datetime = field(
+                default_factory=lambda: datetime.now(timezone.utc))
+
+        # Create repository with the datetime model
+        datetime_repository = MongoDbRepository(
+            db_adapter=self.db_adapter_mock,
+            model=TestModelWithMultipleDatetimes,
+            message_adapter=self.message_adapter_mock,
+            queue_name=self.queue_name
+        )
+
+        # Mock data with various ISO format strings
+        mock_data = {
+            'entity_id': uuid.uuid4().hex,
+            'version': uuid.uuid4().hex,
+            'active': True,
+            'changed_by_id': uuid.uuid4().hex,
+            'changed_on': '2024-01-15T10:30:00+00:00',
+            'datetime1': '2024-01-15T10:30:00Z',           # UTC with Z
+            'datetime2': '2024-01-15T10:30:00+00:00',      # UTC with +00:00
+            'datetime3': '2024-01-15T10:30:00.123456Z',    # With microseconds
+            'datetime4': '2024-01-15T10:30:00-05:00',      # With timezone offset
+        }
+
+        # Mock the adapter to return data
+        self.db_adapter_mock.get_one.return_value = mock_data
+
+        # Call get_one
+        result = datetime_repository.get_one(
+            "test_collection", "entity_id_idx", {"entity_id": mock_data["entity_id"]})
+
+        # Verify that the result is an instance of the model
+        self.assertIsInstance(result, TestModelWithMultipleDatetimes)
+
+        # Verify that all datetime formats were parsed correctly
+        self.assertIsInstance(result.datetime1, datetime)
+        self.assertIsInstance(result.datetime2, datetime)
+        self.assertIsInstance(result.datetime3, datetime)
+        self.assertIsInstance(result.datetime4, datetime)
+
+        # Verify specific values for UTC formats
+        expected_utc_time = datetime(
+            2024, 1, 15, 10, 30, 0, tzinfo=timezone.utc)
+        self.assertEqual(result.datetime1, expected_utc_time)
+        self.assertEqual(result.datetime2, expected_utc_time)
+
+        # Verify microseconds are preserved
+        self.assertEqual(result.datetime3.microsecond, 123456)
+
+    def test_datetime_parsing_integration_with_save_and_load(self):
+        """
+        Test datetime parsing works in a complete save/load cycle.
+
+        This test verifies that datetime objects can be saved (potentially as strings)
+        and then loaded back correctly as datetime objects.
+        """
+        from dataclasses import dataclass, field
+
+        @dataclass
+        class TestModelWithDatetime(TestVersionedModel):
+            created_at: datetime = field(
+                default_factory=lambda: datetime.now(timezone.utc))
+            updated_at: datetime = field(
+                default_factory=lambda: datetime.now(timezone.utc))
+
+        # Create repository with the datetime model
+        datetime_repository = MongoDbRepository(
+            db_adapter=self.db_adapter_mock,
+            model=TestModelWithDatetime,
+            message_adapter=self.message_adapter_mock,
+            queue_name=self.queue_name
+        )
+
+        # Create a model instance with datetime objects
+        original_created = datetime(2024, 1, 15, 9, 0, 0, tzinfo=timezone.utc)
+        original_updated = datetime(
+            2024, 1, 15, 11, 30, 45, tzinfo=timezone.utc)
+
+        test_instance = TestModelWithDatetime(
+            entity_id=uuid.uuid4().hex,
+            created_at=original_created,
+            updated_at=original_updated
+        )
+
+        # Mock the save operation - simulate that datetime objects might be converted to strings
+        def mock_save(collection_name, data):
+            # Simulate the scenario where datetime objects are converted to ISO strings during save
+            saved_data = data.copy()
+            if isinstance(saved_data.get('created_at'), datetime):
+                saved_data['created_at'] = saved_data['created_at'].isoformat()
+            if isinstance(saved_data.get('updated_at'), datetime):
+                saved_data['updated_at'] = saved_data['updated_at'].isoformat()
+            return saved_data
+
+        self.db_adapter_mock.save.side_effect = mock_save
+        self.db_adapter_mock.move_entity_to_audit_table.return_value = None
+
+        # Save the instance
+        saved_instance = datetime_repository.save(
+            test_instance, "test_collection")
+
+        # Now simulate loading the data back - the adapter returns data with datetime strings
+        mock_loaded_data = {
+            'entity_id': uuid.uuid4().hex,
+            'version': saved_instance.version,
+            'active': True,
+            'changed_by_id': saved_instance.changed_by_id,
+            'changed_on': saved_instance.changed_on.isoformat(),  # As ISO string
+            'created_at': original_created.isoformat(),           # As ISO string
+            'updated_at': original_updated.isoformat(),           # As ISO string
+        }
+
+        self.db_adapter_mock.get_one.return_value = mock_loaded_data
+
+        # Load the instance back
+        loaded_instance = datetime_repository.get_one(
+            "test_collection", "entity_id_idx", {"entity_id": mock_loaded_data["entity_id"]})
+
+        # Verify that the loaded instance has datetime objects, not strings
+        self.assertIsInstance(loaded_instance, TestModelWithDatetime)
+        self.assertIsInstance(loaded_instance.created_at, datetime)
+        self.assertIsInstance(loaded_instance.updated_at, datetime)
+        self.assertIsInstance(loaded_instance.changed_on, datetime)
+
+        # Verify that the datetime values are correct
+        self.assertEqual(loaded_instance.created_at, original_created)
+        self.assertEqual(loaded_instance.updated_at, original_updated)
 
 
 if __name__ == '__main__':

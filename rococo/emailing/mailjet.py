@@ -1,10 +1,15 @@
 import re
+import requests
+import logging
 from typing import Any, List, Union
 
 from mailjet_rest import Client
 
 from .base import EmailService
 from .config import MailjetConfig
+
+
+logger = logging.getLogger(__name__)
 
 
 class MailjetService(EmailService):
@@ -88,8 +93,59 @@ class MailjetService(EmailService):
 
         return result
 
-    def create_contact(self, email: str, first_name: str, last_name: str):
-        raise NotImplementedError
+    def create_contact(self, email: str, first_name: str, last_name: str, extra: dict):
+        contact_data = {
+            "IsExcludedFromCampaigns": "true",
+            "Name": f"{first_name} {last_name}",
+            "Email": email,
+        }
+
+        resp = self.client.contact.create(data=contact_data)
+        if "ErrorMessage" in resp.json():
+            # Search for the contact
+            result = self.client.contact.get(id=email)
+            contact_id = result.json()["Data"][0]["ID"]
+        else:
+            contact_id = resp.json()["Data"][0]["ID"]
+
+        contact_data = {
+            "Data": [
+                {"Name": "first_name", "Value": first_name},
+                {"Name": "last_name", "Value": last_name},
+                {"Name": "Organization", "Value": extra["organization_name"]},
+                {"Name": "Organization_ID", "Value": extra["organization_id"]},
+                {"Name": "Organization_Type",
+                    "Value": extra["organization_type"]},
+            ]
+        }
+
+        # Update contact with data
+        self.client.contactdata.update(id=contact_id, data=contact_data)
+
+        # Add contact to list
+        data = {
+            "IsUnsubscribed": "true",
+            "ContactID": contact_id,
+            "ListID": "56160",
+        }
+        self.client.listrecipient.create(data=data)
 
     def remove_contact(self, email: str):
-        raise NotImplementedError
+        # Find the contact to get the ID
+        try:
+            result = self.client.contact.get(id=email)
+            response_data = result.json()["Data"]
+        except Exception as e:
+            message = f"Couldn't find Mailjet contact for {email}: {e}"
+            logger.exception(message, "warning")
+            return
+
+        for contact in response_data:
+            contact_id = contact["ID"]
+            url = f"https://api.mailjet.com/v4/contacts/{contact_id}"
+            try:
+                requests.delete(url, auth=(
+                    self.config.MAILJET_API_KEY, self.config.MAILJET_API_SECRET), timeout=15)
+            except Exception as e:
+                message = f"Couldn't remove Mailjet contact for {email} : {e}"
+                logger.exception(message, "warning")

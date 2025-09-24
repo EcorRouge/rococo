@@ -26,7 +26,7 @@ class EmailService(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def create_contact(self, email: str, first_name: str, last_name: str):
+    def create_contact(self, email: str, first_name: str, last_name: str, extra: dict):
         """
         Creates a contact using specified email, first and last name.
         """

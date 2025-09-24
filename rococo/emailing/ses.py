@@ -16,3 +16,9 @@ class SESService(EmailService):
 
     def send_email(self, message: dict) -> Any:
         pass
+
+    def create_contact(self, email: str, first_name: str, last_name: str, extra: dict):
+        pass
+
+    def remove_contact(self, email: str):
+        pass

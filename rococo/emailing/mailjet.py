@@ -1,5 +1,5 @@
 import re
-from typing import Any
+from typing import Any, List, Union
 
 from mailjet_rest import Client
 
@@ -12,10 +12,42 @@ class MailjetService(EmailService):
     def __init__(self):
         pass
 
+    @staticmethod
+    def _convert_addresses(addresses: List[Union[str, dict]]) -> List[dict]:
+        """
+        Convert a list of addresses to Mailjet format.
+
+        Args:
+            addresses: List of email addresses as strings or dicts
+                      - String format: "email@example.com"
+                      - Dict format: {"Email": "email@example.com", "Name": "John Doe"}
+
+        Returns:
+            List of dicts in Mailjet format: [{"Email": "email@example.com", "Name": "John Doe"}]
+        """
+        converted_addresses = []
+
+        for address in addresses:
+            if isinstance(address, str):
+                # Convert string to dict format
+                converted_addresses.append({"Email": address})
+            elif isinstance(address, dict):
+                # Already in dict format, validate it has Email key
+                if "Email" in address:
+                    converted_addresses.append(address)
+                else:
+                    raise ValueError(
+                        f"Dict address must contain 'Email' key: {address}")
+            else:
+                raise TypeError(
+                    f"Address must be string or dict, got {type(address)}: {address}")
+
+        return converted_addresses
+
     def __call__(self, config: MailjetConfig, *args, **kwargs):
         super().__call__(config)
 
-        match = re.match('^(.*)\s*<(.*)>$', self.config.SOURCE_EMAIL)
+        match = re.match(r'^(.*)\s*<(.*)>$', self.config.SOURCE_EMAIL)
         name, email = match.groups()
         self.from_address = {"Name": name, "Email": email}
 
@@ -38,9 +70,9 @@ class MailjetService(EmailService):
             'Messages': [
                 {
                     "From": self.from_address,
-                    "To": [{'Email': email} for email in to_addresses],
-                    "Cc": [{'Email': email} for email in cc_addresses],
-                    "Bcc": [{'Email': email} for email in bcc_addresses],
+                    "To": self._convert_addresses(to_addresses),
+                    "Cc": self._convert_addresses(cc_addresses),
+                    "Bcc": self._convert_addresses(bcc_addresses),
                     "TemplateLanguage": True,
                     "TemplateID": event_mapping['id'][self.config.EMAIL_PROVIDER],
                     "Variables": event_data
@@ -55,3 +87,9 @@ class MailjetService(EmailService):
         result = self.client.send.create(data=data)
 
         return result
+
+    def create_contact(self, email: str, first_name: str, last_name: str):
+        raise NotImplementedError
+
+    def remove_contact(self, email: str):
+        raise NotImplementedError

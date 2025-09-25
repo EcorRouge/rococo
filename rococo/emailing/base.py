@@ -20,4 +20,21 @@ class EmailService(ABC):
 
     @abstractmethod
     def send_email(self, message: dict) -> Any:
-        return NotImplementedError
+        """
+        Sends an email message
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def create_contact(self, email: str, name: str, list_id: str, extra: dict):
+        """
+        Creates a contact using specified email and name.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def remove_contact(self, email: str):
+        """
+        Removes a contact with specified email
+        """
+        raise NotImplementedError

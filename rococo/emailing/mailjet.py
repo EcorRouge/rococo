@@ -93,10 +93,10 @@ class MailjetService(EmailService):
 
         return result
 
-    def create_contact(self, email: str, first_name: str, last_name: str, extra: dict):
+    def create_contact(self, email: str, name: str, list_id: str, extra: dict):
         contact_data = {
             "IsExcludedFromCampaigns": "true",
-            "Name": f"{first_name} {last_name}",
+            "Name": name,
             "Email": email,
         }
 
@@ -108,27 +108,23 @@ class MailjetService(EmailService):
         else:
             contact_id = resp.json()["Data"][0]["ID"]
 
-        contact_data = {
-            "Data": [
-                {"Name": "first_name", "Value": first_name},
-                {"Name": "last_name", "Value": last_name},
-                {"Name": "Organization", "Value": extra["organization_name"]},
-                {"Name": "Organization_ID", "Value": extra["organization_id"]},
-                {"Name": "Organization_Type",
-                    "Value": extra["organization_type"]},
-            ]
-        }
+        # Update contact with custom data only if extra is not empty
+        if extra:
+            contact_data = {
+                "Data": [
+                    {"Name": key, "Value": value} for key, value in extra.items()
+                ]
+            }
+            self.client.contactdata.update(id=contact_id, data=contact_data)
 
-        # Update contact with data
-        self.client.contactdata.update(id=contact_id, data=contact_data)
-
-        # Add contact to list
-        data = {
-            "IsUnsubscribed": "true",
-            "ContactID": contact_id,
-            "ListID": "56160",
-        }
-        self.client.listrecipient.create(data=data)
+        # Add contact to list only if list_id is not empty
+        if list_id:
+            data = {
+                "IsUnsubscribed": "true",
+                "ContactID": contact_id,
+                "ListID": list_id,
+            }
+            self.client.listrecipient.create(data=data)
 
     def remove_contact(self, email: str):
         # Find the contact to get the ID

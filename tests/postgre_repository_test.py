@@ -10,7 +10,7 @@ import datetime
 from dataclasses import dataclass, fields, field as dc_field
 from typing import Union, List, Optional
 
-from rococo.repositories.postgresql.postgresql_repository import PostgreSQLRepository, adjust_conditions
+from rococo.repositories.postgresql.postgresql_repository import PostgreSQLRepository
 from rococo.models.versioned_model import VersionedModel
 from rococo.data.postgresql import PostgreSQLAdapter
 from rococo.messaging.base import MessageAdapter
@@ -188,7 +188,7 @@ def model_instance(test_user_id):
 
 
 def test_adjust_conditions():
-    """Tests the adjust_conditions helper function."""
+    """Tests the _adjust_conditions class method."""
     test_uuid1 = uuid4()
     test_uuid2 = uuid4()
     conditions = {
@@ -199,7 +199,7 @@ def test_adjust_conditions():
         "string_list": ["a", "b"]
     }
     # Use copy to avoid modifying original
-    adjusted = adjust_conditions(conditions.copy())
+    adjusted = PostgreSQLRepository._adjust_conditions(conditions.copy())
     # Single UUIDs are not changed by this function
     assert adjusted["id"] == test_uuid1
     assert adjusted["name"] == "test"

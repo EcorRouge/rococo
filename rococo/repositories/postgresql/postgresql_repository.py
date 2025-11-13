@@ -12,14 +12,6 @@ from rococo.models import VersionedModel
 from rococo.repositories import BaseRepository
 
 
-def adjust_conditions(conditions: Dict[str, Any]) -> Dict[str, Any]:
-    """Convert UUIDs in the conditions dictionary to strings."""
-    for key, value in conditions.items():
-        if isinstance(value, list) and value and isinstance(value[0], UUID):
-            conditions[key] = [str(id) for id in value]
-    return conditions
-
-
 class PostgreSQLRepository(BaseRepository):
     """PostgreSQLRepository class"""
 
@@ -35,6 +27,14 @@ class PostgreSQLRepository(BaseRepository):
         self.table_name = re.sub(
             r'(?<!^)(?=[A-Z])', '_', model.__name__).lower()
         self.model()
+
+    @classmethod
+    def _adjust_conditions(cls, conditions: Dict[str, Any]) -> Dict[str, Any]:
+        """Convert UUIDs in the conditions dictionary to strings."""
+        for key, value in conditions.items():
+            if isinstance(value, list) and value and isinstance(value[0], UUID):
+                conditions[key] = [str(id) for id in value]
+        return conditions
 
     def _process_data_before_save(self, instance: VersionedModel):
         """Method to convert VersionedModel instance to a data dictionary that can be saved to PostgreSQL"""
@@ -75,7 +75,7 @@ class PostgreSQLRepository(BaseRepository):
         """get one"""
 
         if conditions is not None:
-            conditions = adjust_conditions(conditions)
+            conditions = self._adjust_conditions(conditions)
 
         data = self._execute_within_context(
             self.adapter.get_one, self.table_name, conditions
@@ -114,7 +114,7 @@ class PostgreSQLRepository(BaseRepository):
         """Get many records, with optional related fields fetched"""
 
         if conditions is not None:
-            conditions = adjust_conditions(conditions)
+            conditions = self._adjust_conditions(conditions)
         # Fetch the records
         records = self._execute_within_context(
             self.adapter.get_many, self.table_name, conditions, sort, limit, offset
@@ -166,12 +166,12 @@ class PostgreSQLRepository(BaseRepository):
         # Default conditions from BaseRepository
         db_conditions = {'latest': True, 'active': True}
         if query:  # Ensure query is not None before updating
-            actual_query = adjust_conditions(
+            actual_query = self._adjust_conditions(
                 query.copy())  # Adjust UUIDs in query
             db_conditions.update(actual_query)
-        # Ensure adjust_conditions is called even if query is None but db_conditions has UUIDs (not in this default)
+        # Ensure _adjust_conditions is called even if query is None but db_conditions has UUIDs (not in this default)
         else:
-            db_conditions = adjust_conditions(db_conditions)
+            db_conditions = self._adjust_conditions(db_conditions)
 
         # Prepare the options dictionary for the adapter
         adapter_options: Dict[str, Any] = {}
@@ -217,7 +217,7 @@ class PostgreSQLRepository(BaseRepository):
             relation_type = field_metadata['relationship'].get(
                 'relation_type', None)
             relation_conditions = {f"{field_type}": related_value}
-            relation_conditions = adjust_conditions(relation_conditions)
+            relation_conditions = self._adjust_conditions(relation_conditions)
 
             if relation_type in ['one_to_many', 'many_to_many']:
                 # Fetch multiple records

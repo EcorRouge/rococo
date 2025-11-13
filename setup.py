@@ -3,6 +3,11 @@ from setuptools import find_packages, setup
 
 extras_require = {}
 
+extras_require["sms"] = [
+    'twilio>=9.8.6,<10.0',
+    'jinja2>=3.1.6,<4.0'
+]
+
 extras_require["emailing"] = [
     'mailjet_rest>=1.4.0,<2.0'
 ]
@@ -48,12 +53,13 @@ extras_require["all"] = [
     *extras_require["emailing"],
     *extras_require["messaging"],
     *extras_require["faxing"],
+    *extras_require["sms"]
 ]
 
 
 setup(
     name='rococo',
-    version='1.1.8',
+    version='1.1.9',
     packages=find_packages(),
     url='https://github.com/EcorRouge/rococo',
     license='MIT',

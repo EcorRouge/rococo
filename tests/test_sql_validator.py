@@ -481,3 +481,52 @@ class TestIntegrationScenarios:
             "INNER JOIN orders ON users.id = orders.user_id"
         )
         assert "INNER JOIN" in join
+
+    def test_get_count_table_injection_blocked(self):
+        """Test that table name injection in get_count is blocked"""
+        malicious_table = "users; DROP TABLE users; --"
+        with pytest.raises(ValueError, match="Invalid table name"):
+            SqlValidator.validate_identifier(malicious_table, "table name")
+
+    def test_get_save_query_table_injection_blocked(self):
+        """Test that table name injection in get_save_query is blocked"""
+        malicious_table = "users; DROP TABLE"
+        with pytest.raises(ValueError):
+            SqlValidator.validate_identifier(malicious_table, "table name")
+
+    def test_get_save_query_column_injection_blocked(self):
+        """Test that column name injection in get_save_query is blocked"""
+        # Simulate data dict with malicious column name
+        malicious_column = "username; DROP TABLE users; --"
+        with pytest.raises(ValueError):
+            SqlValidator.validate_identifier(malicious_column, "column name")
+
+        # Test with SQL keyword in column
+        malicious_column2 = "user_DROP_table"
+        with pytest.raises(ValueError, match="contains SQL keyword"):
+            SqlValidator.validate_identifier(malicious_column2, "column name")
+
+    def test_multiple_column_validation(self):
+        """Test validating multiple column names from data dict"""
+        # Legitimate column names should pass
+        columns = ["username", "email", "created_at", "user_id"]
+        for col in columns:
+            validated = SqlValidator.validate_identifier(col, "column name")
+            assert validated == col
+
+        # Malicious column name should fail
+        malicious_columns = [
+            "username",
+            "email; DROP TABLE",  # SQL injection
+            "created_at"
+        ]
+
+        validated = []
+        for col in malicious_columns:
+            try:
+                validated.append(SqlValidator.validate_identifier(col, "column name"))
+            except ValueError:
+                pass  # Expected for malicious column
+
+        # Should only have 2 valid columns (username and created_at)
+        assert len(validated) == 2

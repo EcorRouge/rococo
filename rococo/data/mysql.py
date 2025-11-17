@@ -293,10 +293,13 @@ class MySqlAdapter(DbAdapter):
         Count rows in `table` matching `conditions`.
         The 'options' parameter is included for interface compatibility.
         """
+        # Validate table name to prevent SQL injection
+        table = SqlValidator.validate_identifier(table, "table name")
+
         safe_table_name = f"`{table}`"
         cond_clauses: List[str] = []
         params: List[Any] = []
-        
+
         if conditions:
             for key, val in conditions.items():
                 clause, vals_list = self._build_condition_string(table, key, val)
@@ -317,7 +320,15 @@ class MySqlAdapter(DbAdapter):
 
     def get_save_query(self, table_name, data):
         """Returns a query to save an entity in database."""
-        columns = ', '.join(data.keys())
+        # Validate table name to prevent SQL injection
+        table_name = SqlValidator.validate_identifier(table_name, "table name")
+
+        # Validate all column names to prevent SQL injection
+        validated_columns = []
+        for column in data.keys():
+            validated_columns.append(SqlValidator.validate_identifier(column, "column name"))
+
+        columns = ', '.join(validated_columns)
         placeholders = ', '.join(['%s'] * len(data))
 
         values = tuple(data.values())

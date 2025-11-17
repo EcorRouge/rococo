@@ -316,6 +316,9 @@ class PostgreSQLAdapter(DbAdapter):
         The 'options' parameter is included for interface compatibility; PostgreSQL hints
         are typically injected as SQL comments or via session parameters.
         """
+        # Validate table name to prevent SQL injection
+        table = SqlValidator.validate_identifier(table, "table name")
+
         # Quote the table name for safety
         safe_table = f'"{table}"'
         where_clauses: List[str] = []
@@ -345,20 +348,28 @@ class PostgreSQLAdapter(DbAdapter):
 
     def get_save_query(self, table_name, data):
         """Returns a query to update a row or insert a new one in PostgreSQL."""
-        columns = ', '.join(data.keys())
+        # Validate table name to prevent SQL injection
+        table_name = SqlValidator.validate_identifier(table_name, "table name")
+
+        # Validate all column names to prevent SQL injection
+        validated_columns = []
+        for column in data.keys():
+            validated_columns.append(SqlValidator.validate_identifier(column, "column name"))
+
+        columns = ', '.join(validated_columns)
         placeholders = ', '.join(['%s'] * len(data))
 
         # Prepare the update columns in the form 'column_name = EXCLUDED.column_name'
-        update_columns = ', '.join([f"{col} = EXCLUDED.{col}" for col in data.keys()])
-        
+        update_columns = ', '.join([f"{col} = EXCLUDED.{col}" for col in validated_columns])
+
         # The first column will be used for update condition (non-unique column, can be any)
-        unique_column = list(data.keys())[0]
+        unique_column = validated_columns[0]
 
         # The query will first try to update, and if no rows are updated, it will insert
         query = (
             f"WITH updated AS ("
             f"  UPDATE {table_name} "
-            f"  SET {', '.join([f'{col} = %s' for col in data.keys()])} "
+            f"  SET {', '.join([f'{col} = %s' for col in validated_columns])} "
             f"  WHERE {unique_column} = %s "
             f"  RETURNING *"
             f") "

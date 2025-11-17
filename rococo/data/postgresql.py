@@ -6,6 +6,7 @@ from uuid import UUID
 from typing import Any, Dict, List, Tuple, Union, Optional, Callable
 
 from rococo.data.base import DbAdapter
+from rococo.data.sql_validator import SqlValidator
 
 
 class PostgreSQLAdapter(DbAdapter):
@@ -69,9 +70,23 @@ class PostgreSQLAdapter(DbAdapter):
         return getattr(self._cursor, function_name)(*args, **kwargs)
 
     def _build_condition_string(self, table, key, value):
-        if '.' not in key:
+        # Validate table name to prevent injection
+        table = SqlValidator.validate_identifier(table, "table name")
+
+        # Validate column name to prevent injection
+        # If key contains a dot, it's already table-qualified (e.g., "users.username")
+        if '.' in key:
+            # Split and validate both parts
+            parts = key.split('.', 1)
+            if len(parts) == 2:
+                table_part, column_part = parts
+                SqlValidator.validate_identifier(table_part, "table name in condition")
+                SqlValidator.validate_identifier(column_part, "column name in condition")
+        else:
+            # Simple column name - validate it
+            SqlValidator.validate_identifier(key, "column name in condition")
             key = f"{table}.{key}"
-            
+
         if isinstance(value, str):
             return f"{key} = %s", [value]
         elif isinstance(value, bool):
@@ -90,6 +105,8 @@ class PostgreSQLAdapter(DbAdapter):
 
     def get_move_entity_to_audit_table_query(self, table, entity_id):
         """Returns the query to move an entity to audit table."""
+        # Validate table name to prevent injection
+        table = SqlValidator.validate_identifier(table, "table name")
         return f"""INSERT INTO {table}_audit (SELECT * FROM {table} WHERE entity_id=%s)""", (str(entity_id).replace('-', ''),)
 
     def move_entity_to_audit_table(self, table, entity_id):
@@ -158,6 +175,29 @@ class PostgreSQLAdapter(DbAdapter):
             join_statements: list = None,
             additional_fields: list = None
     ) -> Optional[Dict[str, Any]]:
+        # === SQL Injection Prevention ===
+        # Validate table name
+        table = SqlValidator.validate_identifier(table, "table name")
+
+        # Validate additional fields
+        if additional_fields:
+            additional_fields = [
+                SqlValidator.validate_field_expression(field)
+                for field in additional_fields
+            ]
+
+        # Validate join statements
+        if join_statements:
+            join_statements = [
+                SqlValidator.validate_join_statement(stmt)
+                for stmt in join_statements
+            ]
+
+        # Validate sort columns and directions
+        if sort:
+            sort = SqlValidator.validate_sort_list(sort)
+        # === End SQL Injection Prevention ===
+
         fields = [f'{table}.*']
         if additional_fields:
             fields += additional_fields
@@ -201,6 +241,35 @@ class PostgreSQLAdapter(DbAdapter):
             additional_fields: list = None
     ) -> List[Dict[str, Any]]:
 
+        # === SQL Injection Prevention ===
+        # Validate table name
+        table = SqlValidator.validate_identifier(table, "table name")
+
+        # Validate additional fields
+        if additional_fields:
+            additional_fields = [
+                SqlValidator.validate_field_expression(field)
+                for field in additional_fields
+            ]
+
+        # Validate join statements
+        if join_statements:
+            join_statements = [
+                SqlValidator.validate_join_statement(stmt)
+                for stmt in join_statements
+            ]
+
+        # Validate sort columns and directions
+        if sort:
+            sort = SqlValidator.validate_sort_list(sort)
+
+        # Validate limit and offset (CRITICAL for preventing SQL injection)
+        if limit is not None:
+            limit = SqlValidator.validate_integer(limit, "limit", min_val=0, max_val=100000)
+        if offset is not None:
+            offset = SqlValidator.validate_integer(offset, "offset", min_val=0)
+        # === End SQL Injection Prevention ===
+
         fields = [f'{table}.*']
         if additional_fields:
             fields += additional_fields
@@ -218,7 +287,7 @@ class PostgreSQLAdapter(DbAdapter):
 
         if condition_strs_values:
             query += f" WHERE {' AND '.join([condition_str for condition_str, condition_value in condition_strs_values])}"
-        
+
         if sort:
             sort_strs = [f"{column} {direction}" for column, direction in sort]
             query += f" ORDER BY {', '.join(sort_strs)}"

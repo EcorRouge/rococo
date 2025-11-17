@@ -250,15 +250,15 @@ class TestValidateFieldExpression:
 
     def test_sql_injection_attempts_blocked(self):
         """Test that SQL injection attempts are blocked"""
-        # Semicolon injection
-        with pytest.raises(ValueError, match="dangerous characters"):
+        # Semicolon injection - caught by pattern validation
+        with pytest.raises(ValueError, match="Invalid field expression"):
             SqlValidator.validate_field_expression("username; DROP TABLE")
 
-        # Comment injection
-        with pytest.raises(ValueError, match="dangerous characters"):
+        # Comment injection - caught by pattern validation (-- and /* don't match alphanumeric pattern)
+        with pytest.raises(ValueError, match="Invalid field expression"):
             SqlValidator.validate_field_expression("username--")
 
-        with pytest.raises(ValueError, match="dangerous characters"):
+        with pytest.raises(ValueError, match="Invalid field expression"):
             SqlValidator.validate_field_expression("username/*")
 
         # UNION injection (won't match pattern)
@@ -456,7 +456,7 @@ class TestIntegrationScenarios:
     def test_condition_key_injection_blocked(self):
         """Test that condition key injection is blocked"""
         malicious_key = "username OR 1=1 --"
-        with pytest.raises(ValueError, match="Invalid .* column"):
+        with pytest.raises(ValueError, match="Invalid column name in condition"):
             SqlValidator.validate_identifier(malicious_key, "column name in condition")
 
     def test_legitimate_query_allowed(self):

@@ -91,9 +91,33 @@ class SqlValidator:
             )
 
         # Check for dangerous SQL keywords (case-insensitive)
+        # Only match whole words/segments, not substrings (e.g., "created_at" is OK, "drop_table" is not)
         name_upper = name.upper()
-        for keyword in SqlValidator.DANGEROUS_KEYWORDS:
-            if keyword in name_upper:
+
+        # Split by underscore to check each segment
+        # This catches "users_DROP_table" and "UNION_SELECT" but allows "created_at"
+        segments = name_upper.split('_')
+
+        # Separate punctuation-based keywords (need substring check) from word-based keywords
+        punctuation_keywords = {'--', '/*', '*/', ';'}
+        word_keywords = SqlValidator.DANGEROUS_KEYWORDS - punctuation_keywords
+
+        # Check for punctuation-based SQL injection patterns (as substrings)
+        for keyword in punctuation_keywords:
+            if keyword in name:  # Use original name to preserve special chars
+                raise ValueError(
+                    f"Invalid {context}: '{name}' contains dangerous SQL pattern '{keyword}'"
+                )
+
+        # Check for word-based SQL keywords (as complete segments)
+        for keyword in word_keywords:
+            # Check if keyword is the entire identifier
+            if name_upper == keyword:
+                raise ValueError(
+                    f"Invalid {context}: '{name}' is a SQL keyword '{keyword}'"
+                )
+            # Check if keyword appears as a complete segment (between underscores)
+            if keyword in segments:
                 raise ValueError(
                     f"Invalid {context}: '{name}' contains SQL keyword '{keyword}'"
                 )

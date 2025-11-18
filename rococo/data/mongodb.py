@@ -432,14 +432,19 @@ class MongoDBAdapter(DbAdapter):
                 docs_to_insert, session=self._session)
 
             # Fetch and return the inserted documents with their generated _id values
-            inserted_docs = []
-            for inserted_id in insert_result.inserted_ids:
-                doc = coll.find_one({"_id": inserted_id},
-                                    session=self._session)
-                if doc:
-                    inserted_docs.append(doc)
+            inserted_ids = insert_result.inserted_ids
+            if not inserted_ids:
+                return []
 
-            return inserted_docs
+            # Use $in to find all documents matching the list of inserted IDs
+            cursor = coll.find(
+                {"_id": {"$in": inserted_ids}},
+                session=self._session
+            )
+
+            # Create a map to preserve order and convert cursor to list
+            inserted_docs_map = {doc['_id']: doc for doc in cursor}
+            return [inserted_docs_map[id] for id in inserted_ids if id in inserted_docs_map]
 
         except errors.PyMongoError as e:
             raise RuntimeError(f"insert_many failed: {e}") from e

@@ -901,6 +901,13 @@ with get_db_connection() as db:
 ```
 ##### PostgreSQL
 
+> **Required dependency:**  
+> To use `PostgreSQLAdapter`, you must install the PostgreSQL driver:
+>
+> ```
+> pip install psycopg2-binary
+> ```
+
 ```python
 from rococo.data import PostgreSQLAdapter
 

@@ -632,6 +632,10 @@ repository_with_properties = BaseRepository(
     queue_name="user_queue",
     save_calculated_fields=True  # Include properties in database saves
 )
+
+# Note: PostgreSQLRepository derives the table name from the model class name by default.
+# You can override it if needed, e.g., to avoid reserved words:
+# repository.table_name = "custom_table_name"
 ```
 
 ##### Advanced Property Features

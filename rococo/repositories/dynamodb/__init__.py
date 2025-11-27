@@ -1,0 +1,1 @@
+from .dynamodb_repository import DynamoDbRepository

@@ -35,6 +35,7 @@ _Anything worth doing is worth doing well.  Anything worth doing twice is worth 
 - [Data](#data)
   - [SurrealDB](#surrealdb)
   - [PostgreSQL](#postgresql)
+  - [DynamoDB](#dynamodb)
   - [Relationships in Surreal DB](#relationships-in-surreal-db)
     - [Many-to-many relationships](#many-to-many-relationships)
   - [Relationships in MySQL](#relationships-in-mysql)
@@ -919,6 +920,33 @@ with get_db_connection() as db:
     INSERT INTO cars (brand, model, year)
     VALUES ('Volvo', 'p1800', 1968)""")
     print(db.execute_query("SELECT * FROM cars;", {}))
+```
+
+##### DynamoDB
+
+```python
+from rococo.data.dynamodb import DynamoDbAdapter
+from pynamodb.models import Model
+from pynamodb.attributes import UnicodeAttribute
+
+# 1. Define PynamoDB Model
+class PersonModel(Model):
+    class Meta:
+        table_name = 'person'
+        region = 'us-east-1'
+        # Credentials are read from environment variables:
+        # AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
+    entity_id = UnicodeAttribute(hash_key=True)
+
+# 2. Initialize Adapter with Model Registry
+model_registry = {'Person': PersonModel}
+adapter = DynamoDbAdapter(model_registry)
+
+# 3. Use with Repository
+from rococo.repositories.dynamodb import DynamoDbRepository
+from rococo.models import Person # Your Rococo VersionedModel
+
+repo = DynamoDbRepository(adapter, Person)
 ```
 
 <summary>

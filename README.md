@@ -69,8 +69,41 @@ _Anything worth doing is worth doing well.  Anything worth doing twice is worth 
 Install using pip:
 
 ```bash
-pip install rococo
+pip install rococo[all]
 ```
+
+Install using poetry:
+
+```bash
+poetry add rococo[all]
+```
+
+Try to avoid installing all extras - as they have 3rd-party dependencies and it will increase your app size, installing lots of unused libraries.
+For example, if you need only messaging and MySQL, install only the required extras:
+
+```bash
+pip install rococo[messaging,data-mysql]
+```
+
+or
+
+```bash
+poetry add rococo[messaging,data-mysql]
+```
+
+The following extras are available:
+
+- **all** - all extras
+- **data** - all data extras
+- **data-common** - common data extras (do not use directly, it is included automatically)
+- **data-surreal** - SurrealDb support
+- **data-mysql** - MySQL support
+- **data-mongo** - MongoDB support
+- **data-postgres** - PostgreSQL support
+- **messaging** - rabbitmq/sqs messaging
+- **emailing** - mailjet/ses emailing
+- **faxing** - iFax faxing support
+- **sms** - Twilio sms support
 
 ### Example
 
@@ -307,6 +340,7 @@ print("extra" in result)        # Output: False (extra dict is unwrapped)
 ```
 
 **Key Features:**
+
 - **Configurable**: Set `allow_extra = True` to enable extra fields support
 - **Transparent Storage**: Extra fields are stored in the `extra` dict attribute
 - **Direct Access**: Access extra fields directly as attributes (e.g., `model.custom_field`)

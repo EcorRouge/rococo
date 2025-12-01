@@ -90,6 +90,62 @@ class BaseRepository:
             return None
         return self.model.from_dict(data)
 
+    def _validate_int(
+        self,
+        value: Any,
+        context: str = "value",
+        min_val: int = None,
+        max_val: int = None
+    ) -> int:
+        """
+        Validate and convert to integer with optional range check.
+        This prevents injection attacks in LIMIT, OFFSET, and other numeric contexts
+        by ensuring the value is actually an integer, not a string containing SQL code.
+        Args:
+            value: The value to validate and convert
+            context: Description of what this value represents (for error messages)
+            min_val: Minimum allowed value (inclusive), or None for no minimum
+            max_val: Maximum allowed value (inclusive), or None for no maximum
+        Returns:
+            The validated integer value, or None if value is None and allow_none=True
+        Raises:
+            ValueError: If validation fails
+        Examples:
+            >>> SqlValidator.validate_integer(10, "limit")
+            10
+            >>> SqlValidator.validate_integer("20", "offset", min_val=0)
+            20
+            >>> SqlValidator.validate_integer("10; DROP TABLE", "limit")
+            ValueError: Invalid limit: must be an integer
+            >>> SqlValidator.validate_integer(1000000, "limit", max_val=10000)
+            ValueError: Invalid limit: 1000000 exceeds maximum 10000
+        """
+        # Allow None if specified
+        if value is None:
+            return None
+
+        # Convert to integer (will raise ValueError if not convertible)
+        try:
+            int_value = int(value)
+        except (ValueError, TypeError) as e:
+            raise ValueError(
+                f"Invalid {context}: must be an integer, got {type(value).__name__} '{value}'"
+            )
+
+        # Check minimum value
+        if min_val is not None and int_value < min_val:
+            raise ValueError(
+                f"Invalid {context}: {int_value} is less than minimum {min_val}"
+            )
+
+        # Check maximum value
+        if max_val is not None and int_value > max_val:
+            raise ValueError(
+                f"Invalid {context}: {int_value} exceeds maximum {max_val}"
+            )
+
+        return int_value
+
     def get_many(
         self,
         conditions: Dict[str, Any] = None,
@@ -108,6 +164,10 @@ class BaseRepository:
         :param fetch_related: list of related fields to fetch
         :return: list of VersionedModel instances
         """
+
+        limit = self._validate_int(limit, "limit", 0, 100000)
+        offset = self._validate_int(offset, "offset", 0)
+
         records = self._execute_within_context(
             self.adapter.get_many,
             self.table_name,

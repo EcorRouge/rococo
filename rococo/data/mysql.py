@@ -71,7 +71,7 @@ class MySqlAdapter(DbAdapter):
     def _build_condition_string(self, table, key, value):
         if '.' not in key:
             key = f"{table}.{key}"
-            
+
         if isinstance(value, str):
             return f"{key} = %s", [value]
         elif isinstance(value, bool):
@@ -86,7 +86,8 @@ class MySqlAdapter(DbAdapter):
         elif value is None:
             return f"{key} IS NULL", []
         else:
-            raise Exception(f"Unsupported type {type(value)} for condition key: {key}, value: {value}")
+            raise Exception(
+                f"Unsupported type {type(value)} for condition key: {key}, value: {value}")
 
     def get_move_entity_to_audit_table_query(self, table, entity_id):
         """Returns the query to move an entity to audit table."""
@@ -94,7 +95,8 @@ class MySqlAdapter(DbAdapter):
 
     def move_entity_to_audit_table(self, table, entity_id):
         """Executes the query to move an entity to audit table."""
-        query, values = self.get_move_entity_to_audit_table_query(table, entity_id)
+        query, values = self.get_move_entity_to_audit_table_query(
+            table, entity_id)
         self._cursor.execute(query, values)
         self._connection.commit()
 
@@ -148,7 +150,8 @@ class MySqlAdapter(DbAdapter):
 
         condition_strs_values = []
         if conditions:
-            condition_strs_values = [self._build_condition_string(table, k, v) for k, v in conditions.items()]
+            condition_strs_values = [self._build_condition_string(
+                table, k, v) for k, v in conditions.items()]
         condition_strs_values.append((f"{table}.active = %s", [1]))
         query += f" WHERE {' AND '.join([condition_str for condition_str, condition_value in condition_strs_values])}"
 
@@ -157,8 +160,10 @@ class MySqlAdapter(DbAdapter):
             query += f" ORDER BY {', '.join(sort_strs)}"
         query += " LIMIT 1"
 
-        values = sum((condition_value for condition_str, condition_value in condition_strs_values), [])
-        db_response = self.parse_db_response(self.execute_query(query, tuple(values)))
+        values = sum((condition_value for condition_str,
+                     condition_value in condition_strs_values), [])
+        db_response = self.parse_db_response(
+            self.execute_query(query, tuple(values)))
 
         if not db_response:
             return None
@@ -190,23 +195,26 @@ class MySqlAdapter(DbAdapter):
 
         condition_strs_values = []
         if conditions:
-            condition_strs_values = [self._build_condition_string(table, k, v) for k, v in conditions.items()]
+            condition_strs_values = [self._build_condition_string(
+                table, k, v) for k, v in conditions.items()]
         if active:
             condition_strs_values.append((f"{table}.active = %s", [1]))
 
         if condition_strs_values:
             query += f" WHERE {' AND '.join([condition_str for condition_str, condition_value in condition_strs_values])}"
-        
+
         if sort:
             sort_strs = [f"{column} {direction}" for column, direction in sort]
             query += f" ORDER BY {', '.join(sort_strs)}"
         if limit is not None:
-            query += f" LIMIT {limit}"
+            query += f" LIMIT {int(limit)}"
         if offset is not None:
-            query += f" OFFSET {offset}"
+            query += f" OFFSET {int(offset)}"
 
-        values = sum((condition_value for condition_str, condition_value in condition_strs_values), [])
-        db_response = self.parse_db_response(self.execute_query(query, tuple(values)))
+        values = sum((condition_value for condition_str,
+                     condition_value in condition_strs_values), [])
+        db_response = self.parse_db_response(
+            self.execute_query(query, tuple(values)))
         if not db_response:
             return []
         elif isinstance(db_response, dict):
@@ -227,10 +235,11 @@ class MySqlAdapter(DbAdapter):
         safe_table_name = f"`{table}`"
         cond_clauses: List[str] = []
         params: List[Any] = []
-        
+
         if conditions:
             for key, val in conditions.items():
-                clause, vals_list = self._build_condition_string(table, key, val)
+                clause, vals_list = self._build_condition_string(
+                    table, key, val)
                 cond_clauses.append(clause)
                 params.extend(vals_list)
 
@@ -238,10 +247,11 @@ class MySqlAdapter(DbAdapter):
         sql = f"SELECT COUNT(*) AS `count` FROM {safe_table_name} {where_clause}"
 
         if options and 'hint' in options:
-            self.logger.info(f"MySQLAdapter.get_count received hint option: {options['hint']}, but it's not directly applied in this generic manner for MySQL.")
+            self.logger.info(
+                f"MySQLAdapter.get_count received hint option: {options['hint']}, but it's not directly applied in this generic manner for MySQL.")
 
         rows = self.execute_query(sql, tuple(params))
-        
+
         if rows and isinstance(rows, list) and rows[0] is not None:
             return int(rows[0].get('count', 0))
         return 0
@@ -267,7 +277,7 @@ class MySqlAdapter(DbAdapter):
             if retry_count < 3 and ex.args[0] == 1213:
                 # Deadlock detected
                 logging.warning("Deadlock detected on table %s. Retrying in %d seconds. Attempt %d",
-                            table_name, 2**retry_count, retry_count+1)
+                                table_name, 2**retry_count, retry_count+1)
                 time.sleep(2**retry_count)
                 return self._create_in_database(table_name, data, retry_count=retry_count+1)
             else:

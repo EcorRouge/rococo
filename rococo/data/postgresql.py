@@ -71,7 +71,7 @@ class PostgreSQLAdapter(DbAdapter):
     def _build_condition_string(self, table, key, value):
         if '.' not in key:
             key = f"{table}.{key}"
-            
+
         if isinstance(value, str):
             return f"{key} = %s", [value]
         elif isinstance(value, bool):
@@ -86,7 +86,8 @@ class PostgreSQLAdapter(DbAdapter):
         elif value is None:
             return f"{key} IS NULL", []
         else:
-            raise Exception(f"Unsupported type {type(value)} for condition key: {key}, value: {value}")
+            raise Exception(
+                f"Unsupported type {type(value)} for condition key: {key}, value: {value}")
 
     def get_move_entity_to_audit_table_query(self, table, entity_id):
         """Returns the query to move an entity to audit table."""
@@ -94,7 +95,8 @@ class PostgreSQLAdapter(DbAdapter):
 
     def move_entity_to_audit_table(self, table, entity_id):
         """Executes the query to move an entity to audit table."""
-        query, values = self.get_move_entity_to_audit_table_query(table, entity_id)
+        query, values = self.get_move_entity_to_audit_table_query(
+            table, entity_id)
         self._cursor.execute(query, values)
         self._connection.commit()
 
@@ -102,10 +104,10 @@ class PostgreSQLAdapter(DbAdapter):
         """Executes a query against the DB."""
         if _vars is None:
             _vars = {}
-        
+
         # Execute the query
         self._call_cursor('execute', sql, _vars)
-        
+
         # Check if the query is a SELECT statement to fetch results
         if sql.strip().upper().startswith("SELECT"):
             # Fetch column names
@@ -117,7 +119,7 @@ class PostgreSQLAdapter(DbAdapter):
             # For other queries (like CREATE, INSERT, UPDATE, DELETE), return None or a success message
             self._connection.commit()
             return None
-    
+
     def run_transaction(self, queries_list):
         """Executes a list of queries in a single transaction against the database."""
 
@@ -130,7 +132,8 @@ class PostgreSQLAdapter(DbAdapter):
             transformed_values = []
             for value in values:
                 if isinstance(value, dict):
-                    transformed_values.append(json.dumps(value))  # Convert dict to JSON string
+                    # Convert dict to JSON string
+                    transformed_values.append(json.dumps(value))
                 else:
                     transformed_values.append(value)
 
@@ -169,7 +172,8 @@ class PostgreSQLAdapter(DbAdapter):
 
         condition_strs_values = []
         if conditions:
-            condition_strs_values = [self._build_condition_string(table, k, v) for k, v in conditions.items()]
+            condition_strs_values = [self._build_condition_string(
+                table, k, v) for k, v in conditions.items()]
         condition_strs_values.append((f"{table}.active = %s", ['true']))
         query += f" WHERE {' AND '.join([condition_str for condition_str, condition_value in condition_strs_values])}"
 
@@ -178,9 +182,11 @@ class PostgreSQLAdapter(DbAdapter):
             query += f" ORDER BY {', '.join(sort_strs)}"
         query += " LIMIT 1"
 
-        values = sum((condition_value for condition_str, condition_value in condition_strs_values), [])
+        values = sum((condition_value for condition_str,
+                     condition_value in condition_strs_values), [])
 
-        db_response = self.parse_db_response(self.execute_query(query, tuple(values)))
+        db_response = self.parse_db_response(
+            self.execute_query(query, tuple(values)))
 
         if not db_response:
             return None
@@ -212,23 +218,26 @@ class PostgreSQLAdapter(DbAdapter):
 
         condition_strs_values = []
         if conditions:
-            condition_strs_values = [self._build_condition_string(table, k, v) for k, v in conditions.items()]
+            condition_strs_values = [self._build_condition_string(
+                table, k, v) for k, v in conditions.items()]
         if active:
             condition_strs_values.append((f"{table}.active = %s", ["true"]))
 
         if condition_strs_values:
             query += f" WHERE {' AND '.join([condition_str for condition_str, condition_value in condition_strs_values])}"
-        
+
         if sort:
             sort_strs = [f"{column} {direction}" for column, direction in sort]
             query += f" ORDER BY {', '.join(sort_strs)}"
         if limit is not None:
-            query += f" LIMIT {limit}"
+            query += f" LIMIT {int(limit)}"
         if offset is not None:
-            query += f" OFFSET {offset}"
+            query += f" OFFSET {int(offset)}"
 
-        values = sum((condition_value for condition_str, condition_value in condition_strs_values), [])
-        db_response = self.parse_db_response(self.execute_query(query, tuple(values)))
+        values = sum((condition_value for condition_str,
+                     condition_value in condition_strs_values), [])
+        db_response = self.parse_db_response(
+            self.execute_query(query, tuple(values)))
         if not db_response:
             return []
         elif isinstance(db_response, dict):
@@ -280,8 +289,9 @@ class PostgreSQLAdapter(DbAdapter):
         placeholders = ', '.join(['%s'] * len(data))
 
         # Prepare the update columns in the form 'column_name = EXCLUDED.column_name'
-        update_columns = ', '.join([f"{col} = EXCLUDED.{col}" for col in data.keys()])
-        
+        update_columns = ', '.join(
+            [f"{col} = EXCLUDED.{col}" for col in data.keys()])
+
         # The first column will be used for update condition (non-unique column, can be any)
         unique_column = list(data.keys())[0]
 
@@ -297,9 +307,10 @@ class PostgreSQLAdapter(DbAdapter):
             f"SELECT {placeholders} "
             f"WHERE NOT EXISTS (SELECT 1 FROM updated)"
         )
-        
+
         # Prepare values: first, the update values, followed by the insert values
-        update_values = tuple(data.values()) + (data[unique_column],)  # values for update and delete condition
+        # values for update and delete condition
+        update_values = tuple(data.values()) + (data[unique_column],)
         insert_values = tuple(data.values())  # values for insert
 
         # Combine the update and insert values
@@ -318,7 +329,7 @@ class PostgreSQLAdapter(DbAdapter):
             if retry_count < 3 and ex.args[0] == 1213:
                 # Deadlock detected
                 logging.warning("Deadlock detected on table %s. Retrying in %d seconds. Attempt %d",
-                            table_name, 2**retry_count, retry_count+1)
+                                table_name, 2**retry_count, retry_count+1)
                 time.sleep(2**retry_count)
                 return self._create_in_database(table_name, data, retry_count=retry_count+1)
             else:

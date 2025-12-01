@@ -61,7 +61,8 @@ class SurrealDbAdapter(DbAdapter):
         elif isinstance(value, UUID):
             return f"{key}='{str(value)}'"
         else:
-            raise Exception(f"Unsuppported type {type(value)} for condition key: {key}, value: {value}")
+            raise Exception(
+                f"Unsuppported type {type(value)} for condition key: {key}, value: {value}")
 
     def run_transaction(self, operations_list: List[Any]):
         """Executes a list of operations against the database as a transaction."""
@@ -75,7 +76,8 @@ class SurrealDbAdapter(DbAdapter):
 
     def move_entity_to_audit_table(self, table, entity_id):
         """Executes a query to move entity to audit table."""
-        move_entity_op = self.get_move_entity_to_audit_table_query(table, entity_id)
+        move_entity_op = self.get_move_entity_to_audit_table_query(
+            table, entity_id)
         self._call_db(*move_entity_op)
 
     def execute_query(self, sql, _vars=None):
@@ -114,10 +116,11 @@ class SurrealDbAdapter(DbAdapter):
             fields += additional_fields
 
         query = f"SELECT {', '.join(fields)} FROM {table}"
-        
+
         condition_strs = []
         if conditions:
-            condition_strs = [f"{self._build_condition_string(k, v)}" for k, v in conditions.items()]
+            condition_strs = [
+                f"{self._build_condition_string(k, v)}" for k, v in conditions.items()]
         condition_strs.append("active=true")
         query += f" WHERE {' AND '.join(condition_strs)}"
 
@@ -125,7 +128,7 @@ class SurrealDbAdapter(DbAdapter):
             sort_strs = [f"{column} {direction}" for column, direction in sort]
             query += f" ORDER BY {', '.join(sort_strs)}"
         query += " LIMIT 1"
-        
+
         if fetch_related:
             query += f" FETCH {', '.join(field for field in fetch_related)}"
 
@@ -143,16 +146,17 @@ class SurrealDbAdapter(DbAdapter):
         fetch_related: list = None,
         additional_fields: list = None
     ) -> List[Dict[str, Any]]:
-        
+
         fields = ['*']
         if additional_fields:
             fields += additional_fields
 
         query = f"SELECT {', '.join(fields)} FROM {table}"
-        
+
         condition_strs = []
         if conditions:
-            condition_strs = [f"{self._build_condition_string(k, v)}" for k, v in conditions.items()]
+            condition_strs = [
+                f"{self._build_condition_string(k, v)}" for k, v in conditions.items()]
         if active:
             condition_strs.append("active=true")
         if condition_strs:
@@ -160,7 +164,7 @@ class SurrealDbAdapter(DbAdapter):
         if sort:
             sort_strs = [f"{column} {direction}" for column, direction in sort]
             query += f" ORDER BY {', '.join(sort_strs)}"
-        query += f" LIMIT {limit}"
+        query += f" LIMIT {int(limit)}"
 
         if fetch_related:
             query += f" FETCH {', '.join(field for field in fetch_related)}"

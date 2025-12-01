@@ -2,6 +2,36 @@
 version: 2.1
 orbs:
   python: circleci/python@2
+
+commands:
+  security_scans:
+    steps:
+      - run:
+          name: "SonarQube: Install and Execute Analysis"
+          command: |
+            echo "Installing SonarScanner dependencies..."
+            # Install OpenJDK and Unzip
+            sudo apt-get update && sudo apt-get install -y openjdk-17-jre unzip
+            
+            echo "Downloading SonarScanner..."
+            export SONAR_SCANNER_VERSION=5.0.1.3006
+            export SONAR_SCANNER_HOME=$HOME/.sonar/sonar-scanner-$SONAR_SCANNER_VERSION-linux
+            curl --create-dirs -sSLo $HOME/.sonar/sonar-scanner.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-$SONAR_SCANNER_VERSION-linux.zip
+            unzip -qq $HOME/.sonar/sonar-scanner.zip -d $HOME/.sonar/
+            export PATH=$SONAR_SCANNER_HOME/bin:$PATH
+            
+            echo "Running SonarQube Analysis..."
+            # Execute SonarQube scan
+            # NOTE: Update the projectKey below to match your project
+            sonar-scanner \
+              -Dsonar.projectKey=rococo \
+              -Dsonar.sources=. \
+              -Dsonar.host.url=$SONAR_GLOBAL_HOST \
+              -Dsonar.token=$SONAR_GLOBAL_TOKEN \
+              -Dsonar.scm.disabled=true
+            
+            echo "✅ SonarQube scan completed successfully"
+
 jobs:
   test-python:
     # Install dependencies and run tests
@@ -9,6 +39,7 @@ jobs:
       - image: cimg/python:3.10-node
     steps:
       - checkout
+      - security_scans
       - python/install-packages:
           pkg-manager: pip
       - python/install-packages:
@@ -23,6 +54,7 @@ jobs:
           command: pytest --junitxml=junit.xml || ((($? == 5)) && echo 'Did not find any tests to run.')
       - store_test_results:
           path: junit.xml
+
   build-package:
     # build python package
     docker:
@@ -36,6 +68,7 @@ jobs:
       - store_artifacts:
           path: dist
           destination: ~/artifacts
+
   deploy:
     # This is an example deploy job, not actually used by the workflow
     docker:
@@ -48,10 +81,13 @@ jobs:
       - run:
           name: found github actions config
           command: ':'
+
 workflows:
   build-and-test:
     jobs:
-      - test-python
+      - test-python:
+          context:
+            - sonarqube
       - build-package:
           requires:
             - test-python

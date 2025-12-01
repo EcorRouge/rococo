@@ -1608,6 +1608,13 @@ with get_db_connection() as adapter:
 
 ### How to use the adapter and base Repository in another projects
 
+> **⚠️ SECURITY WARNING: SQL Injection Risk**
+> 
+> `BaseAdapter` and `BaseRepository` use parameterized queries to prevent SQL injection in **query values** for methods like `get_one`, `get_many`, and `get_count`. However, it is the **repository implementation's responsibility** to prevent SQL injection in **field names, column names, and table names**.
+> 
+> If you need to pass column names or table names based on user input to conditions or sort fields - **think twice** and implement proper validation and sanitization. Never directly use user input for field or table names without strict whitelisting or validation.
+> If you are using hardcoded field and table names - your are safe.
+
 ```python
 class LoginMethodRepository(BaseRepository):
     def __init__(self, adapter, message_adapter, queue_name):

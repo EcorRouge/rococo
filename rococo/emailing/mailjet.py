@@ -25,10 +25,12 @@ class MailjetService(EmailService):
         Args:
             addresses: List of email addresses as strings or dicts
                       - String format: "email@example.com"
-                      - Dict format: {"Email": "email@example.com", "Name": "John Doe"}
+                      - Dict format (uppercase): {"Email": "email@example.com", "Name": "John Doe"}
+                      - Dict format (lowercase): {"email": "email@example.com", "name": "John Doe"}
 
         Returns:
             List of dicts in Mailjet format: [{"Email": "email@example.com", "Name": "John Doe"}]
+            Note: Name key is omitted if the name value is None, empty string, or whitespace-only.
         """
         converted_addresses = []
 
@@ -37,12 +39,29 @@ class MailjetService(EmailService):
                 # Convert string to dict format
                 converted_addresses.append({"Email": address})
             elif isinstance(address, dict):
-                # Already in dict format, validate it has Email key
-                if "Email" in address:
-                    converted_addresses.append(address)
-                else:
+                # Extract email (support both uppercase and lowercase keys)
+                email = address.get("Email") or address.get("email")
+                
+                if not email:
                     raise ValueError(
-                        f"Dict address must contain 'Email' key: {address}")
+                        f"Dict address must contain 'Email' or 'email' key: {address}")
+                
+                # Build the result dict starting with Email
+                result = {"Email": email}
+                
+                # Extract name (support both uppercase and lowercase keys)
+                name = address.get("Name") or address.get("name")
+                
+                # Only include Name if it's not None, not empty, and not whitespace-only
+                if name and isinstance(name, str) and name.strip():
+                    result["Name"] = name
+                
+                # Preserve any additional fields from the original dict
+                for key, value in address.items():
+                    if key not in ["Email", "email", "Name", "name"] and key not in result:
+                        result[key] = value
+                
+                converted_addresses.append(result)
             else:
                 raise TypeError(
                     f"Address must be string or dict, got {type(address)}: {address}")

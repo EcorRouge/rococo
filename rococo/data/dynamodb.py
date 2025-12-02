@@ -1,14 +1,17 @@
 from typing import Any, Dict, List, Optional, Tuple, Type, Union
+import os
 from pynamodb.models import Model
+from pynamodb.attributes import UnicodeAttribute, BooleanAttribute, NumberAttribute, JSONAttribute, UTCDateTimeAttribute, ListAttribute
 from pynamodb.exceptions import DoesNotExist
 from rococo.data.base import DbAdapter
+from rococo.models import VersionedModel
 
 
 class DynamoDbAdapter(DbAdapter):
-    """DynamoDB adapter using PynamoDB."""
+    """DynamoDB adapter using PynamoDB with dynamic model generation."""
 
-    def __init__(self, model_registry: Dict[str, Type[Model]]):
-        self.model_registry = model_registry
+    def __init__(self):
+        pass
 
     def __enter__(self):
         return self
@@ -16,10 +19,67 @@ class DynamoDbAdapter(DbAdapter):
     def __exit__(self, exc_type, exc_value, traceback):
         pass
 
-    def _get_model(self, table: str) -> Type[Model]:
-        if table not in self.model_registry:
-            raise ValueError(f"Model for table '{table}' not found in registry.")
-        return self.model_registry[table]
+    def _map_type_to_attribute(self, field_type: Any, is_hash_key: bool = False, is_range_key: bool = False):
+        kwargs = {
+            'hash_key': is_hash_key,
+            'range_key': is_range_key,
+            'null': True
+        }
+        
+        if field_type == bool:
+            return BooleanAttribute(**kwargs)
+        elif field_type == int or field_type == float:
+            return NumberAttribute(**kwargs)
+        elif field_type == dict:
+            return JSONAttribute(**kwargs)
+        elif field_type == list:
+            return ListAttribute(**kwargs)
+        # Default to UnicodeAttribute for str and others
+        return UnicodeAttribute(**kwargs)
+
+    def _generate_pynamo_model(self, table_name: str, model_cls: Type[VersionedModel], is_audit: bool = False) -> Type[Model]:
+        """Dynamically generate a PynamoDB Model class from a Rococo VersionedModel."""
+        
+        # 1. Define Meta
+        class Meta:
+            table_name_val = table_name
+            region = os.getenv('AWS_REGION', 'us-east-1')
+            aws_access_key_id = os.getenv('AWS_ACCESS_KEY_ID')
+            aws_secret_access_key = os.getenv('AWS_SECRET_ACCESS_KEY')
+        
+        attrs = {
+            'Meta': type('Meta', (), {
+                'table_name': Meta.table_name_val,
+                'region': Meta.region,
+                'aws_access_key_id': Meta.aws_access_key_id,
+                'aws_secret_access_key': Meta.aws_secret_access_key
+            })
+        }
+
+        # 2. Map fields
+        # If it's an audit table, we might want a different key structure
+        # Standard Rococo Audit: entity_id (Hash), version (Range)
+        
+        if is_audit:
+            attrs['entity_id'] = UnicodeAttribute(hash_key=True)
+            attrs['version'] = UnicodeAttribute(range_key=True)
+        else:
+            # Standard Table: entity_id (Hash)
+            attrs['entity_id'] = UnicodeAttribute(hash_key=True)
+
+        # Add other fields from dataclass
+        if hasattr(model_cls, '__dataclass_fields__'):
+            for field_name, field_def in model_cls.__dataclass_fields__.items():
+                if field_name == 'entity_id':
+                    continue
+                if is_audit and field_name == 'version':
+                    continue
+                
+                attrs[field_name] = self._map_type_to_attribute(field_def.type)
+
+        # 3. Create class
+        class_name = f"Pynamo{model_cls.__name__}{'Audit' if is_audit else ''}"
+        return type(class_name, (Model,), attrs)
 
     def run_transaction(self, operations_list: List[Any]):
         """
@@ -41,10 +101,13 @@ class DynamoDbAdapter(DbAdapter):
             return response.attribute_values
         return response
 
-    def get_one(self, table: str, conditions: Dict[str, Any], sort: List[Tuple[str, str]] = None) -> Dict[str, Any]:
-        model_cls = self._get_model(table)
+    def get_one(self, table: str, conditions: Dict[str, Any], sort: List[Tuple[str, str]] = None, model_cls: Type[VersionedModel] = None) -> Dict[str, Any]:
+        if model_cls is None:
+            raise ValueError("model_cls is required for DynamoDB get_one")
+            
+        pynamo_model = self._generate_pynamo_model(table, model_cls)
         try:
-            results = self._execute_query_or_scan(model_cls, conditions, limit=1)
+            results = self._execute_query_or_scan(pynamo_model, conditions, limit=1)
             # results is an iterator
             for item in results:
                 return item.attribute_values
@@ -52,57 +115,68 @@ class DynamoDbAdapter(DbAdapter):
         except Exception as e:
              raise RuntimeError(f"get_one failed: {e}")
 
-    def get_many(self, table: str, conditions: Dict[str, Any] = None, sort: List[Tuple[str, str]] = None, limit: int = 100) -> List[Dict[str, Any]]:
-        model_cls = self._get_model(table)
+    def get_many(self, table: str, conditions: Dict[str, Any] = None, sort: List[Tuple[str, str]] = None, limit: int = 100, model_cls: Type[VersionedModel] = None) -> List[Dict[str, Any]]:
+        if model_cls is None:
+            raise ValueError("model_cls is required for DynamoDB get_many")
+
+        pynamo_model = self._generate_pynamo_model(table, model_cls)
         try:
-            results = self._execute_query_or_scan(model_cls, conditions, limit=limit)
+            results = self._execute_query_or_scan(pynamo_model, conditions, limit=limit)
             return [item.attribute_values for item in results]
         except Exception as e:
             raise RuntimeError(f"get_many failed: {e}")
 
-    def get_count(self, table: str, conditions: Dict[str, Any], options: Optional[Dict[str, Any]] = None) -> int:
-        model_cls = self._get_model(table)
+    def get_count(self, table: str, conditions: Dict[str, Any], options: Optional[Dict[str, Any]] = None, model_cls: Type[VersionedModel] = None) -> int:
+        if model_cls is None:
+            raise ValueError("model_cls is required for DynamoDB get_count")
+
+        pynamo_model = self._generate_pynamo_model(table, model_cls)
         try:
-            return self._execute_query_or_scan(model_cls, conditions, count_only=True)
+            return self._execute_query_or_scan(pynamo_model, conditions, count_only=True)
         except Exception as e:
             raise RuntimeError(f"get_count failed: {e}")
 
-    def get_move_entity_to_audit_table_query(self, table, entity_id):
-        return lambda: self.move_entity_to_audit_table(table, entity_id)
+    def get_move_entity_to_audit_table_query(self, table, entity_id, model_cls: Type[VersionedModel] = None):
+        return lambda: self.move_entity_to_audit_table(table, entity_id, model_cls)
 
-    def move_entity_to_audit_table(self, table_name: str, entity_id: str):
-        model_cls = self._get_model(table_name)
+    def move_entity_to_audit_table(self, table_name: str, entity_id: str, model_cls: Type[VersionedModel] = None):
+        if model_cls is None:
+            raise ValueError("model_cls is required for DynamoDB move_entity_to_audit_table")
+
+        pynamo_model = self._generate_pynamo_model(table_name, model_cls)
         audit_table_name = f"{table_name}_audit"
-        
-        if audit_table_name not in self.model_registry:
-             return
-
-        audit_model_cls = self._get_model(audit_table_name)
+        pynamo_audit_model = self._generate_pynamo_model(audit_table_name, model_cls, is_audit=True)
 
         try:
-            item = model_cls.get(entity_id)
-            audit_item = audit_model_cls(**item.attribute_values)
+            item = pynamo_model.get(entity_id)
+            audit_item = pynamo_audit_model(**item.attribute_values)
             audit_item.save()
         except DoesNotExist:
             pass
         except Exception as e:
             raise RuntimeError(f"move_entity_to_audit_table failed: {e}")
 
-    def get_save_query(self, table: str, data: Dict[str, Any]):
-        return lambda: self.save(table, data)
+    def get_save_query(self, table: str, data: Dict[str, Any], model_cls: Type[VersionedModel] = None):
+        return lambda: self.save(table, data, model_cls)
 
-    def save(self, table: str, data: Dict[str, Any]) -> Union[Dict[str, Any], None]:
-        model_cls = self._get_model(table)
-        item = model_cls(**data)
+    def save(self, table: str, data: Dict[str, Any], model_cls: Type[VersionedModel] = None) -> Union[Dict[str, Any], None]:
+        if model_cls is None:
+            raise ValueError("model_cls is required for DynamoDB save")
+
+        pynamo_model = self._generate_pynamo_model(table, model_cls)
+        item = pynamo_model(**data)
         item.save()
         return item.attribute_values
 
-    def delete(self, table: str, data: Dict[str, Any]) -> bool:
-        model_cls = self._get_model(table)
+    def delete(self, table: str, data: Dict[str, Any], model_cls: Type[VersionedModel] = None) -> bool:
+        if model_cls is None:
+            raise ValueError("model_cls is required for DynamoDB delete")
+
+        pynamo_model = self._generate_pynamo_model(table, model_cls)
         entity_id = data.get('entity_id')
         if entity_id:
             try:
-                item = model_cls.get(entity_id)
+                item = pynamo_model.get(entity_id)
                 item.active = False
                 item.save()
                 return True

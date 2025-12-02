@@ -27,7 +27,7 @@ class PersonModel(Model):
     attribute_values = {} 
 
     def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+        # super().__init__(**kwargs)
         self.attribute_values = kwargs
 
     def save(self):
@@ -51,7 +51,7 @@ class PersonAuditModel(Model):
     attribute_values = {}
 
     def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+        # super().__init__(**kwargs)
         self.attribute_values = kwargs
 
     def save(self):
@@ -67,11 +67,7 @@ class TestDynamoDbRepository(unittest.TestCase):
     def setUp(self):
         os.environ['AWS_ACCESS_KEY_ID'] = 'testing'
         os.environ['AWS_SECRET_ACCESS_KEY'] = 'testing'
-        self.model_registry = {
-            'person': PersonModel,
-            'person_audit': PersonAuditModel
-        }
-        self.adapter = DynamoDbAdapter(self.model_registry)
+        self.adapter = DynamoDbAdapter()
         self.message_adapter = MagicMock(spec=MessageAdapter)
         self.repository = DynamoDbRepository(
             self.adapter,
@@ -80,12 +76,29 @@ class TestDynamoDbRepository(unittest.TestCase):
             'test_queue'
         )
 
+        # Patch _generate_pynamo_model to return our dummy models
+        self.patcher = patch.object(self.adapter, '_generate_pynamo_model', side_effect=self._mock_generate_model)
+        self.patcher.start()
+
+    def tearDown(self):
+        self.patcher.stop()
+
+    def _mock_generate_model(self, table_name, model_cls, is_audit=False):
+        if is_audit:
+            return PersonAuditModel
+        return PersonModel
+
     def test_get_one_query(self):
         # Test get_one using query (hash key present)
-        # Mock _meta.hash_key.attr_name for _execute_query_or_scan
-        PersonModel._meta = MagicMock()
-        PersonModel._meta.hash_key.attr_name = 'entity_id'
-        PersonModel._meta.range_key = None
+        # Mock get_attributes for _execute_query_or_scan
+        PersonModel.get_attributes = MagicMock()
+        
+        # Mock attributes to identify hash key
+        mock_hash_attr = MagicMock()
+        mock_hash_attr.is_hash_key = True
+        mock_hash_attr.is_range_key = False
+        
+        PersonModel.get_attributes.return_value = {'entity_id': mock_hash_attr}
         
         entity_id = uuid4().hex
 
@@ -103,10 +116,15 @@ class TestDynamoDbRepository(unittest.TestCase):
 
     def test_get_one_scan(self):
         # Test get_one using scan (hash key missing)
-        # Mock _meta.hash_key.attr_name for _execute_query_or_scan
-        PersonModel._meta = MagicMock()
-        PersonModel._meta.hash_key.attr_name = 'entity_id'
-        PersonModel._meta.range_key = None
+        # Mock get_attributes for _execute_query_or_scan
+        PersonModel.get_attributes = MagicMock()
+        
+        # Mock attributes to identify hash key
+        mock_hash_attr = MagicMock()
+        mock_hash_attr.is_hash_key = True
+        mock_hash_attr.is_range_key = False
+        
+        PersonModel.get_attributes.return_value = {'entity_id': mock_hash_attr}
         
         entity_id = uuid4().hex
 

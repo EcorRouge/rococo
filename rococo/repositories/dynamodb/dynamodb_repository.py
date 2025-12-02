@@ -57,7 +57,8 @@ class DynamoDbRepository(BaseRepository):
         data = self._execute_within_context(
             lambda: self.adapter.get_one(
                 table=self.table_name,
-                conditions=db_conditions
+                conditions=db_conditions,
+                model_cls=self.model
             )
         )
 
@@ -84,7 +85,8 @@ class DynamoDbRepository(BaseRepository):
                 table=self.table_name,
                 conditions=db_conditions,
                 sort=sort,
-                limit=limit
+                limit=limit,
+                model_cls=self.model
             )
         )
 
@@ -107,14 +109,15 @@ class DynamoDbRepository(BaseRepository):
             self._execute_within_context(
                 lambda: self.adapter.move_entity_to_audit_table(
                     self.table_name,
-                    instance.entity_id
+                    instance.entity_id,
+                    model_cls=self.model
                 )
             )
 
         # 2) Prepare & write the new version
         payload = self._process_data_before_save(instance)
         saved = self._execute_within_context(
-            lambda: self.adapter.save(self.table_name, payload)
+            lambda: self.adapter.save(self.table_name, payload, model_cls=self.model)
         )
 
         # 3) Hydrate the returned fields onto our instance
@@ -150,14 +153,16 @@ class DynamoDbRepository(BaseRepository):
             self._execute_within_context(
                 lambda: self.adapter.move_entity_to_audit_table(
                     self.table_name,
-                    data['entity_id']
+                    data['entity_id'],
+                    model_cls=self.model
                 )
             )
 
         saved = self._execute_within_context(
             lambda: self.adapter.save(
                 self.table_name,
-                data
+                data,
+                model_cls=self.model
             )
         )
 

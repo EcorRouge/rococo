@@ -40,12 +40,17 @@ extras_require["data-postgres"] = [
     'psycopg2-binary>=2.9.10,<3.0'
 ]
 
+extras_require["data-dynamodb"] = [
+    'pynamodb>=6.0.0,<7.0'
+]
+
 extras_require["data"] = [
     *extras_require["data-common"],
     *extras_require["data-surreal"],
     *extras_require["data-mysql"],
     *extras_require["data-mongo"],
     *extras_require["data-postgres"],
+    *extras_require["data-dynamodb"],
 ]
 
 extras_require["all"] = [
@@ -59,7 +64,7 @@ extras_require["all"] = [
 
 setup(
     name='rococo',
-    version='1.1.11',
+    version='1.1.12',
     packages=find_packages(),
     url='https://github.com/EcorRouge/rococo',
     license='MIT',

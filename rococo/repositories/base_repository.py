@@ -6,7 +6,7 @@ from uuid import UUID
 from typing import Any, Dict, List, Type, Union
 from rococo.data.base import DbAdapter
 from rococo.messaging.base import MessageAdapter
-from rococo.models.versioned_model import VersionedModel
+from rococo.models.versioned_model import BaseModel, VersionedModel
 
 
 class BaseRepository:
@@ -17,7 +17,7 @@ class BaseRepository:
     def __init__(
         self,
         adapter: DbAdapter,
-        model: Type[VersionedModel],
+        model: Type[BaseModel],
         message_adapter: MessageAdapter,
         queue_name: str = 'placeholder',
         user_id: UUID = None
@@ -30,12 +30,16 @@ class BaseRepository:
         self.user_id = user_id
         # Don't save calculated fields (properties) to database by default
         self.save_calculated_fields = False
-        # Enable auditing by default
+        # Enable auditing by default (only applies to VersionedModel)
         self.use_audit_table = True
         # Ttl field for delete() method
         self.ttl_field = None
         # Ttl (in minutes) for deleted records
         self.ttl_minutes = 0
+
+    def _is_versioned_model(self) -> bool:
+        """Check if the repository's model is a VersionedModel (has versioning support)."""
+        return issubclass(self.model, VersionedModel)
 
     def _execute_within_context(
         self,
@@ -49,9 +53,9 @@ class BaseRepository:
 
     def _process_data_before_save(
         self,
-        instance: VersionedModel
+        instance: BaseModel
     ) -> Dict[str, Any]:
-        """Convert a VersionedModel instance to a data dictionary for the adapter."""
+        """Convert a BaseModel instance to a data dictionary for the adapter."""
         instance.prepare_for_save(changed_by_id=self.user_id)
         return instance.as_dict(
             convert_datetime_to_iso_string=True,
@@ -69,13 +73,13 @@ class BaseRepository:
         self,
         conditions: Dict[str, Any],
         fetch_related: List[str] = None
-    ) -> Union[VersionedModel, None]:
+    ) -> Union[BaseModel, None]:
         """
         Fetches a single record from the specified table based on given conditions.
 
         :param conditions: filter conditions
         :param fetch_related: list of related fields to fetch
-        :return: a VersionedModel instance if found, None otherwise
+        :return: a BaseModel instance if found, None otherwise
         """
         data = self._execute_within_context(
             self.adapter.get_one,
@@ -153,7 +157,7 @@ class BaseRepository:
         limit: int = 100,
         offset: int = 0,
         fetch_related: List[str] = None
-    ) -> List[VersionedModel]:
+    ) -> List[BaseModel]:
         """
         Fetches multiple records from the specified table based on given conditions.
 
@@ -162,7 +166,7 @@ class BaseRepository:
         :param limit: maximum number of records to return
         :param offset: number of records to skip before returning results
         :param fetch_related: list of related fields to fetch
-        :return: list of VersionedModel instances
+        :return: list of BaseModel instances
         """
 
         limit = self._validate_int(limit, "limit", 0, 100000)
@@ -220,24 +224,33 @@ class BaseRepository:
 
     def save(
         self,
-        instance: VersionedModel,
+        instance: BaseModel,
         send_message: bool = False
-    ) -> VersionedModel:
+    ) -> BaseModel:
         """
-        Saves a VersionedModel instance to the database.
+        Saves a BaseModel instance to the database.
 
-        :param instance: The VersionedModel instance to save.
+        :param instance: The BaseModel instance to save.
         :param send_message: Whether to send a message to the message queue after saving. Defaults to False.
-        :return: The saved VersionedModel instance.
+        :return: The saved BaseModel instance.
         """
         data = self._process_data_before_save(instance)
+        
         with self.adapter:
-            move_entity_query = self.adapter.get_move_entity_to_audit_table_query(
-                self.table_name, instance.entity_id)
-            save_entity_query = self.adapter.get_save_query(
-                self.table_name, data)
-            self.adapter.run_transaction(
-                [move_entity_query, save_entity_query])
+            # Only use audit table for VersionedModel instances
+            if self._is_versioned_model() and self.use_audit_table:
+                move_entity_query = self.adapter.get_move_entity_to_audit_table_query(
+                    self.table_name, instance.entity_id)
+                save_entity_query = self.adapter.get_save_query(
+                    self.table_name, data)
+                self.adapter.run_transaction(
+                    [move_entity_query, save_entity_query])
+            else:
+                # For non-versioned models (BaseModel), just save without audit
+                save_entity_query = self.adapter.get_save_query(
+                    self.table_name, data)
+                self.adapter.run_transaction([save_entity_query])
+        
         if send_message:
             # This assumes that the instance is now in post-saved state with all the new DB updates
             message = json.dumps(instance.as_dict(
@@ -248,13 +261,20 @@ class BaseRepository:
 
     def delete(
         self,
-        instance: VersionedModel
-    ) -> VersionedModel:
+        instance: BaseModel
+    ) -> BaseModel:
         """
-        Logically deletes a VersionedModel instance from the database by setting its active flag to False.
+        Logically deletes a BaseModel instance from the database.
+        For VersionedModel, sets active flag to False.
+        For non-versioned models (BaseModel), performs a hard delete or similar operation.
 
-        :param instance: The VersionedModel instance to delete.
-        :return: The deleted VersionedModel instance, which is now in a logically deleted state.
+        :param instance: The BaseModel instance to delete.
+        :return: The deleted BaseModel instance.
         """
-        instance.active = False
-        return self.save(instance)
+        if self._is_versioned_model():
+            # For VersionedModel, set active to False (soft delete)
+            instance.active = False
+            return self.save(instance)
+        else:
+            # For non-versioned models (BaseModel), just save (subclasses can override for hard delete)
+            return self.save(instance)

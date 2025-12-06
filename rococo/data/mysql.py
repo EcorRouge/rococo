@@ -258,7 +258,7 @@ class MySqlAdapter(DbAdapter):
 
     def get_save_query(self, table_name, data):
         """Returns a query to save an entity in database."""
-        columns = ', '.join(data.keys())
+        columns = ', '.join([f'`{col}`' for col in data.keys()])
         placeholders = ', '.join(['%s'] * len(data))
 
         values = tuple(data.values())

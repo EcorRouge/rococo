@@ -6,16 +6,16 @@ from typing import Any, Dict, List, Optional, Type, Tuple
 from rococo.data import MongoDBAdapter
 from rococo.messaging import MessageAdapter
 from rococo.repositories import BaseRepository
-from rococo.models.versioned_model import VersionedModel, get_uuid_hex
+from rococo.models.versioned_model import BaseModel, VersionedModel, get_uuid_hex
 
 
 class MongoDbRepository(BaseRepository):
-    """Generic MongoDB repository for VersionedModel with audit and messaging."""
+    """Generic MongoDB repository for BaseModel with audit and messaging."""
 
     def __init__(
         self,
         db_adapter: MongoDBAdapter,
-        model: Type[VersionedModel],
+        model: Type[BaseModel],
         message_adapter: MessageAdapter,
         queue_name: str,
         user_id: Optional[UUID] = None
@@ -46,10 +46,10 @@ class MongoDbRepository(BaseRepository):
 
     def _process_data_before_save(
         self,
-        instance: VersionedModel
+        instance: BaseModel
     ) -> Dict[str, Any]:
         """
-        Prepares a VersionedModel instance for saving by converting it into a data dictionary.
+        Prepares a BaseModel instance for saving by converting it into a data dictionary.
 
         This method prepares the instance for saving by updating its metadata with
         necessary information and converting it to a dictionary format suitable for
@@ -57,7 +57,7 @@ class MongoDbRepository(BaseRepository):
         `_id`.
 
         Args:
-            instance (VersionedModel): The instance of VersionedModel to be processed.
+            instance (BaseModel): The instance of BaseModel to be processed.
 
         Returns:
             Dict[str, Any]: A dictionary representing the prepared data for MongoDB storage.
@@ -71,7 +71,9 @@ class MongoDbRepository(BaseRepository):
 
         data.pop("_id", None)
 
-        data["latest"] = True
+        # Only set latest flag for versioned models
+        if self._is_versioned_model():
+            data["latest"] = True
         return data
 
     def get_one(
@@ -79,7 +81,7 @@ class MongoDbRepository(BaseRepository):
         collection_name: str,
         index: str,
         query: Dict[str, Any]
-    ) -> Optional[VersionedModel]:
+    ) -> Optional[BaseModel]:
         """
         Fetches a single record from a specified MongoDB collection based on the given query parameters and index.
 
@@ -92,10 +94,12 @@ class MongoDbRepository(BaseRepository):
             Optional[VersionedModel]: An instance of the model if a matching record is found, otherwise None.
         """
         db_conditions = query.copy() if query else {}
-        if "latest" not in db_conditions:
-            db_conditions["latest"] = True
-        if "active" not in db_conditions:
-            db_conditions["active"] = True
+        # Only add versioned model conditions for VersionedModel
+        if self._is_versioned_model():
+            if "latest" not in db_conditions:
+                db_conditions["latest"] = True
+            if "active" not in db_conditions:
+                db_conditions["active"] = True
 
         data = self._execute_within_context(
             lambda: self.adapter.get_one(
@@ -118,7 +122,7 @@ class MongoDbRepository(BaseRepository):
         sort: Optional[List[Tuple[str, int]]] = None,
         limit: Optional[int] = None,
         offset: Optional[int] = None
-    ) -> List[VersionedModel]:
+    ) -> List[BaseModel]:
         """
         Retrieves a list of records from a specified MongoDB collection based on the given query parameters and index.
 
@@ -133,10 +137,12 @@ class MongoDbRepository(BaseRepository):
             List[VersionedModel]: A list of model instances, each representing a record from the collection.
         """
         db_conditions = query.copy() if query else {}
-        if "latest" not in db_conditions:
-            db_conditions["latest"] = True
-        if "active" not in db_conditions:
-            db_conditions["active"] = True
+        # Only add versioned model conditions for VersionedModel
+        if self._is_versioned_model():
+            if "latest" not in db_conditions:
+                db_conditions["latest"] = True
+            if "active" not in db_conditions:
+                db_conditions["active"] = True
 
         records_data = self._execute_within_context(
             lambda: self.adapter.get_many(
@@ -159,51 +165,63 @@ class MongoDbRepository(BaseRepository):
 
     def delete(
         self,
-        instance: VersionedModel,
+        instance: BaseModel,
         collection_name: str
-    ) -> VersionedModel:
+    ) -> BaseModel:
         """
-        Logically deletes a VersionedModel instance from the database by setting its active flag to False.
+        Deletes a BaseModel instance from the database.
+        For VersionedModel, sets its active flag to False (soft delete).
+        For non-versioned models (BaseModel), performs a hard delete from the database.
 
         Args:
-            instance (VersionedModel): The VersionedModel instance to delete.
+            instance (BaseModel): The BaseModel instance to delete.
             collection_name (str): The name of the MongoDB collection to delete from.
 
         Returns:
-            VersionedModel: The deleted VersionedModel instance, which is now in a logically deleted state.
+            BaseModel: The deleted BaseModel instance.
         """
         self.logger.info(
             f"Deleting entity_id={getattr(instance, 'entity_id', 'N/A')} from {collection_name}")
 
-        instance.prepare_for_save(changed_by_id=self.user_id)
-        instance.active = False
+        if self._is_versioned_model():
+            # Soft delete for versioned models
+            instance.prepare_for_save(changed_by_id=self.user_id)
+            instance.active = False
 
-        data = instance.as_dict(
-            convert_datetime_to_iso_string=True, convert_uuids=True, export_properties=self.save_calculated_fields)
+            data = instance.as_dict(
+                convert_datetime_to_iso_string=True, convert_uuids=True, export_properties=self.save_calculated_fields)
 
-        if self.ttl_field:
-            data[self.ttl_field] = datetime.now(
-                timezone.utc) + timedelta(minutes=self.ttl_minutes)
+            if self.ttl_field:
+                data[self.ttl_field] = datetime.now(
+                    timezone.utc) + timedelta(minutes=self.ttl_minutes)
 
-        if self.use_audit_table and instance.previous_version and instance.previous_version != get_uuid_hex(0):
-            self._execute_within_context(
-                lambda: self.adapter.move_entity_to_audit_table(
+            # Determine if we should move to audit
+            move_to_audit = False
+            if self.use_audit_table:
+                previous_version = getattr(instance, 'previous_version', None)
+                if previous_version and previous_version != get_uuid_hex(0):
+                    move_to_audit = True
+
+            saved = self._execute_within_context(
+                lambda: self.adapter.save(
                     collection_name,
-                    data['entity_id']
+                    data,
+                    move_to_audit=move_to_audit
                 )
             )
 
-        saved = self._execute_within_context(
-            lambda: self.adapter.save(
-                collection_name,
-                data
-            )
-        )
-
-        if saved:
-            for k, v in saved.items():
-                if hasattr(instance, k):
-                    setattr(instance, k, v)
+            if saved:
+                for k, v in saved.items():
+                    if hasattr(instance, k):
+                        setattr(instance, k, v)
+        else:
+            # Hard delete for non-versioned models
+            with self.adapter:
+                coll = self.adapter._get_collection(collection_name, write=True)
+                coll.delete_one(
+                    {"entity_id": instance.entity_id},
+                    session=self.adapter._session
+                )
 
         return instance
 
@@ -236,7 +254,7 @@ class MongoDbRepository(BaseRepository):
         self,
         collection_name: str,
         pipeline: List[Dict[str, Any]]
-    ) -> List[VersionedModel]:
+    ) -> List[BaseModel]:
         """
         Execute an aggregation pipeline and return deserialized VersionedModel objects.
 
@@ -263,45 +281,50 @@ class MongoDbRepository(BaseRepository):
 
     def create(
         self,
-        instance: VersionedModel,
+        instance: BaseModel,
         collection_name: str
-    ) -> VersionedModel:
+    ) -> BaseModel:
         """
-        Creates a new VersionedModel instance in the database.
+        Creates a new BaseModel instance in the database.
 
-        This method is identical to :meth:`save`, except that it sets the `active` field to `True` before saving.
+        This method is identical to :meth:`save`, except that it sets the `active` field to `True` 
+        for VersionedModel before saving.
 
-        :param instance: The VersionedModel instance to save.
-        :type instance: VersionedModel
+        :param instance: The BaseModel instance to save.
+        :type instance: BaseModel
         :param collection_name: The name of the MongoDB collection to create in.
         :type collection_name: str
-        :return: The saved VersionedModel instance, which is now in a logically active state.
-        :rtype: VersionedModel
+        :return: The saved BaseModel instance.
+        :rtype: BaseModel
         """
         self.logger.info(
             f"Creating entity_id={getattr(instance, 'entity_id', 'N/A')} in {collection_name}")
-        instance.active = True
+        # Only set active for VersionedModel
+        if self._is_versioned_model():
+            instance.active = True
         return self.save(instance, collection_name)
 
     def create_many(
         self,
-        instances: List[VersionedModel],
+        instances: List[BaseModel],
         collection_name: str
     ) -> None:
         """
-        Creates multiple VersionedModel instances in the database.
+        Creates multiple BaseModel instances in the database.
 
         This method is identical to :meth:`create`, except that it takes a list of instances to create.
 
-        :param instances: The list of VersionedModel instances to create.
-        :type instances: List[VersionedModel]
+        :param instances: The list of BaseModel instances to create.
+        :type instances: List[BaseModel]
         :param collection_name: The name of the MongoDB collection to insert into.
         :type collection_name: str
         """
         docs = []
         for instance in instances:
             instance.prepare_for_save(changed_by_id=self.user_id)
-            instance.active = True
+            # Only set active for VersionedModel
+            if self._is_versioned_model():
+                instance.active = True
             doc = instance.as_dict(
                 convert_datetime_to_iso_string=True, convert_uuids=True)
             docs.append(doc)
@@ -315,43 +338,50 @@ class MongoDbRepository(BaseRepository):
 
     def save(
         self,
-        instance: VersionedModel,
+        instance: BaseModel,
         collection_name: str,
         send_message: bool = False
-    ) -> VersionedModel:
+    ) -> BaseModel:
         """
-        Saves a VersionedModel instance to the database.
+        Saves a BaseModel instance to the database.
 
         Args:
-            instance (VersionedModel): The VersionedModel instance to save.
+            instance (BaseModel): The BaseModel instance to save.
             collection_name (str): The name of the MongoDB collection to save to.
             send_message (bool, optional): Whether to send a message to the message queue after saving. Defaults to False.
 
         Returns:
-            VersionedModel: The saved VersionedModel instance.
+            BaseModel: The saved BaseModel instance.
         """
-        # 1) if this isn't the very first version, move the existing latest doc into audit
-        if self.use_audit_table and instance.previous_version and instance.previous_version != get_uuid_hex(0):
-            self._execute_within_context(
-                lambda: self.adapter.move_entity_to_audit_table(
-                    collection_name,
-                    instance.entity_id
-                )
+        # Prepare the data for saving
+        payload = self._process_data_before_save(instance)
+        
+        # Use appropriate save method based on model type
+        if self._is_versioned_model():
+            # Determine if we should move to audit
+            # Only move to audit if this is an update (not the first version) and audit is enabled
+            move_to_audit = False
+            if self.use_audit_table:
+                previous_version = getattr(instance, 'previous_version', None)
+                if previous_version and previous_version != get_uuid_hex(0):
+                    move_to_audit = True
+            
+            saved = self._execute_within_context(
+                lambda: self.adapter.save(collection_name, payload, move_to_audit=move_to_audit)
+            )
+        else:
+            # For non-versioned models, use simple upsert
+            saved = self._execute_within_context(
+                lambda: self.adapter.upsert(collection_name, payload)
             )
 
-        # 2) Prepare & write the new version
-        payload = self._process_data_before_save(instance)
-        saved = self._execute_within_context(
-            lambda: self.adapter.save(collection_name, payload)
-        )
-
-        # 3) Hydrate the returned fields onto our instance
+        # Hydrate the returned fields onto our instance
         if saved:
             for k, v in saved.items():
                 if hasattr(instance, k):
                     setattr(instance, k, v)
 
-        # 4) Send a message if requested
+        # Send a message if requested
         if send_message:
             self.message_adapter.send_message(
                 self.queue_name,

@@ -1,11 +1,19 @@
 from typing import Any, Dict, List, Optional, Tuple, Type, Union
 import os
 from pynamodb.models import Model
-from pynamodb.attributes import UnicodeAttribute, BooleanAttribute, NumberAttribute, JSONAttribute, UTCDateTimeAttribute, ListAttribute
+from pynamodb.connection import Connection
+from pynamodb.transactions import TransactWrite
+from pynamodb.indexes import GlobalSecondaryIndex, AllProjection
+from pynamodb.attributes import UnicodeAttribute, BooleanAttribute, NumberAttribute, JSONAttribute, UTCDateTimeAttribute, ListAttribute, Attribute
 from pynamodb.exceptions import DoesNotExist
 from rococo.data.base import DbAdapter
 from rococo.models import VersionedModel
 
+class DynamoOperation:
+    def __init__(self, action: str, model: Model, condition=None):
+        self.action = action
+        self.model = model
+        self.condition = condition
 
 class DynamoDbAdapter(DbAdapter):
     """DynamoDB adapter using PynamoDB with dynamic model generation."""
@@ -83,13 +91,41 @@ class DynamoDbAdapter(DbAdapter):
 
     def run_transaction(self, operations_list: List[Any]):
         """
-        Executes a list of callables. 
-        In this adapter, operations_list is expected to be a list of callables (lambdas) 
-        returned by get_save_query / get_move_entity_to_audit_table_query.
+        Executes a list of operations. 
+        Supports both callables (legacy) and DynamoOperation objects.
         """
-        for op in operations_list:
-            if callable(op):
+        ops = [op for op in operations_list if op is not None]
+        if not ops:
+            return
+
+        # If legacy callables
+        if all(callable(op) for op in ops):
+            for op in ops:
                 op()
+            return
+
+        # PynamoDB TransactWrite
+        # We assume all operations belong to the same connection/region context
+        try:
+            # Extract connection from the first operation's model
+            first_op = ops[0]
+            if isinstance(first_op, DynamoOperation):
+                region = first_op.model.Meta.region
+                connection = Connection(region=region)
+                with TransactWrite(connection=connection) as transaction:
+                    for op in ops:
+                        if isinstance(op, DynamoOperation):
+                            if op.action == 'save':
+                                transaction.save(op.model, condition=op.condition)
+                            elif op.action == 'delete':
+                                transaction.delete(op.model, condition=op.condition)
+            else:
+                # Fallback if mixed types or unknown types
+                for op in ops:
+                    if callable(op):
+                        op()
+        except Exception as e:
+            raise RuntimeError(f"Transaction failed: {e}")
 
     def execute_query(self, sql: str, _vars: Dict[str, Any] = None) -> Any:
         raise NotImplementedError("execute_query is not supported for DynamoDB")
@@ -137,27 +173,46 @@ class DynamoDbAdapter(DbAdapter):
             raise RuntimeError(f"get_count failed: {e}")
 
     def get_move_entity_to_audit_table_query(self, table, entity_id, model_cls: Type[VersionedModel] = None):
-        return lambda: self.move_entity_to_audit_table(table, entity_id, model_cls)
-
-    def move_entity_to_audit_table(self, table_name: str, entity_id: str, model_cls: Type[VersionedModel] = None):
         if model_cls is None:
             raise ValueError("model_cls is required for DynamoDB move_entity_to_audit_table")
 
-        pynamo_model = self._generate_pynamo_model(table_name, model_cls)
-        audit_table_name = f"{table_name}_audit"
+        pynamo_model = self._generate_pynamo_model(table, model_cls)
+        audit_table_name = f"{table}_audit"
         pynamo_audit_model = self._generate_pynamo_model(audit_table_name, model_cls, is_audit=True)
 
         try:
+            # Read the current item
             item = pynamo_model.get(entity_id)
+            # Create audit item
             audit_item = pynamo_audit_model(**item.attribute_values)
-            audit_item.save()
+            # Return a Save operation for the transaction
+            return DynamoOperation('save', audit_item)
         except DoesNotExist:
-            pass
-        except Exception as e:
-            raise RuntimeError(f"move_entity_to_audit_table failed: {e}")
+            return None
+
+    def move_entity_to_audit_table(self, table_name: str, entity_id: str, model_cls: Type[VersionedModel] = None):
+        # Legacy method, kept if needed but get_move_entity_to_audit_table_query now returns an operation
+        op = self.get_move_entity_to_audit_table_query(table_name, entity_id, model_cls)
+        if op and isinstance(op, DynamoOperation):
+            op.model.save()
 
     def get_save_query(self, table: str, data: Dict[str, Any], model_cls: Type[VersionedModel] = None):
-        return lambda: self.save(table, data, model_cls)
+        if model_cls is None:
+            raise ValueError("model_cls is required for DynamoDB save")
+
+        pynamo_model = self._generate_pynamo_model(table, model_cls)
+        item = pynamo_model(**data)
+        
+        # Optimistic Locking
+        condition = None
+        if 'previous_version' in data and data['previous_version'] and data['previous_version'] != '00000000000040008000000000000000':
+            # Update: version must match previous_version
+            condition = (pynamo_model.version == data['previous_version'])
+        else:
+            # Create: entity_id must not exist
+            condition = pynamo_model.entity_id.does_not_exist()
+
+        return DynamoOperation('save', item, condition=condition)
 
     def save(self, table: str, data: Dict[str, Any], model_cls: Type[VersionedModel] = None) -> Union[Dict[str, Any], None]:
         if model_cls is None:

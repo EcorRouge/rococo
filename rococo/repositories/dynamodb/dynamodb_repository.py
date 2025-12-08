@@ -104,29 +104,35 @@ class DynamoDbRepository(BaseRepository):
         instance: VersionedModel,
         send_message: bool = False
     ) -> VersionedModel:
-        # 1) if this isn't the very first version, move the existing latest doc into audit
-        if self.use_audit_table and instance.previous_version and instance.previous_version != get_uuid_hex(0):
-            self._execute_within_context(
-                lambda: self.adapter.move_entity_to_audit_table(
-                    self.table_name,
-                    instance.entity_id,
-                    model_cls=self.model
-                )
-            )
-
-        # 2) Prepare & write the new version
+        # 1) Prepare data
         payload = self._process_data_before_save(instance)
-        saved = self._execute_within_context(
-            lambda: self.adapter.save(self.table_name, payload, model_cls=self.model)
+        
+        ops = []
+        
+        # 2) Audit Op
+        if self.use_audit_table and instance.previous_version and instance.previous_version != get_uuid_hex(0):
+            audit_op = self.adapter.get_move_entity_to_audit_table_query(
+                self.table_name,
+                instance.entity_id,
+                model_cls=self.model
+            )
+            if audit_op:
+                ops.append(audit_op)
+
+        # 3) Save Op
+        save_op = self.adapter.get_save_query(
+            self.table_name, 
+            payload, 
+            model_cls=self.model
+        )
+        ops.append(save_op)
+
+        # 4) Execute Transaction
+        self._execute_within_context(
+            lambda: self.adapter.run_transaction(ops)
         )
 
-        # 3) Hydrate the returned fields onto our instance
-        if saved:
-            for k, v in saved.items():
-                if hasattr(instance, k):
-                    setattr(instance, k, v)
-
-        # 4) Send a message if requested
+        # 5) Send message
         if send_message:
             self.message_adapter.send_message(
                 self.queue_name,
@@ -149,26 +155,25 @@ class DynamoDbRepository(BaseRepository):
         data = instance.as_dict(
             convert_datetime_to_iso_string=True, convert_uuids=True, export_properties=self.save_calculated_fields)
 
+        ops = []
         if self.use_audit_table and instance.previous_version and instance.previous_version != get_uuid_hex(0):
-            self._execute_within_context(
-                lambda: self.adapter.move_entity_to_audit_table(
-                    self.table_name,
-                    data['entity_id'],
-                    model_cls=self.model
-                )
-            )
-
-        saved = self._execute_within_context(
-            lambda: self.adapter.save(
+            audit_op = self.adapter.get_move_entity_to_audit_table_query(
                 self.table_name,
-                data,
+                data['entity_id'],
                 model_cls=self.model
             )
-        )
+            if audit_op:
+                ops.append(audit_op)
 
-        if saved:
-            for k, v in saved.items():
-                if hasattr(instance, k):
-                    setattr(instance, k, v)
+        save_op = self.adapter.get_save_query(
+            self.table_name,
+            data,
+            model_cls=self.model
+        )
+        ops.append(save_op)
+
+        self._execute_within_context(
+            lambda: self.adapter.run_transaction(ops)
+        )
 
         return instance

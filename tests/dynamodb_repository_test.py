@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch, ANY
 from typing import Type
 from pynamodb.models import Model
 from pynamodb.attributes import UnicodeAttribute, BooleanAttribute
-from rococo.data.dynamodb import DynamoDbAdapter
+from rococo.data.dynamodb import DynamoDbAdapter, DynamoOperation
 from rococo.repositories.dynamodb.dynamodb_repository import DynamoDbRepository
 from rococo.models.versioned_model import VersionedModel
 from rococo.messaging import MessageAdapter
@@ -143,11 +143,14 @@ class TestDynamoDbRepository(unittest.TestCase):
         # Test saving a new record
         person = Person(first_name='Jane', last_name='Doe')
         
-        with patch.object(PersonModel, 'save') as mock_save:
+        with patch('rococo.data.dynamodb.TransactWrite') as mock_transact_write:
+            mock_transaction = MagicMock()
+            mock_transact_write.return_value.__enter__.return_value = mock_transaction
+            
             saved_person = self.repository.save(person, send_message=True)
             
             self.assertEqual(saved_person.first_name, 'Jane')
-            mock_save.assert_called()
+            mock_transaction.save.assert_called()
             
             # Verify message was sent
             self.message_adapter.send_message.assert_called_with(
@@ -161,7 +164,7 @@ class TestDynamoDbRepository(unittest.TestCase):
         entity_id = uuid4().hex
         old_version = uuid4().hex
         person.entity_id = entity_id
-        person.previous_version = old_version
+        person.version = old_version
         
         # Mock the 'get' call used by move_entity_to_audit_table
         with patch.object(PersonModel, 'get') as mock_get:
@@ -169,30 +172,33 @@ class TestDynamoDbRepository(unittest.TestCase):
             mock_item.attribute_values = {'entity_id': entity_id, 'first_name': 'Jane', 'active': True}
             mock_get.return_value = mock_item
             
-            with patch.object(PersonAuditModel, 'save') as mock_audit_save:
-                with patch.object(PersonModel, 'save') as mock_save:
-                    self.repository.save(person, send_message=True)
-                    
-                    # Ensure we tried to fetch the old record to audit it
-                    mock_get.assert_called_with(entity_id)
-                    
-                    # Ensure the audit record was saved
-                    mock_audit_save.assert_called()
-                    
-                    # Ensure the new record was saved
-                    mock_save.assert_called()
-                    
-                    # Verify message was sent
-                    self.message_adapter.send_message.assert_called()
+            with patch('rococo.data.dynamodb.TransactWrite') as mock_transact_write:
+                mock_transaction = MagicMock()
+                mock_transact_write.return_value.__enter__.return_value = mock_transaction
+                
+                self.repository.save(person, send_message=True)
+                
+                # Ensure we tried to fetch the old record to audit it
+                mock_get.assert_called_with(entity_id)
+                
+                # Ensure transaction.save was called twice (audit + new)
+                self.assertEqual(mock_transaction.save.call_count, 2)
+                
+                # Verify message was sent
+                self.message_adapter.send_message.assert_called()
 
     def test_delete(self):
         person = Person(first_name='Jane')
         person.entity_id = uuid4().hex
         
-        # Mock get for the delete check (if repository does a check) or just the save (soft delete)
-        with patch.object(PersonModel, 'save') as mock_save:
-             self.repository.delete(person)
-             mock_save.assert_called()
+        with patch('rococo.data.dynamodb.TransactWrite') as mock_transact_write:
+            mock_transaction = MagicMock()
+            mock_transact_write.return_value.__enter__.return_value = mock_transaction
+            
+            self.repository.delete(person)
+            
+            # Should call save (soft delete)
+            mock_transaction.save.assert_called()
 
 
 if __name__ == '__main__':

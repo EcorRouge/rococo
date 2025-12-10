@@ -25,7 +25,7 @@ extras_require["data-common"] = [
 ]
 
 extras_require["data-surreal"] = [
-    'surrealdb>=1.0.4,<1.1'
+    'surrealdb>=1.0.7,<1.1'
 ]
 
 extras_require["data-mysql"] = [

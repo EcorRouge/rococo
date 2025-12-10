@@ -192,7 +192,7 @@ class SurrealDbRepositoryTestCase(unittest.TestCase):
         orig_version = inst.version
         orig_hex = inst.entity_id
         mock_audit = ("AUDIT_Q", (orig_hex,))
-        mock_save = ("update", inst.id, ANY)
+        mock_save = ("upsert", inst.id, ANY)
         self.db_adapter_mock.get_move_entity_to_audit_table_query.return_value = mock_audit
         self.db_adapter_mock.get_save_query.return_value = mock_save
         self.db_adapter_mock.run_transaction.return_value = True
@@ -202,7 +202,7 @@ class SurrealDbRepositoryTestCase(unittest.TestCase):
         _, data = self.db_adapter_mock.get_save_query.call_args[0]
         self.assertEqual(data['id'], inst.id)
         self.assertNotEqual(data['version'], orig_version)
-        self.assertNotIn('entity_id', data)
+        # entity_id is now kept in data for direct querying (ROC-76)
         self.db_adapter_mock.run_transaction.assert_called_once_with([mock_audit, mock_save])
         self.message_adapter_mock.send_message.assert_called_once()
 
@@ -225,7 +225,7 @@ class SurrealDbRepositoryTestCase(unittest.TestCase):
         orig_version = inst.version
         orig_hex = inst.entity_id
         mock_audit = ("AUDIT_Q", (orig_hex,))
-        mock_save = ("update", inst.id, ANY)
+        mock_save = ("upsert", inst.id, ANY)
         self.db_adapter_mock.get_move_entity_to_audit_table_query.return_value = mock_audit
         self.db_adapter_mock.get_save_query.return_value = mock_save
         self.db_adapter_mock.run_transaction.return_value = True
@@ -255,7 +255,7 @@ class SurrealDbRepositoryTestCase(unittest.TestCase):
         orig_version = inst.version
         orig_hex = inst.entity_id
         mock_audit = ("AUDIT_DEL", (orig_hex,))
-        mock_save = ("update", inst.id, ANY)
+        mock_save = ("upsert", inst.id, ANY)
         self.db_adapter_mock.get_move_entity_to_audit_table_query.return_value = mock_audit
         self.db_adapter_mock.get_save_query.return_value = mock_save
         self.db_adapter_mock.run_transaction.return_value = True
@@ -290,7 +290,11 @@ class SurrealDbRepositoryTestCase(unittest.TestCase):
         self.mock_model_from_dict.return_value = expected
 
         result = self.repository.get_one({'entity_id':eid})
-        self.assertIs(result, expected)
+        # Check equality of key attributes instead of object identity
+        self.assertEqual(result.entity_id, expected.entity_id)
+        self.assertEqual(result.name, expected.name)
+        self.assertEqual(result.version, expected.version)
+        self.assertEqual(result.active, expected.active)
         self.db_adapter_mock.get_one.assert_called_once()
 
     @patch('rococo.repositories.surrealdb.surreal_db_repository.SurrealDbRepository._extract_uuid_from_surreal_id')

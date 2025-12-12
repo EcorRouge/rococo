@@ -22,7 +22,7 @@ from conftest import (
     MockMessageAdapter
 )
 
-from test_models import SurrealNonVersionedPost, SurrealNonVersionedCar, SurrealNonVersionedBrand, SurrealNonVersionedBrandCar
+from test_models import SurrealNonVersionedPost, SurrealNonVersionedCar, SurrealNonVersionedBrand, SurrealNonVersionedBrandCar, SurrealSimpleLog
 
 from rococo.data.surrealdb import SurrealDbAdapter
 from rococo.repositories.surrealdb.surreal_db_repository import SurrealDbRepository
@@ -66,6 +66,7 @@ NON_VERSIONED_POST_TABLE = "surrealnonversionedpost"
 NON_VERSIONED_CAR_TABLE = "surrealnonversionedcar"
 NON_VERSIONED_BRAND_TABLE = "surrealnonversionedbrand"
 NON_VERSIONED_BRAND_CAR_TABLE = "surrealnonversionedbrandcar"
+SIMPLE_LOG_TABLE = "surrealsimplelog"
 
 
 @pytest.fixture
@@ -95,6 +96,7 @@ def setup_surrealdb_tables(surrealdb_adapter):
         surrealdb_adapter.execute_query(f"DELETE FROM {NON_VERSIONED_CAR_TABLE}")
         surrealdb_adapter.execute_query(f"DELETE FROM {NON_VERSIONED_BRAND_TABLE}")
         surrealdb_adapter.execute_query(f"DELETE FROM {NON_VERSIONED_BRAND_CAR_TABLE}")
+        surrealdb_adapter.execute_query(f"DELETE FROM {SIMPLE_LOG_TABLE}")
 
     yield
 
@@ -107,6 +109,7 @@ def setup_surrealdb_tables(surrealdb_adapter):
         surrealdb_adapter.execute_query(f"DELETE FROM {NON_VERSIONED_CAR_TABLE}")
         surrealdb_adapter.execute_query(f"DELETE FROM {NON_VERSIONED_BRAND_TABLE}")
         surrealdb_adapter.execute_query(f"DELETE FROM {NON_VERSIONED_BRAND_CAR_TABLE}")
+        surrealdb_adapter.execute_query(f"DELETE FROM {SIMPLE_LOG_TABLE}")
 
 
 @pytest.fixture
@@ -210,6 +213,23 @@ def brand_cars_repository(surrealdb_adapter, setup_surrealdb_tables):
         user_id=None
     )
     repo.table_name = NON_VERSIONED_BRAND_CAR_TABLE
+    return repo
+
+
+@pytest.fixture
+def simple_log_repository(surrealdb_adapter, setup_surrealdb_tables):
+    """Create a repository for SurrealSimpleLog."""
+    message_adapter = MockMessageAdapter()
+    from rococo.repositories.base_repository import BaseRepository
+
+    repo = BaseRepository(
+        adapter=surrealdb_adapter,
+        model=SurrealSimpleLog,
+        message_adapter=message_adapter,
+        queue_name="test_queue",
+        user_id=None
+    )
+    repo.table_name = SIMPLE_LOG_TABLE
     return repo
 
 
@@ -508,6 +528,39 @@ class TestSurrealDBVersionedModel:
 
         # Should return at most 2 products
         assert len(products) <= 2
+
+    def test_versioned_bulk_save(self, versioned_repository, surrealdb_adapter):
+        """Test bulk saving of 100+ versioned entities with version tracking."""
+        # Create 120 products
+        products = [
+            SurrealVersionedProduct(name=f"Bulk Product {i}", price=10.0 + i * 0.5)
+            for i in range(120)
+        ]
+
+        # Save all products
+        saved_products = [versioned_repository.save(product) for product in products]
+
+        # Verify all were saved with versioning
+        assert len(saved_products) == 120
+        assert all(product.entity_id is not None for product in saved_products)
+        assert all(product.version is not None for product in saved_products)
+        assert all(product.active is True for product in saved_products)
+
+        # Update a subset to test audit trail with bulk operations
+        for i in range(0, 20):  # Update first 20 products
+            saved_products[i].price = saved_products[i].price + 5.0
+            saved_products[i] = versioned_repository.save(saved_products[i])
+
+        # Verify updated products have new versions
+        for i in range(0, 20):
+            assert saved_products[i].previous_version is not None
+
+        # Query all active products
+        with surrealdb_adapter:
+            all_records = surrealdb_adapter.execute_query(f"SELECT * FROM {VERSIONED_TABLE} WHERE active = true")
+
+        bulk_names = [r['name'] for r in all_records if r['name'].startswith("Bulk Product")]
+        assert len(bulk_names) >= 120
 
 
 # ============================================================================
@@ -982,6 +1035,30 @@ class TestSurrealDBNonVersionedModel:
                 count = count_result.get('count', 0)
                 assert count >= 3
 
+    def test_nonversioned_bulk_save(self, surrealdb_adapter):
+        """Test bulk saving of 100+ non-versioned entities."""
+        # Create 150 config entries
+        configs = [
+            SurrealNonVersionedConfig(key=f"bulk.config.{i}", value=f"bulk_value_{i}")
+            for i in range(150)
+        ]
+
+        # Save all configs using adapter.save (adds Big 6 fields)
+        with surrealdb_adapter:
+            for config in configs:
+                config.prepare_for_save()
+                data = config.as_dict(convert_datetime_to_iso_string=True, convert_uuids=True)
+                data['id'] = f"{NON_VERSIONED_TABLE}:{config.entity_id}"
+                surrealdb_adapter.save(NON_VERSIONED_TABLE, data)
+
+        # Verify all were saved (use limit=200 to retrieve all 150 configs)
+        with surrealdb_adapter:
+            all_records = surrealdb_adapter.get_many(NON_VERSIONED_TABLE, {}, limit=200)
+
+        # Should have at least our 150 configs
+        bulk_keys = [record['key'] for record in all_records if record['key'].startswith("bulk.config.")]
+        assert len(bulk_keys) >= 150
+
 
 # ============================================================================
 # Non-Versioned Posts Model Tests
@@ -1096,6 +1173,117 @@ class TestSurrealDBNonVersionedCars:
 
             honda_count = sum(1 for car in all_cars if car['brand'] == "Honda")
             assert honda_count == 2
+
+
+# ============================================================================
+# SimpleLog Tests (Non-Versioned Model)
+# ============================================================================
+
+class TestSurrealDBNonVersionedSimpleLog:
+    """Tests for SimpleLog model (non-versioned) with SurrealDB."""
+
+    def test_create_and_save_simple_log(self, surrealdb_adapter):
+        """Test creating and saving a simple log entry."""
+        log = SurrealSimpleLog(message="Application started", level="INFO")
+        log.prepare_for_save()
+
+        with surrealdb_adapter:
+            data = log.as_dict(convert_datetime_to_iso_string=True, convert_uuids=True)
+            data['id'] = f"{SIMPLE_LOG_TABLE}:{log.entity_id}"
+            surrealdb_adapter.save(SIMPLE_LOG_TABLE, data)
+
+        assert log.entity_id is not None
+        assert log.message == "Application started"
+        assert log.level == "INFO"
+
+    def test_update_simple_log_no_audit(self, surrealdb_adapter):
+        """Test updating a simple log does not create audit records."""
+        log = SurrealSimpleLog(message="Processing request", level="INFO")
+        log.prepare_for_save()
+
+        with surrealdb_adapter:
+            data = log.as_dict(convert_datetime_to_iso_string=True, convert_uuids=True)
+            data['id'] = f"{SIMPLE_LOG_TABLE}:{log.entity_id}"
+            surrealdb_adapter.save(SIMPLE_LOG_TABLE, data)
+
+            # Update
+            log.message = "Request processed successfully"
+            log.level = "DEBUG"
+            updated_data = log.as_dict(convert_datetime_to_iso_string=True, convert_uuids=True)
+            updated_data['id'] = f"{SIMPLE_LOG_TABLE}:{log.entity_id}"
+            surrealdb_adapter.save(SIMPLE_LOG_TABLE, updated_data)
+
+            # Verify no audit table
+            audit_result = surrealdb_adapter.execute_query(f"SELECT * FROM {SIMPLE_LOG_TABLE}_audit")
+            assert audit_result is None or len(audit_result) == 0
+
+    def test_delete_simple_log_soft_delete(self, surrealdb_adapter):
+        """Test deleting a simple log performs soft delete."""
+        log = SurrealSimpleLog(message="Temporary log", level="WARNING")
+        log.prepare_for_save()
+
+        with surrealdb_adapter:
+            data = log.as_dict(convert_datetime_to_iso_string=True, convert_uuids=True)
+            data['id'] = f"{SIMPLE_LOG_TABLE}:{log.entity_id}"
+            surrealdb_adapter.save(SIMPLE_LOG_TABLE, data)
+
+            # Delete (soft delete by setting active=false)
+            surrealdb_adapter.delete(SIMPLE_LOG_TABLE, data)
+
+            # Verify still exists but inactive (query without active filter)
+            result = surrealdb_adapter.execute_query(
+                f"SELECT * FROM {SIMPLE_LOG_TABLE} WHERE entity_id = '{log.entity_id}' LIMIT 1"
+            )
+            assert result is not None and len(result) > 0
+            # SurrealDB delete sets active=false
+            assert result[0].get('active') is False
+
+    def test_query_active_logs(self, surrealdb_adapter):
+        """Test querying for active logs only."""
+        logs = [
+            SurrealSimpleLog(message="Active log 1", level="INFO"),
+            SurrealSimpleLog(message="Active log 2", level="DEBUG"),
+            SurrealSimpleLog(message="To be deleted", level="ERROR")
+        ]
+
+        with surrealdb_adapter:
+            for log in logs:
+                log.prepare_for_save()
+                data = log.as_dict(convert_datetime_to_iso_string=True, convert_uuids=True)
+                data['id'] = f"{SIMPLE_LOG_TABLE}:{log.entity_id}"
+                surrealdb_adapter.save(SIMPLE_LOG_TABLE, data)
+
+            # Delete third log
+            log_to_delete = logs[2]
+            delete_data = log_to_delete.as_dict(convert_datetime_to_iso_string=True, convert_uuids=True)
+            delete_data['id'] = f"{SIMPLE_LOG_TABLE}:{log_to_delete.entity_id}"
+            surrealdb_adapter.delete(SIMPLE_LOG_TABLE, delete_data)
+
+            # Query active logs (active=true by default with get_many)
+            active_logs = surrealdb_adapter.get_many(SIMPLE_LOG_TABLE, {})
+            active_messages = [l['message'] for l in active_logs]
+            assert "Active log 1" in active_messages
+            assert "Active log 2" in active_messages
+            assert "To be deleted" not in active_messages
+
+    def test_bulk_save_simple_logs(self, surrealdb_adapter):
+        """Test bulk saving of 100+ simple log entries."""
+        logs = [
+            SurrealSimpleLog(message=f"Bulk log message {i}", level="INFO" if i % 2 == 0 else "DEBUG")
+            for i in range(100)
+        ]
+
+        with surrealdb_adapter:
+            for log in logs:
+                log.prepare_for_save()
+                data = log.as_dict(convert_datetime_to_iso_string=True, convert_uuids=True)
+                data['id'] = f"{SIMPLE_LOG_TABLE}:{log.entity_id}"
+                surrealdb_adapter.save(SIMPLE_LOG_TABLE, data)
+
+            # Verify all were saved (use limit=150 to retrieve all logs)
+            all_logs = surrealdb_adapter.get_many(SIMPLE_LOG_TABLE, {}, limit=150)
+            bulk_messages = [l['message'] for l in all_logs if l['message'].startswith("Bulk log message")]
+            assert len(bulk_messages) >= 100
 
 
 # ============================================================================

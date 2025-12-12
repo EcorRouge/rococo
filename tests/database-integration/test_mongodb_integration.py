@@ -16,7 +16,7 @@ from conftest import (
     get_mongodb_config,
     MockMessageAdapter
 )
-from test_models import VersionedProduct, NonVersionedConfig, NonVersionedPost, NonVersionedCar, NonVersionedBrand, NonVersionedBrandCar
+from test_models import VersionedProduct, NonVersionedConfig, NonVersionedPost, NonVersionedCar, NonVersionedBrand, NonVersionedBrandCar, SimpleLog
 
 from rococo.data.mongodb import MongoDBAdapter
 from rococo.repositories.mongodb.mongodb_repository import MongoDbRepository
@@ -37,6 +37,7 @@ NON_VERSIONED_POST_COLLECTION = "non_versioned_post"
 NON_VERSIONED_CAR_COLLECTION = "non_versioned_car"
 NON_VERSIONED_BRAND_COLLECTION = "non_versioned_brand"
 NON_VERSIONED_BRAND_CAR_COLLECTION = "non_versioned_brand_car"
+SIMPLE_LOG_COLLECTION = "simple_log"
 
 
 @pytest.fixture
@@ -80,6 +81,7 @@ def setup_mongodb_collections(mongodb_adapter):
         mongodb_adapter.db.drop_collection(NON_VERSIONED_CAR_COLLECTION)
         mongodb_adapter.db.drop_collection(NON_VERSIONED_BRAND_COLLECTION)
         mongodb_adapter.db.drop_collection(NON_VERSIONED_BRAND_CAR_COLLECTION)
+        mongodb_adapter.db.drop_collection(SIMPLE_LOG_COLLECTION)
 
 
 @pytest.fixture
@@ -161,6 +163,20 @@ def brand_cars_repository(mongodb_adapter, setup_mongodb_collections):
     repo = MongoDbRepository(
         db_adapter=mongodb_adapter,
         model=NonVersionedBrandCar,
+        message_adapter=message_adapter,
+        queue_name="test_queue",
+        user_id=None
+    )
+    return repo
+
+
+@pytest.fixture
+def simple_log_repository(mongodb_adapter, setup_mongodb_collections):
+    """Create a repository for SimpleLog."""
+    message_adapter = MockMessageAdapter()
+    repo = MongoDbRepository(
+        db_adapter=mongodb_adapter,
+        model=SimpleLog,
         message_adapter=message_adapter,
         queue_name="test_queue",
         user_id=None
@@ -512,6 +528,45 @@ class TestMongoDBVersionedModel:
                 assert 'description' in audit_rec
                 assert 'active' in audit_rec
                 assert 'changed_on' in audit_rec
+
+    def test_versioned_bulk_save(self, versioned_repository, mongodb_adapter):
+        """Test bulk saving of 100+ versioned entities with version tracking."""
+        # Create 120 products
+        products = [
+            VersionedProduct(name=f"Bulk Product {i}", price=10.0 + i * 0.5)
+            for i in range(120)
+        ]
+
+        # Save all products
+        saved_products = [versioned_repository.save(product, VERSIONED_COLLECTION) for product in products]
+
+        # Verify all were saved with versioning
+        assert len(saved_products) == 120
+        assert all(product.entity_id is not None for product in saved_products)
+        assert all(product.version is not None for product in saved_products)
+        assert all(product.active is True for product in saved_products)
+
+        # Update a subset to test audit trail with bulk operations
+        for i in range(0, 20):  # Update first 20 products
+            saved_products[i].price = saved_products[i].price + 5.0
+            saved_products[i] = versioned_repository.save(saved_products[i], VERSIONED_COLLECTION)
+
+        # Verify updated products have new versions
+        for i in range(0, 20):
+            assert saved_products[i].previous_version is not None
+
+        # Verify audit records were created for updates
+        with mongodb_adapter:
+            audit_count = mongodb_adapter.db[VERSIONED_AUDIT_COLLECTION].count_documents({})
+            # Should have audit records for the 20 updated products
+            assert audit_count >= 10  # At least half should have audit records
+
+        # Query all active products
+        with mongodb_adapter:
+            all_records = list(mongodb_adapter.db[VERSIONED_COLLECTION].find({"active": True, "latest": True}))
+
+        bulk_names = [r['name'] for r in all_records if r['name'].startswith("Bulk Product")]
+        assert len(bulk_names) >= 120
 
 
 # ============================================================================
@@ -895,6 +950,30 @@ class TestMongoDBNonVersionedModel:
             assert len(docs) == 1
             assert docs[0]['value'] == "updated_4"
 
+    def test_nonversioned_bulk_save(self, nonversioned_repository, mongodb_adapter):
+        """Test bulk saving of 100+ non-versioned entities."""
+        # Create 150 config entries
+        configs = [
+            NonVersionedConfig(key=f"bulk.config.{i}", value=f"bulk_value_{i}")
+            for i in range(150)
+        ]
+
+        # Save all configs
+        saved_configs = [nonversioned_repository.save(config, NON_VERSIONED_COLLECTION) for config in configs]
+
+        # Verify all were saved
+        assert len(saved_configs) == 150
+        assert all(config.entity_id is not None for config in saved_configs)
+        assert all(config.key.startswith("bulk.config.") for config in saved_configs)
+
+        # Verify we can query them back (no active filter for NonVersionedModel)
+        with mongodb_adapter:
+            all_records = list(mongodb_adapter.db[NON_VERSIONED_COLLECTION].find({}))
+
+        # Should have at least our 150 configs
+        bulk_keys = [record['key'] for record in all_records if record['key'].startswith("bulk.config.")]
+        assert len(bulk_keys) >= 150
+
 
 # ============================================================================
 # Non-Versioned Posts Model Tests
@@ -1043,6 +1122,216 @@ class TestMongoDBNonVersionedCars:
 
         honda_count = sum(1 for car in saved_cars if car.brand == "Honda")
         assert honda_count == 2
+
+
+# ============================================================================
+# SimpleLog Tests (Non-Versioned Model)
+# ============================================================================
+
+class TestMongoDBNonVersionedSimpleLog:
+    """Tests for SimpleLog model (non-versioned) with MongoDB."""
+
+    def test_create_and_save_simple_log(self, simple_log_repository):
+        """Test creating and saving a simple log entry."""
+        log = SimpleLog(message="Application started", level="INFO")
+        saved_log = simple_log_repository.save(log, SIMPLE_LOG_COLLECTION)
+
+        assert saved_log is not None
+        assert saved_log.entity_id is not None
+        assert saved_log.message == "Application started"
+        assert saved_log.level == "INFO"
+
+    def test_update_simple_log_no_audit(self, simple_log_repository, mongodb_adapter):
+        """Test updating a simple log does not create audit records."""
+        # Create initial log
+        log = SimpleLog(message="Processing request", level="INFO")
+        saved_log = simple_log_repository.save(log, SIMPLE_LOG_COLLECTION)
+
+        # Update the log
+        saved_log.message = "Request processed successfully"
+        saved_log.level = "DEBUG"
+        updated_log = simple_log_repository.save(saved_log, SIMPLE_LOG_COLLECTION)
+
+        # Verify update worked
+        assert updated_log.entity_id == saved_log.entity_id
+        assert updated_log.message == "Request processed successfully"
+        assert updated_log.level == "DEBUG"
+
+        # Verify no audit collection exists or has no records
+        with mongodb_adapter:
+            audit_count = mongodb_adapter.db[f"{SIMPLE_LOG_COLLECTION}_audit"].count_documents({})
+            assert audit_count == 0
+
+    def test_delete_simple_log_hard_delete(self, simple_log_repository, mongodb_adapter):
+        """Test deleting a simple log performs hard delete (removes document)."""
+        # Create log
+        log = SimpleLog(message="Temporary log", level="WARNING")
+        saved_log = simple_log_repository.save(log, SIMPLE_LOG_COLLECTION)
+        entity_id = saved_log.entity_id
+
+        # Verify it exists
+        with mongodb_adapter:
+            doc_before = mongodb_adapter.db[SIMPLE_LOG_COLLECTION].find_one({'entity_id': entity_id})
+            assert doc_before is not None
+
+        # Delete the log
+        simple_log_repository.delete(saved_log, SIMPLE_LOG_COLLECTION)
+
+        # Verify hard delete - document should be removed
+        with mongodb_adapter:
+            doc_after = mongodb_adapter.db[SIMPLE_LOG_COLLECTION].find_one({'entity_id': entity_id})
+            assert doc_after is None
+
+    def test_query_existing_logs(self, simple_log_repository, mongodb_adapter):
+        """Test querying for existing logs (hard delete removes deleted ones)."""
+        # Create multiple logs
+        log1 = SimpleLog(message="Existing log 1", level="INFO")
+        log2 = SimpleLog(message="Existing log 2", level="DEBUG")
+        log3 = SimpleLog(message="To be deleted", level="ERROR")
+
+        saved_log1 = simple_log_repository.save(log1, SIMPLE_LOG_COLLECTION)
+        saved_log2 = simple_log_repository.save(log2, SIMPLE_LOG_COLLECTION)
+        saved_log3 = simple_log_repository.save(log3, SIMPLE_LOG_COLLECTION)
+
+        # Delete one log (hard delete)
+        simple_log_repository.delete(saved_log3, SIMPLE_LOG_COLLECTION)
+
+        # Query all logs (no active filter since NonVersionedModel doesn't have it)
+        with mongodb_adapter:
+            all_records = list(mongodb_adapter.db[SIMPLE_LOG_COLLECTION].find({}))
+
+        # Should have 2 logs (deleted one is gone)
+        all_messages = [record['message'] for record in all_records]
+        assert "Existing log 1" in all_messages
+        assert "Existing log 2" in all_messages
+        assert "To be deleted" not in all_messages
+
+    def test_verify_deleted_log_removed(self, simple_log_repository, mongodb_adapter):
+        """Test that deleted logs are truly removed from collection (hard delete)."""
+        # Create and delete a log
+        log = SimpleLog(message="Deleted log entry", level="ERROR")
+        saved_log = simple_log_repository.save(log, SIMPLE_LOG_COLLECTION)
+        entity_id = saved_log.entity_id
+
+        # Delete it
+        simple_log_repository.delete(saved_log, SIMPLE_LOG_COLLECTION)
+
+        # Verify it's truly gone (hard delete, not soft delete)
+        with mongodb_adapter:
+            all_records = list(mongodb_adapter.db[SIMPLE_LOG_COLLECTION].find({}))
+
+        # Should not find the deleted log
+        all_messages = [record['message'] for record in all_records]
+        assert "Deleted log entry" not in all_messages
+
+        # Also verify by entity_id
+        with mongodb_adapter:
+            doc = mongodb_adapter.db[SIMPLE_LOG_COLLECTION].find_one({'entity_id': entity_id})
+            assert doc is None
+
+    def test_no_audit_table_exists(self, mongodb_adapter):
+        """Test that no audit collection exists for non-versioned SimpleLog model."""
+        with mongodb_adapter:
+            # Check if audit collection exists
+            collection_names = mongodb_adapter.db.list_collection_names()
+            assert f"{SIMPLE_LOG_COLLECTION}_audit" not in collection_names
+
+    def test_schema_version_columns_unused(self, simple_log_repository, mongodb_adapter):
+        """Test that version and previous_version fields remain None for non-versioned model."""
+        # Create and update a log
+        log = SimpleLog(message="Version test", level="INFO")
+        saved_log = simple_log_repository.save(log, SIMPLE_LOG_COLLECTION)
+
+        # Update it
+        saved_log.message = "Version test updated"
+        updated_log = simple_log_repository.save(saved_log, SIMPLE_LOG_COLLECTION)
+
+        # Check database directly - version fields should be None
+        with mongodb_adapter:
+            records = list(mongodb_adapter.db[SIMPLE_LOG_COLLECTION].find(
+                {"entity_id": updated_log.entity_id}
+            ))
+            assert len(records) == 1
+            # MongoDB may not have these fields at all, or they should be None
+            assert records[0].get('version') is None
+            assert records[0].get('previous_version') is None
+
+    def test_bulk_save_simple_logs(self, simple_log_repository, mongodb_adapter):
+        """Test bulk saving of 100+ simple log entries."""
+        # Create 100 logs
+        logs = [
+            SimpleLog(message=f"Bulk log message {i}", level="INFO" if i % 2 == 0 else "DEBUG")
+            for i in range(100)
+        ]
+
+        # Save all logs
+        saved_logs = [simple_log_repository.save(log, SIMPLE_LOG_COLLECTION) for log in logs]
+
+        # Verify all were saved
+        assert len(saved_logs) == 100
+        assert all(log.entity_id is not None for log in saved_logs)
+
+        # Verify we can query them back (no active filter for NonVersionedModel)
+        with mongodb_adapter:
+            all_records = list(mongodb_adapter.db[SIMPLE_LOG_COLLECTION].find({}))
+
+        # Should have at least our 100 logs
+        bulk_messages = [record['message'] for record in all_records if record['message'].startswith("Bulk log message")]
+        assert len(bulk_messages) >= 100
+
+    def test_relationship_with_versioned_model(self, simple_log_repository, versioned_repository, mongodb_adapter):
+        """Test SimpleLog (non-versioned) can reference VersionedProduct (versioned) model."""
+        # Create a versioned product
+        product = VersionedProduct(name="Test Product", price=99.99)
+        saved_product = versioned_repository.save(product, VERSIONED_COLLECTION)
+
+        # Create a log that references the product in its message
+        log = SimpleLog(
+            message=f"Product created: {saved_product.entity_id}",
+            level="INFO"
+        )
+        saved_log = simple_log_repository.save(log, SIMPLE_LOG_COLLECTION)
+
+        # Verify the log was saved
+        assert saved_log.entity_id is not None
+        assert str(saved_product.entity_id) in saved_log.message
+
+        # Update the product (creates new version)
+        saved_product.name = "Updated Product"
+        updated_product = versioned_repository.save(saved_product, VERSIONED_COLLECTION)
+
+        # Create another log for the update
+        update_log = SimpleLog(
+            message=f"Product updated: {updated_product.entity_id} (version {updated_product.version})",
+            level="INFO"
+        )
+        saved_update_log = simple_log_repository.save(update_log, SIMPLE_LOG_COLLECTION)
+
+        # Verify both logs exist and reference the same product entity_id
+        assert saved_log.entity_id != saved_update_log.entity_id  # Different log entries
+        assert str(updated_product.entity_id) in saved_log.message
+        assert str(updated_product.entity_id) in saved_update_log.message
+
+        # Verify the product has versioning while logs do not
+        with mongodb_adapter:
+            # Check product has version
+            product_records = list(mongodb_adapter.db[VERSIONED_COLLECTION].find(
+                {"entity_id": str(updated_product.entity_id).replace('-', '')}
+            ))
+            assert len(product_records) >= 1
+            # Get the latest version
+            latest_product = [r for r in product_records if r.get('latest', False)][0]
+            assert latest_product['version'] is not None
+
+            # Check logs have no version (non-versioned models don't strip dashes)
+            log_records = list(mongodb_adapter.db[SIMPLE_LOG_COLLECTION].find({
+                "entity_id": {"$in": [
+                    saved_log.entity_id,
+                    saved_update_log.entity_id
+                ]}
+            }))
+            assert len(log_records) == 2
+            assert all(record.get('version') is None for record in log_records)
 
 
 # ============================================================================

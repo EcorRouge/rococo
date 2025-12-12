@@ -6,10 +6,16 @@ This module defines the test models used across all database integration tests:
 - NonVersionedConfig: A NonVersionedModel for testing non-versioned entity behavior
 - NonVersionedPost: A NonVersionedModel for testing posts (title, description)
 - NonVersionedCar: A NonVersionedModel for testing cars (name, brand)
+- NonVersionedBrand: A NonVersionedModel for testing brands
+- NonVersionedBrandCar: A NonVersionedModel junction table for brand-car relationships
+- SimpleLog: A NonVersionedModel for testing logging (message, level)
 - SurrealVersionedProduct: A SurrealVersionedModel for SurrealDB-specific tests
 - SurrealNonVersionedConfig: A SurrealDB-compatible NonVersionedModel for config
 - SurrealNonVersionedPost: A SurrealDB-compatible NonVersionedModel for posts
 - SurrealNonVersionedCar: A SurrealDB-compatible NonVersionedModel for cars
+- SurrealNonVersionedBrand: A SurrealDB-compatible NonVersionedModel for brands
+- SurrealNonVersionedBrandCar: A SurrealDB-compatible NonVersionedModel for brand-car relationships
+- SurrealSimpleLog: A SurrealDB-compatible NonVersionedModel for logging
 """
 
 from dataclasses import dataclass, field
@@ -141,6 +147,26 @@ class NonVersionedBrandCar(NonVersionedModel):
     car_id: str = ""
 
 
+@dataclass(kw_only=True)
+class SimpleLog(NonVersionedModel):
+    """
+    A non-versioned logging model for testing.
+
+    This model inherits from NonVersionedModel which only has:
+    - entity_id
+    - extra (dict for extra fields)
+
+    No Big 6 versioning fields are present.
+
+    Additional fields:
+    - message: Log message content
+    - level: Log level (e.g., INFO, WARNING, ERROR)
+    """
+    allow_extra = True  # Allow extra fields to be stored as attributes
+    message: str = ""
+    level: str = "INFO"
+
+
 # SurrealDB requires a specific model type
 try:
     from rococo.models.surrealdb.surreal_versioned_model import SurrealVersionedModel
@@ -211,6 +237,18 @@ try:
         brand_id: str = ""
         car_id: str = ""
 
+    @dataclass(kw_only=True)
+    class SurrealSimpleLog(NonVersionedModel):
+        """
+        A SurrealDB-compatible non-versioned logging model for testing.
+
+        Note: SurrealDB doesn't have a specific NonVersionedModel variant,
+        so we use the standard NonVersionedModel.
+        """
+        allow_extra = True  # Allow extra fields to be stored as attributes
+        message: str = ""
+        level: str = "INFO"
+
 except ImportError:
     # SurrealDB models not available
     SurrealVersionedProduct = None
@@ -219,4 +257,5 @@ except ImportError:
     SurrealNonVersionedCar = None
     SurrealNonVersionedBrand = None
     SurrealNonVersionedBrandCar = None
+    SurrealSimpleLog = None
 

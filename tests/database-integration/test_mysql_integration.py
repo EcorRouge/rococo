@@ -20,7 +20,7 @@ from conftest import (
     get_mysql_config,
     MockMessageAdapter
 )
-from test_models import VersionedProduct, NonVersionedConfig, NonVersionedPost, NonVersionedCar, NonVersionedBrand, NonVersionedBrandCar
+from test_models import VersionedProduct, NonVersionedConfig, NonVersionedPost, NonVersionedCar, NonVersionedBrand, NonVersionedBrandCar, SimpleLog
 
 from rococo.data.mysql import MySqlAdapter
 from rococo.repositories.mysql.mysql_repository import MySqlRepository
@@ -130,6 +130,19 @@ CREATE TABLE IF NOT EXISTS non_versioned_brand_car (
 )
 """
 
+SIMPLE_LOG_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS simple_log (
+    entity_id VARCHAR(32) PRIMARY KEY,
+    version VARCHAR(32),
+    previous_version VARCHAR(32),
+    active TINYINT(1) DEFAULT 1,
+    changed_by_id VARCHAR(32),
+    changed_on DATETIME,
+    message TEXT,
+    level VARCHAR(50)
+)
+"""
+
 
 @pytest.fixture
 def mysql_adapter():
@@ -157,6 +170,7 @@ def setup_mysql_tables(mysql_adapter):
         mysql_adapter.execute_query(NON_VERSIONED_CAR_TABLE_SQL)
         mysql_adapter.execute_query(NON_VERSIONED_BRAND_TABLE_SQL)
         mysql_adapter.execute_query(NON_VERSIONED_BRAND_CAR_TABLE_SQL)
+        mysql_adapter.execute_query(SIMPLE_LOG_TABLE_SQL)
 
     yield
 
@@ -169,6 +183,7 @@ def setup_mysql_tables(mysql_adapter):
     #     mysql_adapter.execute_query("DROP TABLE IF EXISTS non_versioned_car")
     #     mysql_adapter.execute_query("DROP TABLE IF EXISTS non_versioned_brand_car")
     #     mysql_adapter.execute_query("DROP TABLE IF EXISTS non_versioned_brand")
+    #     mysql_adapter.execute_query("DROP TABLE IF EXISTS simple_log")
 
 
 @pytest.fixture
@@ -244,6 +259,19 @@ def brand_cars_repository(mysql_adapter, setup_mysql_tables):
     return MySqlRepository(
         db_adapter=mysql_adapter,
         model=NonVersionedBrandCar,
+        message_adapter=message_adapter,
+        queue_name="test_queue",
+        user_id=None
+    )
+
+
+@pytest.fixture
+def simple_log_repository(mysql_adapter, setup_mysql_tables):
+    """Create a repository for SimpleLog."""
+    message_adapter = MockMessageAdapter()
+    return MySqlRepository(
+        db_adapter=mysql_adapter,
+        model=SimpleLog,
         message_adapter=message_adapter,
         queue_name="test_queue",
         user_id=None
@@ -492,6 +520,50 @@ class TestMySQLVersionedModel:
 
         # MySQL DECIMAL(10,2) should preserve 2 decimal places
         assert float(saved.price) == 99.99
+
+    def test_versioned_bulk_save(self, versioned_repository, mysql_adapter):
+        """Test bulk saving of 100+ versioned entities with version tracking."""
+        # Create 120 products
+        products = [
+            VersionedProduct(name=f"Bulk Product {i}", price=10.0 + i * 0.5)
+            for i in range(120)
+        ]
+
+        # Save all products
+        saved_products = [versioned_repository.save(product) for product in products]
+
+        # Verify all were saved with versioning
+        assert len(saved_products) == 120
+        assert all(product.entity_id is not None for product in saved_products)
+        assert all(product.version is not None for product in saved_products)
+        assert all(product.active is True for product in saved_products)
+
+        # Update a subset to test audit trail with bulk operations
+        for i in range(0, 20):  # Update first 20 products
+            saved_products[i].price = saved_products[i].price + 5.0
+            saved_products[i] = versioned_repository.save(saved_products[i])
+
+        # Verify updated products have new versions
+        for i in range(0, 20):
+            assert saved_products[i].previous_version is not None
+
+        # Verify audit records were created for updates
+        with mysql_adapter:
+            audit_records = mysql_adapter.execute_query(
+                "SELECT entity_id, COUNT(*) as version_count FROM versioned_product_audit GROUP BY entity_id"
+            )
+            # Should have audit records for the 20 updated products
+            updated_entity_ids = [str(saved_products[i].entity_id).replace('-', '') for i in range(20)]
+            audit_entity_ids = [record['entity_id'] for record in audit_records]
+
+            # At least some of our updated products should have audit records
+            matching_audits = sum(1 for eid in updated_entity_ids if eid in audit_entity_ids)
+            assert matching_audits >= 10  # At least half should have audit records
+
+        # Query all active products
+        all_products = versioned_repository.get_many()
+        bulk_names = [p.name for p in all_products if p.name.startswith("Bulk Product")]
+        assert len(bulk_names) >= 120
 
 
 # ============================================================================
@@ -819,6 +891,29 @@ class TestMySQLNonVersionedModel:
         except Exception:
             pass  # Transaction support may vary
 
+    def test_nonversioned_bulk_save(self, nonversioned_repository):
+        """Test bulk saving of 100+ non-versioned entities."""
+        # Create 150 config entries
+        configs = [
+            NonVersionedConfig(key=f"bulk.config.{i}", value=f"bulk_value_{i}")
+            for i in range(150)
+        ]
+
+        # Save all configs
+        saved_configs = [nonversioned_repository.save(config) for config in configs]
+
+        # Verify all were saved
+        assert len(saved_configs) == 150
+        assert all(config.entity_id is not None for config in saved_configs)
+        assert all(config.key.startswith("bulk.config.") for config in saved_configs)
+
+        # Verify we can query them back
+        all_configs = nonversioned_repository.get_many()
+
+        # Should have at least our 150 configs
+        bulk_keys = [config.key for config in all_configs if config.key.startswith("bulk.config.")]
+        assert len(bulk_keys) >= 150
+
 
 # ============================================================================
 # Non-Versioned Posts Model Tests
@@ -898,6 +993,216 @@ class TestMySQLNonVersionedCars:
 
         honda_count = sum(1 for car in saved_cars if car.brand == "Honda")
         assert honda_count == 2
+
+
+# ============================================================================
+# SimpleLog Tests (Non-Versioned Model)
+# ============================================================================
+
+class TestMySQLNonVersionedSimpleLog:
+    """Tests for SimpleLog model (non-versioned) with MySQL."""
+
+    def test_create_and_save_simple_log(self, simple_log_repository):
+        """Test creating and saving a simple log entry."""
+        log = SimpleLog(message="Application started", level="INFO")
+        saved_log = simple_log_repository.save(log)
+
+        assert saved_log is not None
+        assert saved_log.entity_id is not None
+        assert saved_log.message == "Application started"
+        assert saved_log.level == "INFO"
+
+    def test_update_simple_log_no_audit(self, simple_log_repository, mysql_adapter):
+        """Test updating a simple log does not create audit records."""
+        # Create initial log
+        log = SimpleLog(message="Processing request", level="INFO")
+        saved_log = simple_log_repository.save(log)
+
+        # Update the log
+        saved_log.message = "Request processed successfully"
+        saved_log.level = "DEBUG"
+        updated_log = simple_log_repository.save(saved_log)
+
+        # Verify update worked
+        assert updated_log.entity_id == saved_log.entity_id
+        assert updated_log.message == "Request processed successfully"
+        assert updated_log.level == "DEBUG"
+
+        # Verify no audit table exists
+        with mysql_adapter:
+            try:
+                audit_records = mysql_adapter.execute_query(
+                    "SELECT * FROM simple_log_audit WHERE entity_id = %s",
+                    (str(saved_log.entity_id).replace('-', ''),)
+                )
+                # If we get here, the audit table exists, which should not happen
+                assert False, "Audit table should not exist for non-versioned model"
+            except Exception as e:
+                # Expected - audit table should not exist
+                assert "doesn't exist" in str(e) or "Table" in str(e)
+
+    def test_delete_simple_log_soft_delete(self, simple_log_repository, mysql_adapter):
+        """Test deleting a simple log performs soft delete (sets active=False)."""
+        # Create log
+        log = SimpleLog(message="Temporary log", level="WARNING")
+        saved_log = simple_log_repository.save(log)
+
+        # Delete the log
+        simple_log_repository.delete(saved_log)
+
+        # Verify soft delete in database
+        with mysql_adapter:
+            records = mysql_adapter.execute_query(
+                "SELECT * FROM simple_log WHERE entity_id = %s",
+                (str(saved_log.entity_id).replace('-', ''),)
+            )
+            assert len(records) == 1
+            assert records[0]['active'] == 0  # Soft deleted
+
+    def test_query_active_logs(self, simple_log_repository):
+        """Test querying for active logs only."""
+        # Create multiple logs
+        log1 = SimpleLog(message="Active log 1", level="INFO")
+        log2 = SimpleLog(message="Active log 2", level="DEBUG")
+        log3 = SimpleLog(message="To be deleted", level="ERROR")
+
+        saved_log1 = simple_log_repository.save(log1)
+        saved_log2 = simple_log_repository.save(log2)
+        saved_log3 = simple_log_repository.save(log3)
+
+        # Delete one log
+        simple_log_repository.delete(saved_log3)
+
+        # Query for active logs (get_many() by default returns active=True)
+        active_logs = simple_log_repository.get_many()
+
+        # Should have at least 2 active logs (the ones we didn't delete)
+        active_messages = [log.message for log in active_logs]
+        assert "Active log 1" in active_messages
+        assert "Active log 2" in active_messages
+        assert "To be deleted" not in active_messages
+
+    def test_query_deleted_logs(self, simple_log_repository, mysql_adapter):
+        """Test querying for deleted (inactive) logs."""
+        # Create and delete a log
+        log = SimpleLog(message="Deleted log entry", level="ERROR")
+        saved_log = simple_log_repository.save(log)
+        simple_log_repository.delete(saved_log)
+
+        # Query for inactive logs directly from database
+        with mysql_adapter:
+            inactive_records = mysql_adapter.execute_query(
+                "SELECT * FROM simple_log WHERE active = 0"
+            )
+
+        # Should find our deleted log
+        deleted_messages = [record['message'] for record in inactive_records]
+        assert "Deleted log entry" in deleted_messages
+
+    def test_no_audit_table_exists(self, mysql_adapter):
+        """Test that no audit table exists for non-versioned SimpleLog model."""
+        with mysql_adapter:
+            try:
+                # Try to query the audit table
+                mysql_adapter.execute_query("SELECT COUNT(*) FROM simple_log_audit")
+                # If we get here, the audit table exists, which is wrong
+                assert False, "Audit table simple_log_audit should not exist for non-versioned model"
+            except Exception as e:
+                # Expected - audit table should not exist
+                assert "doesn't exist" in str(e) or "Table" in str(e)
+
+    def test_schema_version_columns_unused(self, simple_log_repository, mysql_adapter):
+        """Test that version and previous_version columns remain NULL for non-versioned model."""
+        # Create and update a log
+        log = SimpleLog(message="Version test", level="INFO")
+        saved_log = simple_log_repository.save(log)
+
+        # Update it
+        saved_log.message = "Version test updated"
+        updated_log = simple_log_repository.save(saved_log)
+
+        # Check database directly - version columns should be NULL
+        with mysql_adapter:
+            records = mysql_adapter.execute_query(
+                "SELECT version, previous_version FROM simple_log WHERE entity_id = %s",
+                (str(updated_log.entity_id).replace('-', ''),)
+            )
+            assert len(records) == 1
+            assert records[0]['version'] is None
+            assert records[0]['previous_version'] is None
+
+    def test_bulk_save_simple_logs(self, simple_log_repository):
+        """Test bulk saving of 100+ simple log entries."""
+        # Create 100 logs
+        logs = [
+            SimpleLog(message=f"Bulk log message {i}", level="INFO" if i % 2 == 0 else "DEBUG")
+            for i in range(100)
+        ]
+
+        # Save all logs
+        saved_logs = [simple_log_repository.save(log) for log in logs]
+
+        # Verify all were saved
+        assert len(saved_logs) == 100
+        assert all(log.entity_id is not None for log in saved_logs)
+
+        # Verify we can query them back
+        all_logs = simple_log_repository.get_many()
+
+        # Should have at least our 100 logs
+        bulk_messages = [log.message for log in all_logs if log.message.startswith("Bulk log message")]
+        assert len(bulk_messages) >= 100
+
+    def test_relationship_with_versioned_model(self, simple_log_repository, versioned_repository, mysql_adapter):
+        """Test SimpleLog (non-versioned) can reference VersionedProduct (versioned) model."""
+        # Create a versioned product
+        product = VersionedProduct(name="Test Product", price=99.99)
+        saved_product = versioned_repository.save(product)
+
+        # Create a log that references the product in its message
+        log = SimpleLog(
+            message=f"Product created: {saved_product.entity_id}",
+            level="INFO"
+        )
+        saved_log = simple_log_repository.save(log)
+
+        # Verify the log was saved
+        assert saved_log.entity_id is not None
+        assert str(saved_product.entity_id) in saved_log.message
+
+        # Update the product (creates new version)
+        saved_product.name = "Updated Product"
+        updated_product = versioned_repository.save(saved_product)
+
+        # Create another log for the update
+        update_log = SimpleLog(
+            message=f"Product updated: {updated_product.entity_id} (version {updated_product.version})",
+            level="INFO"
+        )
+        saved_update_log = simple_log_repository.save(update_log)
+
+        # Verify both logs exist and reference the same product entity_id
+        assert saved_log.entity_id != saved_update_log.entity_id  # Different log entries
+        assert str(updated_product.entity_id) in saved_log.message
+        assert str(updated_product.entity_id) in saved_update_log.message
+
+        # Verify the product has versioning while logs do not
+        with mysql_adapter:
+            # Check product has version
+            product_records = mysql_adapter.execute_query(
+                "SELECT version FROM versioned_product WHERE entity_id = %s",
+                (str(updated_product.entity_id).replace('-', ''),)
+            )
+            assert len(product_records) == 1
+            assert product_records[0]['version'] is not None
+
+            # Check logs have no version
+            log_records = mysql_adapter.execute_query(
+                "SELECT version FROM simple_log WHERE entity_id IN (%s, %s)",
+                (str(saved_log.entity_id).replace('-', ''), str(saved_update_log.entity_id).replace('-', ''))
+            )
+            assert len(log_records) == 2
+            assert all(record['version'] is None for record in log_records)
 
 
 # ============================================================================

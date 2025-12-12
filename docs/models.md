@@ -91,10 +91,6 @@ person.prepare_for_save(changed_by_id="user123")
 | Soft delete? | ❌ No | ✅ Yes |
 | Track who changed? | ❌ No | ✅ Yes |
 | Track when changed? | ❌ No | ✅ Yes |
-| Performance | ⚡ Faster | 🐢 Slightly slower |
-| Storage | 💾 Smaller | 💾 Larger (audit table) |
-| Complexity | 🟢 Simple | 🟡 More complex |
-| Use for | Config, cache, logs | Users, business data |
 
 ## Decision Guide
 

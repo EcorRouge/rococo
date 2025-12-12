@@ -13,7 +13,7 @@ NonVersionedModel is an alias for BaseModel, the unversioned model class.
 """
 
 import pytest
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from typing import Optional, Dict, Any
 from datetime import datetime
 from uuid import UUID
@@ -474,3 +474,445 @@ def test_multiple_nonversioned_instances():
     for i, config in enumerate(configs):
         assert config.key == f"key{i}"
         assert config.value == f"value{i}"
+
+
+# ===== VersionedModel Backward Compatibility Tests =====
+# These tests ensure that VersionedModel still works correctly after introducing
+# BaseModel inheritance. Critical for production apps using VersionedModel.
+
+
+# Category 1: Field Structure & Inheritance
+
+def test_versioned_model_has_all_big_6_fields():
+    """Verify VersionedModel still has all Big 6 versioning fields."""
+    @dataclass(kw_only=True)
+    class Person(VersionedModel):
+        first_name: str = ""
+        last_name: str = ""
+
+    person = Person(first_name="John", last_name="Doe")
+
+    # Must have Big 6 fields
+    assert hasattr(person, 'entity_id')
+    assert hasattr(person, 'version')
+    assert hasattr(person, 'previous_version')
+    assert hasattr(person, 'active')
+    assert hasattr(person, 'changed_by_id')
+    assert hasattr(person, 'changed_on')
+    assert hasattr(person, 'extra')
+
+    # Field types must be correct
+    assert isinstance(person.entity_id, str)
+    assert isinstance(person.version, str)
+    assert isinstance(person.active, bool)
+    assert isinstance(person.extra, dict)
+
+
+def test_versioned_model_inherits_from_basemodel():
+    """Verify VersionedModel correctly inherits from BaseModel."""
+    assert issubclass(VersionedModel, BaseModel)
+
+
+def test_versioned_model_field_count():
+    """Verify VersionedModel has exactly the expected number of fields."""
+    @dataclass(kw_only=True)
+    class Person(VersionedModel):
+        first_name: str = ""
+
+    all_fields = fields(Person)
+    field_names = [f.name for f in all_fields]
+
+    assert 'entity_id' in field_names
+    assert 'extra' in field_names
+    assert 'version' in field_names
+    assert 'previous_version' in field_names
+    assert 'active' in field_names
+    assert 'changed_by_id' in field_names
+    assert 'changed_on' in field_names
+
+
+def test_versioned_model_method_resolution_order():
+    """Verify MRO is correct: VersionedModel -> BaseModel -> object."""
+    mro = VersionedModel.__mro__
+    assert BaseModel in mro
+    assert mro.index(VersionedModel) < mro.index(BaseModel)
+
+
+def test_versioned_model_extra_field_defaults_to_empty_dict():
+    """Verify extra field is inherited and defaults correctly."""
+    @dataclass(kw_only=True)
+    class Person(VersionedModel):
+        name: str = ""
+
+    person = Person(name="John")
+    assert hasattr(person, 'extra')
+    assert isinstance(person.extra, dict)
+    assert person.extra == {}
+
+
+def test_versioned_model_entity_id_auto_generated():
+    """Verify entity_id is still auto-generated."""
+    @dataclass(kw_only=True)
+    class Person(VersionedModel):
+        name: str = ""
+
+    person = Person(name="John")
+    assert person.entity_id is not None
+    assert isinstance(person.entity_id, str)
+    assert len(person.entity_id) == 32  # UUID hex string
+
+
+def test_versioned_model_fields_method():
+    """Verify fields() method returns correct field list."""
+    @dataclass(kw_only=True)
+    class Person(VersionedModel):
+        name: str = ""
+
+    field_names = Person.fields()
+
+    # Should include all user fields + Big 6
+    assert 'name' in field_names
+    assert 'entity_id' in field_names
+    assert 'version' in field_names
+    assert 'previous_version' in field_names
+    assert 'active' in field_names
+    assert 'changed_by_id' in field_names
+    assert 'changed_on' in field_names
+
+    # Should NOT include extra (it's excluded by fields() method)
+    assert 'extra' not in field_names
+
+
+def test_versioned_model_no_extra_fields_leak():
+    """Verify BaseModel's extra field doesn't leak into VersionedModel serialization."""
+    @dataclass(kw_only=True)
+    class Person(VersionedModel):
+        name: str = ""
+
+    person = Person(name="John")
+    person.extra = {'should_not_appear': 'in_as_dict'}
+
+    data = person.as_dict()
+
+    # extra field contents should be flattened, but 'extra' key itself should not appear
+    assert 'extra' not in data
+
+
+# Category 2: Serialization Behavior
+
+def test_versioned_model_as_dict_has_big_6():
+    """Verify as_dict() includes all Big 6 fields."""
+    @dataclass(kw_only=True)
+    class Person(VersionedModel):
+        name: str = ""
+
+    person = Person(name="John")
+    person.prepare_for_save(changed_by_id="user123")
+
+    data = person.as_dict()
+
+    assert 'entity_id' in data
+    assert 'version' in data
+    assert 'previous_version' in data
+    assert 'active' in data
+    assert 'changed_by_id' in data
+    assert 'changed_on' in data
+    assert 'name' in data
+
+
+def test_versioned_model_as_dict_no_extra_key():
+    """Verify as_dict() does not include 'extra' as a key."""
+    @dataclass(kw_only=True)
+    class Person(VersionedModel):
+        name: str = ""
+
+    person = Person(name="John")
+    person.extra = {'metadata': 'value'}
+
+    data = person.as_dict()
+
+    # 'extra' field itself should not be in output
+    assert 'extra' not in data
+    # But extra contents should be flattened
+    assert 'metadata' in data
+
+
+def test_versioned_model_from_dict_preserves_big_6():
+    """Verify from_dict() correctly restores Big 6 fields."""
+    @dataclass(kw_only=True)
+    class Person(VersionedModel):
+        name: str = ""
+
+    data = {
+        'entity_id': 'test123',
+        'version': 'v123',
+        'previous_version': 'v122',
+        'active': True,
+        'changed_by_id': 'user123',
+        'changed_on': datetime.now(),
+        'name': 'John'
+    }
+
+    person = Person.from_dict(data)
+
+    assert person.entity_id == 'test123'
+    assert person.version == 'v123'
+    assert person.previous_version == 'v122'
+    assert person.active is True
+    assert person.changed_by_id == 'user123'
+    assert person.name == 'John'
+
+
+def test_versioned_model_round_trip_serialization():
+    """Verify as_dict() -> from_dict() round trip preserves all data."""
+    @dataclass(kw_only=True)
+    class Person(VersionedModel):
+        name: str = ""
+        age: int = 0
+
+    original = Person(name="John", age=30)
+    original.prepare_for_save(changed_by_id="user123")
+
+    # Round trip
+    data = original.as_dict()
+    restored = Person.from_dict(data)
+
+    assert restored.entity_id == original.entity_id
+    assert restored.version == original.version
+    assert restored.previous_version == original.previous_version
+    assert restored.active == original.active
+    assert restored.changed_by_id == original.changed_by_id
+    assert restored.name == original.name
+    assert restored.age == original.age
+
+
+def test_versioned_model_get_for_db():
+    """Verify get_for_db() returns correct structure."""
+    @dataclass(kw_only=True)
+    class Person(VersionedModel):
+        name: str = ""
+
+    person = Person(name="John")
+    person.prepare_for_save(changed_by_id="user123")
+
+    db_data = person.get_for_db()
+
+    # Must have Big 6 fields
+    assert 'entity_id' in db_data
+    assert 'version' in db_data
+    assert 'active' in db_data
+    assert 'changed_by_id' in db_data
+    assert 'changed_on' in db_data
+
+
+def test_versioned_model_get_for_api():
+    """Verify get_for_api() returns correct structure."""
+    @dataclass(kw_only=True)
+    class Person(VersionedModel):
+        name: str = ""
+
+    person = Person(name="John")
+    person.prepare_for_save(changed_by_id="user123")
+
+    api_data = person.get_for_api()
+
+    # Should have all fields except sensitive ones
+    assert 'entity_id' in api_data
+    assert 'name' in api_data
+
+
+def test_versioned_model_serialization_datetime_handling():
+    """Verify datetime serialization works correctly."""
+    @dataclass(kw_only=True)
+    class Person(VersionedModel):
+        name: str = ""
+
+    person = Person(name="John")
+    person.prepare_for_save(changed_by_id="user123")
+
+    data = person.as_dict(convert_datetime_to_iso_string=True)
+
+    # changed_on should be ISO string
+    assert isinstance(data['changed_on'], str)
+
+
+def test_versioned_model_serialization_uuid_handling():
+    """Verify UUID serialization works correctly."""
+    @dataclass(kw_only=True)
+    class Person(VersionedModel):
+        name: str = ""
+
+    person = Person(name="John")
+    person.prepare_for_save(changed_by_id="user123")
+
+    data = person.as_dict(convert_uuids=True)
+
+    # UUIDs should be strings
+    assert isinstance(data['entity_id'], str)
+    assert isinstance(data['version'], str)
+
+
+def test_versioned_model_fields_exported_correctly():
+    """Verify only correct fields are exported in as_dict()."""
+    @dataclass(kw_only=True)
+    class Person(VersionedModel):
+        name: str = ""
+
+    person = Person(name="John")
+    data = person.as_dict()
+
+    # Should NOT have _is_partial or other internal fields
+    assert '_is_partial' not in data
+
+
+def test_versioned_model_extra_field_handling_in_serialization():
+    """Verify extra field contents are flattened, not nested."""
+    @dataclass(kw_only=True)
+    class Person(VersionedModel):
+        name: str = ""
+
+    person = Person(name="John")
+    person.extra = {'city': 'New York', 'country': 'USA'}
+
+    data = person.as_dict()
+
+    # Extra contents should be at top level
+    assert data['city'] == 'New York'
+    assert data['country'] == 'USA'
+    # But 'extra' itself should not be a key
+    assert 'extra' not in data
+
+
+# Category 3: prepare_for_save() Behavior
+
+def test_versioned_model_prepare_for_save_populates_big_6():
+    """Verify prepare_for_save() populates all Big 6 fields."""
+    @dataclass(kw_only=True)
+    class Person(VersionedModel):
+        name: str = ""
+
+    person = Person(name="John")
+    person.prepare_for_save(changed_by_id="user123")
+
+    # All Big 6 fields should be populated
+    assert person.version is not None
+    assert person.changed_by_id == "user123"
+    assert person.changed_on is not None
+    assert person.active is True
+
+
+def test_versioned_model_prepare_for_save_version_bump():
+    """Verify prepare_for_save() bumps version on update."""
+    @dataclass(kw_only=True)
+    class Person(VersionedModel):
+        name: str = ""
+
+    person = Person(name="John")
+    person.prepare_for_save(changed_by_id="user123")
+    old_version = person.version
+
+    # Update
+    person.name = "Jane"
+    person.prepare_for_save(changed_by_id="user123")
+
+    # Version should change
+    assert person.version != old_version
+    assert person.previous_version == old_version
+
+
+def test_versioned_model_prepare_for_save_requires_changed_by_id():
+    """Verify prepare_for_save() requires changed_by_id parameter."""
+    @dataclass(kw_only=True)
+    class Person(VersionedModel):
+        name: str = ""
+
+    person = Person(name="John")
+
+    # Should work with changed_by_id
+    person.prepare_for_save(changed_by_id="user123")
+    assert person.changed_by_id == "user123"
+
+
+def test_versioned_model_prepare_for_save_idempotent():
+    """Verify calling prepare_for_save() multiple times is safe."""
+    @dataclass(kw_only=True)
+    class Person(VersionedModel):
+        name: str = ""
+
+    person = Person(name="John")
+    person.prepare_for_save(changed_by_id="user123")
+    first_version = person.version
+
+    # Call again without changes
+    person.prepare_for_save(changed_by_id="user123")
+
+    # Version should change even without field changes
+    assert person.version != first_version
+
+
+def test_versioned_model_prepare_for_save_preserves_entity_id():
+    """Verify prepare_for_save() never changes entity_id."""
+    @dataclass(kw_only=True)
+    class Person(VersionedModel):
+        name: str = ""
+
+    person = Person(name="John")
+    original_entity_id = person.entity_id
+
+    person.prepare_for_save(changed_by_id="user123")
+    assert person.entity_id == original_entity_id
+
+    person.prepare_for_save(changed_by_id="user456")
+    assert person.entity_id == original_entity_id
+
+
+def test_versioned_model_prepare_for_save_active_flag():
+    """Verify prepare_for_save() respects active flag."""
+    @dataclass(kw_only=True)
+    class Person(VersionedModel):
+        name: str = ""
+
+    person = Person(name="John")
+    person.prepare_for_save(changed_by_id="user123")
+    assert person.active is True
+
+    # Soft delete
+    person.active = False
+    person.prepare_for_save(changed_by_id="user123")
+    assert person.active is False
+
+
+# Category 4: Import & API Compatibility
+
+def test_versioned_model_import_from_rococo_models():
+    """Verify VersionedModel can still be imported from rococo.models."""
+    try:
+        from rococo.models import VersionedModel as VM
+        assert VM is not None
+    except ImportError:
+        pytest.fail("VersionedModel import failed")
+
+
+def test_basemodel_import_from_rococo_models():
+    """Verify BaseModel can be imported from rococo.models."""
+    try:
+        from rococo.models import BaseModel as BM
+        assert BM is not None
+    except ImportError:
+        pytest.fail("BaseModel import failed")
+
+
+def test_nonversioned_model_alias_exists():
+    """Verify NonVersionedModel alias exists and points to BaseModel."""
+    assert NonVersionedModel is BaseModel
+
+
+def test_versioned_model_public_methods_exist():
+    """Verify all expected public methods still exist on VersionedModel."""
+    expected_methods = [
+        'as_dict', 'from_dict', 'prepare_for_save',
+        'validate', 'get_for_db', 'get_for_api', 'fields'
+    ]
+
+    for method in expected_methods:
+        assert hasattr(VersionedModel, method), f"Missing method: {method}"

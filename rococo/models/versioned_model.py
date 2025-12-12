@@ -88,39 +88,49 @@ class ModelValidationError(Exception):
 
 
 @dataclass(kw_only=True)
-class VersionedModel:
-    """A base class for versioned models with common (Big 6) attributes."""
+class BaseModel:
+    """
+    BaseModel is the unversioned model class for Rococo.
+
+    Use this for data that doesn't require audit trails or version history,
+    such as configuration settings, static reference data, cache entries, or logs.
+
+    This is the base class for all Rococo models. VersionedModel extends this
+    to add versioning capabilities (Big 6 fields). NonVersionedModel is an
+    alias for BaseModel.
+
+    Fields:
+        entity_id (str): Unique identifier (UUID hex string, auto-generated)
+        extra (dict): Dictionary for storing additional fields (contents are
+                      flattened into serialization output)
+
+    Example:
+        >>> from dataclasses import dataclass
+        >>> from rococo.models import BaseModel
+        >>>
+        >>> @dataclass(kw_only=True)
+        ... class Config(BaseModel):  # Unversioned model
+        ...     key: str
+        ...     value: str
+        >>>
+        >>> config = Config(key="api_key", value="secret")
+        >>> config.prepare_for_save()
+        >>> # Save to database - no version tracking, no audit trail
+
+    See Also:
+        VersionedModel: For data requiring version history and audit trails
+        NonVersionedModel: Alias for BaseModel (same class, different name)
+    """
 
     entity_id: str = field(default_factory=get_uuid_hex,
                            metadata={'field_type': 'entity_id'})
-    version: str = field(default_factory=lambda: get_uuid_hex(
-        0), metadata={'field_type': 'uuid'})
-    previous_version: str = field(
-        default_factory=lambda: None, metadata={'field_type': 'uuid'})
-    active: bool = True
-    changed_by_id: str = field(default_factory=lambda: get_uuid_hex(
-        0), metadata={'field_type': 'uuid'})
-    changed_on: datetime = field(default_factory=default_datetime)
     extra: Dict[str, Any] = field(default_factory=dict)
 
-    _is_partial: InitVar[bool] = False
-
-    def __post_init__(self, _is_partial):
+    def __post_init__(self):
         """
-        Post-initialization hook for the VersionedModel class.
-
-        This method is responsible for setting the `_is_partial` attribute,
-        resolving related model classes from strings specified in field metadata,
-        and handling fields that are lists of UUIDs.
-
-        Args:
-            _is_partial (bool): Indicates if the instance is a partial representation
-                                (e.g., loaded as a foreign key reference).
-
-        Raises:
-            ImportError: If a related model class specified as a string cannot be imported.
+        Post-initialization hook for the BaseModel class.
+        Resolves related model classes from strings specified in field metadata.
         """
-        self._is_partial = _is_partial
         current_module = importlib.import_module('__main__')
         models_module = import_models_module(current_module, 'models')
         rococo_module = importlib.import_module('rococo.models')
@@ -155,76 +165,15 @@ class VersionedModel:
                         logger.info(
                             f"Invalid UUIDs in list for field '{f.name}'")
 
-    def __getattribute__(self, name):
-        """
-        Override of __getattribute__ to add additional checks for partial instances
-        and many-to-many fields.
-
-        For partial instances (i.e. instances loaded from the database as a
-        foreign key of another model), this method raises an AttributeError if
-        the requested attribute is not the 'entity_id' field.
-
-        For many-to-many fields, this method raises an AttributeError if the
-        field has not been loaded yet (i.e. its value is None).
-        """
-        # Skip checks for private attributes and special methods to avoid recursion
-        if name.startswith('_') or name in ['fields']:
-            return object.__getattribute__(self, name)
-
-        # Handle partial instance restrictions first
-        try:
-            is_partial = object.__getattribute__(self, '_is_partial')
-        except AttributeError:
-            # _is_partial not set yet, continue normally
-            pass
-
-        if is_partial and name in VersionedModel.fields() and name != 'entity_id':
-            raise AttributeError(
-                f"Attribute '{name}' is not available in a partial instance.")
-
-        # Check for m2m field restrictions
-        try:
-            f = next((f for f in fields(type(self)) if f.name == name), None)
-            if f and f.metadata.get('field_type') == 'm2m_list':
-                # Try to get the value using object.__getattribute__
-                try:
-                    value = object.__getattribute__(self, name)
-                    if value is None:
-                        raise AttributeError(
-                            f"Many-to-many field '{name}' is not loaded.")
-                    return value
-                except AttributeError:
-                    # Field doesn't exist, so it's definitely not loaded
-                    raise AttributeError(
-                        f"Many-to-many field '{name}' is not loaded.")
-        except (TypeError, StopIteration):
-            # fields() might not be available during initialization, continue normally
-            pass
-
-        # Get the value normally
-        return object.__getattribute__(self, name)
-
     def __getattr__(self, name):
         """
         Called when an attribute is not found through normal lookup.
         This handles extra fields for models that allow them.
         """
-
         f = next((f for f in fields(type(self)) if f.name == name), None)
         if f and f.metadata.get('field_type') == 'm2m_list':
             raise AttributeError(
                 f"Many-to-many field '{name}' is not loaded.")
-
-        # Handle partial instance restrictions first
-        try:
-            is_partial = object.__getattribute__(self, '_is_partial')
-        except AttributeError:
-            # _is_partial not set yet, continue normally
-            pass
-
-        if is_partial and name in VersionedModel.fields() and name != 'entity_id':
-            raise AttributeError(
-                f"Attribute '{name}' is not available in a partial instance.")
 
         try:
             extra = object.__getattribute__(self, 'extra')
@@ -282,21 +231,8 @@ class VersionedModel:
 
     def __repr__(self) -> str:
         """
-        Return a string representation of the VersionedModel instance.
-
-        This method generates a string that includes the class name and a list of
-        field names with their respective values. For partial instances, only the
-        `entity_id` and `_is_partial` flag are included. For fields marked as 
-        many-to-many lists, it displays a placeholder `[...]` to indicate the 
-        presence of related entities. Any unloaded fields are represented with 
-        `<unloaded>`.
-
-        Returns:
-            str: A string representation of the instance.
+        Return a string representation of the BaseModel instance.
         """
-        if self._is_partial:
-            return f"{type(self).__name__}(entity_id={self.entity_id!r}, _is_partial=True)"
-
         field_strings = []
         for f in fields(type(self)):
             try:
@@ -332,9 +268,6 @@ class VersionedModel:
         Returns:
             Dict[str, Any]: A dictionary representation of this model.
         """
-        if self._is_partial:
-            return {'entity_id': self.entity_id}
-
         result = {k: v for k, v in self.__dict__.items() if k in self.fields()}
         keys_to_remove = []
 
@@ -349,9 +282,10 @@ class VersionedModel:
                         convert_datetime_to_iso_string) for obj in v]
 
             elif f.metadata.get('field_type') in ['record_id', 'entity_id']:
-                # Handle references or nested versioned models
-                if isinstance(v, VersionedModel):
-                    result[k] = {'entity_id': str(v.entity_id)} if v._is_partial else v.as_dict(
+                # Handle references or nested models
+                if hasattr(v, 'as_dict'):
+                    is_partial = getattr(v, '_is_partial', False)
+                    result[k] = {'entity_id': str(v.entity_id)} if is_partial else v.as_dict(
                         convert_datetime_to_iso_string)
                 elif isinstance(v, UUID):
                     result[k] = str(v) if convert_uuids else v
@@ -446,9 +380,9 @@ class VersionedModel:
         return aliased_result
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "VersionedModel":
+    def from_dict(cls, data: Dict[str, Any]) -> "BaseModel":
         """
-        Load VersionedModel from dict
+        Load model from dict
         """
         # Handle field aliases for deserialization (only for custom fields, not Big 6)
         # Create a mapping from alias to field name for custom fields
@@ -623,6 +557,212 @@ class VersionedModel:
 
         if errors:
             raise ModelValidationError(errors)
+
+    def prepare_for_save(self, changed_by_id: UUID = None):
+        """
+        Prepare this model for saving to the database.
+        Base implementation just validates. Subclasses may override.
+
+        Args:
+            changed_by_id (UUID, optional): The ID of the user making the change.
+        """
+        self.validate()
+
+    def get_for_db(self):
+        """
+        Return all fields (including entity_id) as a dict for database storage.
+        """
+        return self.as_dict()
+
+    def get_for_api(self):
+        """
+        Strip out any internal or sensitive keys. Adjust as needed.
+        """
+        excluded = {'password_hash', 'raw_password', 'refresh_token_jti'}
+        d = self.as_dict()
+        return {k: v for k, v in d.items() if k not in excluded}
+
+
+@dataclass(kw_only=True)
+class VersionedModel(BaseModel):
+    """
+    Versioned model with full audit trail support.
+
+    Use this for data that requires version history, audit trails, and tracking
+    of who made changes and when. Supports soft deletes via the 'active' flag.
+
+    VersionedModel extends BaseModel and adds the "Big 6" versioning fields:
+        - entity_id: Unique entity identifier (inherited from BaseModel)
+        - version: Current version UUID
+        - previous_version: Previous version UUID (for history chain)
+        - active: Soft delete flag (False = deleted)
+        - changed_by_id: UUID of user who made the change
+        - changed_on: Timestamp of change
+        - extra: Dictionary for additional fields (inherited from BaseModel)
+
+    An audit table stores all previous versions for complete history.
+
+    Example:
+        >>> from dataclasses import dataclass
+        >>> from rococo.models import VersionedModel
+        >>>
+        >>> @dataclass(kw_only=True)
+        ... class Person(VersionedModel):
+        ...     first_name: str
+        ...     last_name: str
+        ...     email: str
+        >>>
+        >>> person = Person(first_name="John", last_name="Doe", email="john@example.com")
+        >>> person.prepare_for_save(changed_by_id="user123")
+        >>> # Save to database - creates audit entry
+        >>>
+        >>> # Update creates new version
+        >>> person.first_name = "Jane"
+        >>> person.prepare_for_save(changed_by_id="user123")
+        >>> # Previous version moved to audit table
+
+    See Also:
+        BaseModel: For simpler non-versioned data
+    """
+
+    version: str = field(default_factory=lambda: get_uuid_hex(
+        0), metadata={'field_type': 'uuid'})
+    previous_version: str = field(
+        default_factory=lambda: None, metadata={'field_type': 'uuid'})
+    active: bool = True
+    changed_by_id: str = field(default_factory=lambda: get_uuid_hex(
+        0), metadata={'field_type': 'uuid'})
+    changed_on: datetime = field(default_factory=default_datetime)
+
+    _is_partial: InitVar[bool] = False
+
+    def __post_init__(self, _is_partial):
+        """
+        Post-initialization hook for the VersionedModel class.
+
+        This method is responsible for setting the `_is_partial` attribute,
+        resolving related model classes from strings specified in field metadata,
+        and handling fields that are lists of UUIDs.
+
+        Args:
+            _is_partial (bool): Indicates if the instance is a partial representation
+                                (e.g., loaded as a foreign key reference).
+
+        Raises:
+            ImportError: If a related model class specified as a string cannot be imported.
+        """
+        self._is_partial = _is_partial
+        # Call parent's __post_init__
+        super().__post_init__()
+
+    def __getattribute__(self, name):
+        """
+        Override of __getattribute__ to add additional checks for partial instances
+        and many-to-many fields.
+
+        For partial instances (i.e. instances loaded from the database as a
+        foreign key of another model), this method raises an AttributeError if
+        the requested attribute is not the 'entity_id' field.
+
+        For many-to-many fields, this method raises an AttributeError if the
+        field has not been loaded yet (i.e. its value is None).
+        """
+        # Skip checks for private attributes and special methods to avoid recursion
+        if name.startswith('_') or name in ['fields']:
+            return object.__getattribute__(self, name)
+
+        # Handle partial instance restrictions first
+        try:
+            is_partial = object.__getattribute__(self, '_is_partial')
+        except AttributeError:
+            # _is_partial not set yet, continue normally
+            is_partial = False
+
+        if is_partial and name in VersionedModel.fields() and name != 'entity_id':
+            raise AttributeError(
+                f"Attribute '{name}' is not available in a partial instance.")
+
+        # Check for m2m field restrictions
+        try:
+            f = next((f for f in fields(type(self)) if f.name == name), None)
+            if f and f.metadata.get('field_type') == 'm2m_list':
+                # Try to get the value using object.__getattribute__
+                try:
+                    value = object.__getattribute__(self, name)
+                    if value is None:
+                        raise AttributeError(
+                            f"Many-to-many field '{name}' is not loaded.")
+                    return value
+                except AttributeError:
+                    # Field doesn't exist, so it's definitely not loaded
+                    raise AttributeError(
+                        f"Many-to-many field '{name}' is not loaded.")
+        except (TypeError, StopIteration):
+            # fields() might not be available during initialization, continue normally
+            pass
+
+        # Get the value normally
+        return object.__getattribute__(self, name)
+
+    def __getattr__(self, name):
+        """
+        Called when an attribute is not found through normal lookup.
+        This handles extra fields for models that allow them.
+        """
+        f = next((f for f in fields(type(self)) if f.name == name), None)
+        if f and f.metadata.get('field_type') == 'm2m_list':
+            raise AttributeError(
+                f"Many-to-many field '{name}' is not loaded.")
+
+        # Handle partial instance restrictions first
+        try:
+            is_partial = object.__getattribute__(self, '_is_partial')
+        except AttributeError:
+            # _is_partial not set yet, continue normally
+            is_partial = False
+
+        if is_partial and name in VersionedModel.fields() and name != 'entity_id':
+            raise AttributeError(
+                f"Attribute '{name}' is not available in a partial instance.")
+
+        # Delegate to parent
+        return super().__getattr__(name)
+
+    def __repr__(self) -> str:
+        """
+        Return a string representation of the VersionedModel instance.
+
+        This method generates a string that includes the class name and a list of
+        field names with their respective values. For partial instances, only the
+        `entity_id` and `_is_partial` flag are included. For fields marked as 
+        many-to-many lists, it displays a placeholder `[...]` to indicate the 
+        presence of related entities. Any unloaded fields are represented with 
+        `<unloaded>`.
+
+        Returns:
+            str: A string representation of the instance.
+        """
+        if self._is_partial:
+            return f"{type(self).__name__}(entity_id={self.entity_id!r}, _is_partial=True)"
+
+        return super().__repr__()
+
+    def as_dict(self, convert_datetime_to_iso_string: bool = False, convert_uuids: bool = True, export_properties: bool = True) -> Dict[str, Any]:
+        """
+        Convert this model to a dictionary.
+
+        Args:
+            convert_datetime_to_iso_string (bool, optional): Whether to convert datetime to ISO strings.
+            convert_uuids (bool): Whether to convert UUIDs to strings.
+            export_properties (bool): Whether to include @property methods in the output.
+
+        Returns:
+            Dict[str, Any]: A dictionary representation of this model.
+        """
+        if self._is_partial:
+            return {'entity_id': self.entity_id}
+
+        return super().as_dict(convert_datetime_to_iso_string, convert_uuids, export_properties)
 
     def prepare_for_save(self, changed_by_id: UUID):
         """

@@ -137,6 +137,85 @@ OUTPUT:
 }
 ```
 
+## Model Types
+
+Rococo provides two model types for different use cases:
+
+### BaseModel - The Unversioned Model
+
+**BaseModel is the unversioned model.** Use it for simple data without versioning, audit trails, or history tracking.
+
+```python
+from rococo.models import BaseModel, NonVersionedModel
+from dataclasses import dataclass
+
+# Both BaseModel and NonVersionedModel refer to the same unversioned model
+@dataclass(kw_only=True)
+class Config(BaseModel):  # or NonVersionedModel
+    key: str
+    value: str
+
+config = Config(key="api_key", value="secret123")
+config.prepare_for_save()
+# No version tracking, no audit trail
+```
+
+**Use BaseModel for:**
+- Configuration settings
+- Cache entries
+- Logs
+- Temporary data
+- Static reference data
+
+### VersionedModel - Versioned with Audit Trail
+
+**VersionedModel extends BaseModel** to add full versioning and audit capabilities with the "Big 6" fields.
+
+```python
+from rococo.models import VersionedModel
+from dataclasses import dataclass
+
+@dataclass(kw_only=True)
+class Person(VersionedModel):
+    first_name: str
+    last_name: str
+    email: str
+
+person = Person(first_name="John", last_name="Doe", email="john@example.com")
+person.prepare_for_save(changed_by_id="user123")
+# Creates audit entry with version tracking
+```
+
+**Use VersionedModel for:**
+- User profiles
+- Organizations
+- Sensitive business data
+- Data requiring compliance tracking
+- Multi-user edited content
+
+### Quick Comparison
+
+| Feature | BaseModel (Unversioned) | VersionedModel |
+|---------|------------------------|----------------|
+| Audit trail | ❌ No | ✅ Yes |
+| Version history | ❌ No | ✅ Yes |
+| Soft delete | ❌ No | ✅ Yes |
+| Track changes | ❌ No | ✅ Yes |
+| Storage | 💾 Smaller | 💾 Larger |
+
+### NonVersionedModel Alias
+
+`NonVersionedModel` is an alias for `BaseModel` (the unversioned model). Use whichever name makes more sense in your context:
+
+```python
+from rococo.models import NonVersionedModel, BaseModel
+
+# These are identical:
+NonVersionedModel == BaseModel  # True
+```
+
+See [Models Guide](docs/models.md) for detailed documentation.
+
 #### Enum Field Conversion
 
 VersionedModel automatically converts enum fields to and from their string values when using `as_dict()` and `from_dict()`:

@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Type, Union
 from rococo.data import MySqlAdapter
 from rococo.messaging import MessageAdapter
 from rococo.models import VersionedModel
+from rococo.models.versioned_model import BaseModel
 from rococo.repositories import BaseRepository
 
 
@@ -18,7 +19,7 @@ class MySqlRepository(BaseRepository):
     def __init__(
             self,
             db_adapter: MySqlAdapter,
-            model: Type[VersionedModel],
+            model: Type[BaseModel],
             message_adapter: MessageAdapter,
             queue_name: str,
             user_id: UUID = None
@@ -28,7 +29,7 @@ class MySqlRepository(BaseRepository):
             r'(?<!^)(?=[A-Z])', '_', model.__name__).lower()
         self.model()
 
-    def _process_data_before_save(self, instance: VersionedModel):
+    def _process_data_before_save(self, instance: BaseModel):
         # Step 1: Call prepare_for_save on the instance.
         # This updates version, changed_on, previous_version, changed_by_id on the instance.
         instance.prepare_for_save(changed_by_id=self.user_id)
@@ -134,7 +135,7 @@ class MySqlRepository(BaseRepository):
             raise NotImplementedError
 
     def get_one(self, conditions: Dict[str, Any] = None, join_fields: List[str] = None,
-                additional_fields: List[str] = None) -> Union[VersionedModel, None]:
+                additional_fields: List[str] = None) -> Union[BaseModel, None]:
         """get one"""
 
         if additional_fields is None:
@@ -225,7 +226,7 @@ class MySqlRepository(BaseRepository):
             sort: List[tuple] = None,
             limit: int = None,
             offset: int = None
-    ) -> List[VersionedModel]:
+    ) -> List[BaseModel]:
         """get many"""
         if additional_fields is None:
             additional_fields = []

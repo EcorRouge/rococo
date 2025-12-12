@@ -306,22 +306,69 @@ class MongoDBAdapter(DbAdapter):
             raise RuntimeError(
                 f"move_entity_to_audit_table failed: {e}") from e
 
-    def save(
+    def upsert(
         self,
         table: str,
         data: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
+        Upsert (update or insert) a document in the specified MongoDB collection.
+        
+        This is a simple upsert operation for non-versioned models that replaces
+        the entire document based on entity_id.
+
+        Args:
+            table (str): The name of the MongoDB collection.
+            data (Dict[str, Any]): The document data (must include 'entity_id').
+
+        Returns:
+            Dict[str, Any]: The upserted document.
+
+        Raises:
+            RuntimeError: If any MongoDB operation fails.
+        """
+        if 'entity_id' not in data:
+            raise RuntimeError("upsert failed: 'entity_id' is required in data")
+
+        try:
+            coll = self._get_collection(table, write=True)
+            
+            # Remove _id if present to avoid conflicts
+            doc = data.copy()
+            doc.pop('_id', None)
+            
+            # Use replace_one with upsert=True to replace the entire document
+            result = coll.replace_one(
+                {"entity_id": data['entity_id']},
+                doc,
+                upsert=True,
+                session=self._session
+            )
+            
+            # Fetch and return the document
+            return coll.find_one({"entity_id": data['entity_id']}, session=self._session)
+
+        except errors.PyMongoError as e:
+            raise RuntimeError(f"upsert failed: {e}") from e
+
+    def save(
+        self,
+        table: str,
+        data: Dict[str, Any],
+        move_to_audit: bool = False
+    ) -> Dict[str, Any]:
+        """
         Save (versioned) a document in the specified MongoDB collection.
 
-        Instead of doing a simple upsert, this does a “versioned insert”:
-          1. Find existing document with entity_id and latest=True. If found, set latest=False.
+        Instead of doing a simple upsert, this does a "versioned insert":
+          1. Find existing document with entity_id and latest=True. If found, optionally copy to audit, then set latest=False.
           2. Create a new document based on `data` with latest=True, active=True.
           3. Insert that new document and return it.
 
         Args:
             table (str): The name of the MongoDB collection to version-insert into.
-            data (Dict[str, Any]): The new version’s fields (must include 'entity_id').
+            data (Dict[str, Any]): The new version's fields (must include 'entity_id').
+            move_to_audit (bool): Whether to copy the previous latest version to audit collection.
 
         Returns:
             Dict[str, Any]: The newly inserted (latest) document.
@@ -335,12 +382,24 @@ class MongoDBAdapter(DbAdapter):
         try:
             coll = self._get_collection(table, write=True)
 
-            # 1) Find the current latest version (if any) and mark it as not latest
+            # 1) Find the current latest version (if any)
             prev_latest = coll.find_one(
                 {"entity_id": data['entity_id'], "latest": True},
                 session=self._session
             )
+            
             if prev_latest:
+                # 1a) Optionally copy to audit before marking as not latest
+                if move_to_audit:
+                    audit = self._get_collection(f"{table}_audit", write=True)
+                    audit.replace_one(
+                        {'_id': prev_latest['_id']},
+                        prev_latest,
+                        upsert=True,
+                        session=self._session
+                    )
+                
+                # 1b) Mark the previous latest as not latest
                 coll.update_one(
                     {"_id": prev_latest["_id"]},
                     {"$set": {"latest": False}},

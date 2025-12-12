@@ -175,15 +175,15 @@ def setup_mysql_tables(mysql_adapter):
     yield
 
     # Cleanup after tests
-    # with mysql_adapter:
-    #     mysql_adapter.execute_query("DROP TABLE IF EXISTS versioned_product_audit")
-    #     mysql_adapter.execute_query("DROP TABLE IF EXISTS versioned_product")
-    #     mysql_adapter.execute_query("DROP TABLE IF EXISTS non_versioned_config")
-    #     mysql_adapter.execute_query("DROP TABLE IF EXISTS non_versioned_post")
-    #     mysql_adapter.execute_query("DROP TABLE IF EXISTS non_versioned_car")
-    #     mysql_adapter.execute_query("DROP TABLE IF EXISTS non_versioned_brand_car")
-    #     mysql_adapter.execute_query("DROP TABLE IF EXISTS non_versioned_brand")
-    #     mysql_adapter.execute_query("DROP TABLE IF EXISTS simple_log")
+    with mysql_adapter:
+        mysql_adapter.execute_query("DROP TABLE IF EXISTS versioned_product_audit")
+        mysql_adapter.execute_query("DROP TABLE IF EXISTS versioned_product")
+        mysql_adapter.execute_query("DROP TABLE IF EXISTS non_versioned_config")
+        mysql_adapter.execute_query("DROP TABLE IF EXISTS non_versioned_post")
+        mysql_adapter.execute_query("DROP TABLE IF EXISTS non_versioned_car")
+        mysql_adapter.execute_query("DROP TABLE IF EXISTS non_versioned_brand_car")
+        mysql_adapter.execute_query("DROP TABLE IF EXISTS non_versioned_brand")
+        mysql_adapter.execute_query("DROP TABLE IF EXISTS simple_log")
 
 
 @pytest.fixture

@@ -90,8 +90,36 @@ class ModelValidationError(Exception):
 @dataclass(kw_only=True)
 class BaseModel:
     """
-    A base class for all rococo models. Provides common functionality for both
-    versioned and non-versioned models.
+    BaseModel is the unversioned model class for Rococo.
+
+    Use this for data that doesn't require audit trails or version history,
+    such as configuration settings, static reference data, cache entries, or logs.
+
+    This is the base class for all Rococo models. VersionedModel extends this
+    to add versioning capabilities (Big 6 fields). NonVersionedModel is an
+    alias for BaseModel.
+
+    Fields:
+        entity_id (str): Unique identifier (UUID hex string, auto-generated)
+        extra (dict): Dictionary for storing additional fields (contents are
+                      flattened into serialization output)
+
+    Example:
+        >>> from dataclasses import dataclass
+        >>> from rococo.models import BaseModel
+        >>>
+        >>> @dataclass(kw_only=True)
+        ... class Config(BaseModel):  # Unversioned model
+        ...     key: str
+        ...     value: str
+        >>>
+        >>> config = Config(key="api_key", value="secret")
+        >>> config.prepare_for_save()
+        >>> # Save to database - no version tracking, no audit trail
+
+    See Also:
+        VersionedModel: For data requiring version history and audit trails
+        NonVersionedModel: Alias for BaseModel (same class, different name)
     """
 
     entity_id: str = field(default_factory=get_uuid_hex,
@@ -557,7 +585,45 @@ class BaseModel:
 
 @dataclass(kw_only=True)
 class VersionedModel(BaseModel):
-    """A base class for versioned models with common (Big 6) attributes."""
+    """
+    Versioned model with full audit trail support.
+
+    Use this for data that requires version history, audit trails, and tracking
+    of who made changes and when. Supports soft deletes via the 'active' flag.
+
+    VersionedModel extends BaseModel and adds the "Big 6" versioning fields:
+        - entity_id: Unique entity identifier (inherited from BaseModel)
+        - version: Current version UUID
+        - previous_version: Previous version UUID (for history chain)
+        - active: Soft delete flag (False = deleted)
+        - changed_by_id: UUID of user who made the change
+        - changed_on: Timestamp of change
+        - extra: Dictionary for additional fields (inherited from BaseModel)
+
+    An audit table stores all previous versions for complete history.
+
+    Example:
+        >>> from dataclasses import dataclass
+        >>> from rococo.models import VersionedModel
+        >>>
+        >>> @dataclass(kw_only=True)
+        ... class Person(VersionedModel):
+        ...     first_name: str
+        ...     last_name: str
+        ...     email: str
+        >>>
+        >>> person = Person(first_name="John", last_name="Doe", email="john@example.com")
+        >>> person.prepare_for_save(changed_by_id="user123")
+        >>> # Save to database - creates audit entry
+        >>>
+        >>> # Update creates new version
+        >>> person.first_name = "Jane"
+        >>> person.prepare_for_save(changed_by_id="user123")
+        >>> # Previous version moved to audit table
+
+    See Also:
+        BaseModel: For simpler non-versioned data
+    """
 
     version: str = field(default_factory=lambda: get_uuid_hex(
         0), metadata={'field_type': 'uuid'})

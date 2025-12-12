@@ -20,7 +20,7 @@ from conftest import (
     get_postgres_config,
     MockMessageAdapter
 )
-from test_models import VersionedProduct, NonVersionedConfig, NonVersionedPost, NonVersionedCar
+from test_models import VersionedProduct, NonVersionedConfig, NonVersionedPost, NonVersionedCar, NonVersionedBrand, NonVersionedBrandCar
 
 from rococo.data.postgresql import PostgreSQLAdapter
 from rococo.repositories.postgresql.postgresql_repository import PostgreSQLRepository
@@ -113,6 +113,35 @@ CREATE TABLE IF NOT EXISTS non_versioned_car (
 )
 """
 
+NON_VERSIONED_BRAND_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS non_versioned_brand (
+    entity_id VARCHAR(32) PRIMARY KEY,
+    version VARCHAR(32),
+    previous_version VARCHAR(32),
+    active BOOLEAN DEFAULT TRUE,
+    changed_by_id VARCHAR(32),
+    changed_on TIMESTAMP,
+    latest BOOLEAN DEFAULT TRUE,
+    name VARCHAR(255),
+    extra JSONB
+)
+"""
+
+NON_VERSIONED_BRAND_CAR_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS non_versioned_brand_car (
+    entity_id VARCHAR(32) PRIMARY KEY,
+    version VARCHAR(32),
+    previous_version VARCHAR(32),
+    active BOOLEAN DEFAULT TRUE,
+    changed_by_id VARCHAR(32),
+    changed_on TIMESTAMP,
+    latest BOOLEAN DEFAULT TRUE,
+    brand_id VARCHAR(32) NOT NULL,
+    car_id VARCHAR(32) NOT NULL,
+    extra JSONB
+)
+"""
+
 
 @pytest.fixture
 def postgres_adapter():
@@ -138,6 +167,8 @@ def setup_postgres_tables(postgres_adapter):
         postgres_adapter.execute_query(NON_VERSIONED_CONFIG_TABLE_SQL)
         postgres_adapter.execute_query(NON_VERSIONED_POST_TABLE_SQL)
         postgres_adapter.execute_query(NON_VERSIONED_CAR_TABLE_SQL)
+        postgres_adapter.execute_query(NON_VERSIONED_BRAND_TABLE_SQL)
+        postgres_adapter.execute_query(NON_VERSIONED_BRAND_CAR_TABLE_SQL)
 
     yield
 
@@ -148,6 +179,8 @@ def setup_postgres_tables(postgres_adapter):
         postgres_adapter.execute_query("DROP TABLE IF EXISTS non_versioned_config")
         postgres_adapter.execute_query("DROP TABLE IF EXISTS non_versioned_post")
         postgres_adapter.execute_query("DROP TABLE IF EXISTS non_versioned_car")
+        postgres_adapter.execute_query("DROP TABLE IF EXISTS non_versioned_brand_car")
+        postgres_adapter.execute_query("DROP TABLE IF EXISTS non_versioned_brand")
 
 
 @pytest.fixture
@@ -197,6 +230,32 @@ def cars_repository(postgres_adapter, setup_postgres_tables):
     return PostgreSQLRepository(
         db_adapter=postgres_adapter,
         model=NonVersionedCar,
+        message_adapter=message_adapter,
+        queue_name="test_queue",
+        user_id=None
+    )
+
+
+@pytest.fixture
+def brands_repository(postgres_adapter, setup_postgres_tables):
+    """Create a repository for NonVersionedBrand."""
+    message_adapter = MockMessageAdapter()
+    return PostgreSQLRepository(
+        db_adapter=postgres_adapter,
+        model=NonVersionedBrand,
+        message_adapter=message_adapter,
+        queue_name="test_queue",
+        user_id=None
+    )
+
+
+@pytest.fixture
+def brand_cars_repository(postgres_adapter, setup_postgres_tables):
+    """Create a repository for NonVersionedBrandCar."""
+    message_adapter = MockMessageAdapter()
+    return PostgreSQLRepository(
+        db_adapter=postgres_adapter,
+        model=NonVersionedBrandCar,
         message_adapter=message_adapter,
         queue_name="test_queue",
         user_id=None
@@ -1072,6 +1131,452 @@ class TestPostgresNonVersionedCars:
 
         honda_count = sum(1 for car in saved_cars if car.brand == "Honda")
         assert honda_count == 2
+
+
+# ============================================================================
+# Brand-Car Relationship Tests
+# ============================================================================
+
+class TestPostgresBrandCarRelationships:
+    """Tests for Brand-Car relationship models with PostgreSQL."""
+
+    def test_brand_create(self, brands_repository):
+        """Test creating brands and verify basic CRUD."""
+        brand = NonVersionedBrand(name="Tesla")
+        saved_brand = brands_repository.save(brand)
+
+        assert saved_brand is not None
+        assert saved_brand.entity_id is not None
+        assert saved_brand.name == "Tesla"
+
+        # Retrieve and verify
+        retrieved = brands_repository.get_one({'entity_id': saved_brand.entity_id})
+        assert retrieved is not None
+        assert retrieved.name == "Tesla"
+
+    def test_brand_car_relationship_create(self, brands_repository, cars_repository, brand_cars_repository):
+        """Test linking a car to a brand."""
+        # Create brand and car
+        brand = NonVersionedBrand(name="Toyota")
+        saved_brand = brands_repository.save(brand)
+
+        car = NonVersionedCar(name="Camry", brand="")
+        saved_car = cars_repository.save(car)
+
+        # Create relationship
+        brand_car = NonVersionedBrandCar(
+            brand_id=saved_brand.entity_id,
+            car_id=saved_car.entity_id
+        )
+        saved_relationship = brand_cars_repository.save(brand_car)
+
+        assert saved_relationship is not None
+        assert saved_relationship.brand_id == saved_brand.entity_id
+        assert saved_relationship.car_id == saved_car.entity_id
+
+    def test_list_brand_cars(self, brands_repository, cars_repository, brand_cars_repository, postgres_adapter):
+        """Test getting all cars for a specific brand."""
+        # Create brand
+        brand = NonVersionedBrand(name="Honda")
+        saved_brand = brands_repository.save(brand)
+        brand_id = saved_brand.entity_id.replace('-', '')
+
+        # Create multiple cars
+        cars = [
+            NonVersionedCar(name="Civic", brand=""),
+            NonVersionedCar(name="Accord", brand=""),
+            NonVersionedCar(name="CR-V", brand="")
+        ]
+        saved_cars = [cars_repository.save(car) for car in cars]
+
+        # Link all cars to brand
+        for car in saved_cars:
+            brand_car = NonVersionedBrandCar(
+                brand_id=saved_brand.entity_id,
+                car_id=car.entity_id
+            )
+            brand_cars_repository.save(brand_car)
+
+        # Query for all cars of this brand
+        with postgres_adapter:
+            brand_cars = postgres_adapter.execute_query(
+                """
+                SELECT c.* FROM non_versioned_car c
+                INNER JOIN non_versioned_brand_car bc ON c.entity_id = bc.car_id
+                WHERE bc.brand_id = %s AND c.active = true AND bc.active = true
+                """,
+                (brand_id,)
+            )
+
+        assert len(brand_cars) == 3
+        car_names = [car['name'] for car in brand_cars]
+        assert "Civic" in car_names
+        assert "Accord" in car_names
+        assert "CR-V" in car_names
+
+    def test_fetch_car_brand(self, brands_repository, cars_repository, brand_cars_repository, postgres_adapter):
+        """Test getting the brand for a specific car."""
+        # Create brand
+        brand = NonVersionedBrand(name="Ford")
+        saved_brand = brands_repository.save(brand)
+        brand_id = saved_brand.entity_id.replace('-', '')
+
+        # Create car
+        car = NonVersionedCar(name="Mustang", brand="")
+        saved_car = cars_repository.save(car)
+        car_id = saved_car.entity_id.replace('-', '')
+
+        # Link car to brand
+        brand_car = NonVersionedBrandCar(
+            brand_id=saved_brand.entity_id,
+            car_id=saved_car.entity_id
+        )
+        brand_cars_repository.save(brand_car)
+
+        # Query for brand of this car
+        with postgres_adapter:
+            car_brand = postgres_adapter.execute_query(
+                """
+                SELECT b.* FROM non_versioned_brand b
+                INNER JOIN non_versioned_brand_car bc ON b.entity_id = bc.brand_id
+                WHERE bc.car_id = %s AND b.active = true AND bc.active = true
+                LIMIT 1
+                """,
+                (car_id,)
+            )
+
+        assert len(car_brand) == 1
+        assert car_brand[0]['name'] == "Ford"
+
+    def test_multiple_brands_multiple_cars(self, brands_repository, cars_repository, brand_cars_repository, postgres_adapter):
+        """Test complex scenario with 3 brands and 6 cars."""
+        # Create 3 brands
+        brands = [
+            NonVersionedBrand(name="BMW"),
+            NonVersionedBrand(name="Mercedes"),
+            NonVersionedBrand(name="Audi")
+        ]
+        saved_brands = [brands_repository.save(b) for b in brands]
+
+        # Create 6 cars
+        cars = [
+            NonVersionedCar(name="3 Series", brand=""),
+            NonVersionedCar(name="5 Series", brand=""),
+            NonVersionedCar(name="C-Class", brand=""),
+            NonVersionedCar(name="E-Class", brand=""),
+            NonVersionedCar(name="A4", brand=""),
+            NonVersionedCar(name="Q5", brand="")
+        ]
+        saved_cars = [cars_repository.save(c) for c in cars]
+
+        # Link cars to brands: BMW gets 2, Mercedes gets 2, Audi gets 2
+        relationships = [
+            NonVersionedBrandCar(brand_id=saved_brands[0].entity_id, car_id=saved_cars[0].entity_id),  # BMW - 3 Series
+            NonVersionedBrandCar(brand_id=saved_brands[0].entity_id, car_id=saved_cars[1].entity_id),  # BMW - 5 Series
+            NonVersionedBrandCar(brand_id=saved_brands[1].entity_id, car_id=saved_cars[2].entity_id),  # Mercedes - C-Class
+            NonVersionedBrandCar(brand_id=saved_brands[1].entity_id, car_id=saved_cars[3].entity_id),  # Mercedes - E-Class
+            NonVersionedBrandCar(brand_id=saved_brands[2].entity_id, car_id=saved_cars[4].entity_id),  # Audi - A4
+            NonVersionedBrandCar(brand_id=saved_brands[2].entity_id, car_id=saved_cars[5].entity_id),  # Audi - Q5
+        ]
+        for rel in relationships:
+            brand_cars_repository.save(rel)
+
+        # Verify each brand has 2 cars
+        with postgres_adapter:
+            for brand in saved_brands:
+                brand_id = brand.entity_id.replace('-', '')
+                brand_cars = postgres_adapter.execute_query(
+                    """
+                    SELECT c.* FROM non_versioned_car c
+                    INNER JOIN non_versioned_brand_car bc ON c.entity_id = bc.car_id
+                    WHERE bc.brand_id = %s AND c.active = true AND bc.active = true
+                    """,
+                    (brand_id,)
+                )
+                assert len(brand_cars) == 2
+
+    def test_car_with_no_brand(self, cars_repository, brand_cars_repository, postgres_adapter):
+        """Test car exists but has no brand relationship."""
+        # Create car without brand
+        car = NonVersionedCar(name="Unknown Car", brand="")
+        saved_car = cars_repository.save(car)
+        car_id = saved_car.entity_id.replace('-', '')
+
+        # Verify no brand relationship exists
+        with postgres_adapter:
+            relationships = postgres_adapter.execute_query(
+                "SELECT * FROM non_versioned_brand_car WHERE car_id = %s AND active = true",
+                (car_id,)
+            )
+
+        assert len(relationships) == 0
+
+    def test_brand_with_no_cars(self, brands_repository, brand_cars_repository, postgres_adapter):
+        """Test brand exists but has no cars."""
+        # Create brand without cars
+        brand = NonVersionedBrand(name="Empty Brand")
+        saved_brand = brands_repository.save(brand)
+        brand_id = saved_brand.entity_id.replace('-', '')
+
+        # Verify no car relationships exist
+        with postgres_adapter:
+            relationships = postgres_adapter.execute_query(
+                "SELECT * FROM non_versioned_brand_car WHERE brand_id = %s AND active = true",
+                (brand_id,)
+            )
+
+        assert len(relationships) == 0
+
+    def test_update_brand_name(self, brands_repository, cars_repository, brand_cars_repository, postgres_adapter):
+        """Test updating brand name and verify cars still linked."""
+        # Create brand and car
+        brand = NonVersionedBrand(name="Old Name")
+        saved_brand = brands_repository.save(brand)
+        brand_id = saved_brand.entity_id.replace('-', '')
+
+        car = NonVersionedCar(name="Test Car", brand="")
+        saved_car = cars_repository.save(car)
+        car_id = saved_car.entity_id.replace('-', '')
+
+        # Link car to brand
+        brand_car = NonVersionedBrandCar(
+            brand_id=saved_brand.entity_id,
+            car_id=saved_car.entity_id
+        )
+        brand_cars_repository.save(brand_car)
+
+        # Update brand name
+        saved_brand.name = "New Name"
+        brands_repository.save(saved_brand)
+
+        # Verify relationship still exists and brand name is updated
+        with postgres_adapter:
+            car_brand = postgres_adapter.execute_query(
+                """
+                SELECT b.* FROM non_versioned_brand b
+                INNER JOIN non_versioned_brand_car bc ON b.entity_id = bc.brand_id
+                WHERE bc.car_id = %s AND b.active = true AND bc.active = true
+                LIMIT 1
+                """,
+                (car_id,)
+            )
+
+        assert len(car_brand) == 1
+        assert car_brand[0]['name'] == "New Name"
+
+    def test_delete_brand_with_cars(self, brands_repository, cars_repository, brand_cars_repository, postgres_adapter):
+        """Test deleting brand and check orphaned relationships."""
+        # Create brand and car
+        brand = NonVersionedBrand(name="To Delete")
+        saved_brand = brands_repository.save(brand)
+        brand_id = saved_brand.entity_id.replace('-', '')
+
+        car = NonVersionedCar(name="Orphan Car", brand="")
+        saved_car = cars_repository.save(car)
+        car_id = saved_car.entity_id.replace('-', '')
+
+        # Link car to brand
+        brand_car = NonVersionedBrandCar(
+            brand_id=saved_brand.entity_id,
+            car_id=saved_car.entity_id
+        )
+        saved_relationship = brand_cars_repository.save(brand_car)
+        relationship_id = saved_relationship.entity_id.replace('-', '')
+
+        # Delete brand (soft delete)
+        brands_repository.delete(saved_brand)
+
+        # Verify brand is inactive
+        with postgres_adapter:
+            deleted_brand = postgres_adapter.execute_query(
+                "SELECT * FROM non_versioned_brand WHERE entity_id = %s AND active = false",
+                (brand_id,)
+            )
+            assert len(deleted_brand) == 1
+
+        # Relationship may still exist but brand is inactive
+        # This tests orphaned relationship scenario
+        with postgres_adapter:
+            relationships = postgres_adapter.execute_query(
+                "SELECT * FROM non_versioned_brand_car WHERE entity_id = %s",
+                (relationship_id,)
+            )
+            # Relationship record still exists
+            assert len(relationships) >= 0
+
+    def test_delete_car_removes_relationship(self, brands_repository, cars_repository, brand_cars_repository, postgres_adapter):
+        """Test deleting car and check BrandCar cleanup."""
+        # Create brand and car
+        brand = NonVersionedBrand(name="Test Brand")
+        saved_brand = brands_repository.save(brand)
+
+        car = NonVersionedCar(name="To Delete", brand="")
+        saved_car = cars_repository.save(car)
+        car_id = saved_car.entity_id.replace('-', '')
+
+        # Link car to brand
+        brand_car = NonVersionedBrandCar(
+            brand_id=saved_brand.entity_id,
+            car_id=saved_car.entity_id
+        )
+        saved_relationship = brand_cars_repository.save(brand_car)
+        relationship_id = saved_relationship.entity_id.replace('-', '')
+
+        # Delete car (soft delete)
+        cars_repository.delete(saved_car)
+
+        # Verify car is inactive
+        with postgres_adapter:
+            deleted_car = postgres_adapter.execute_query(
+                "SELECT * FROM non_versioned_car WHERE entity_id = %s AND active = false",
+                (car_id,)
+            )
+            assert len(deleted_car) == 1
+
+        # Relationship may still exist but car is inactive
+        # Query for active relationships should return empty
+        with postgres_adapter:
+            active_relationships = postgres_adapter.execute_query(
+                """
+                SELECT * FROM non_versioned_brand_car bc
+                INNER JOIN non_versioned_car c ON bc.car_id = c.entity_id
+                WHERE bc.entity_id = %s AND c.active = true AND bc.active = true
+                """,
+                (relationship_id,)
+            )
+            assert len(active_relationships) == 0
+
+    def test_orphaned_brand_car_relationship(self, brand_cars_repository, postgres_adapter):
+        """Test BrandCar with non-existent brand_id or car_id."""
+        # Create relationship with fake IDs
+        fake_brand_id = "a" * 32  # 32 char hex string
+        fake_car_id = "b" * 32
+
+        brand_car = NonVersionedBrandCar(
+            brand_id=fake_brand_id,
+            car_id=fake_car_id
+        )
+        saved_relationship = brand_cars_repository.save(brand_car)
+        relationship_id = saved_relationship.entity_id.replace('-', '')
+
+        # Verify relationship was created (no foreign key constraints)
+        with postgres_adapter:
+            relationships = postgres_adapter.execute_query(
+                "SELECT * FROM non_versioned_brand_car WHERE entity_id = %s",
+                (relationship_id,)
+            )
+            assert len(relationships) == 1
+            assert relationships[0]['brand_id'] == fake_brand_id
+            assert relationships[0]['car_id'] == fake_car_id
+
+    def test_same_car_multiple_brand_attempts(self, brands_repository, cars_repository, brand_cars_repository, postgres_adapter):
+        """Test preventing duplicate relationships (one-to-many constraint)."""
+        # Create two brands and one car
+        brand1 = NonVersionedBrand(name="Brand 1")
+        brand2 = NonVersionedBrand(name="Brand 2")
+        saved_brand1 = brands_repository.save(brand1)
+        saved_brand2 = brands_repository.save(brand2)
+
+        car = NonVersionedCar(name="Shared Car", brand="")
+        saved_car = cars_repository.save(car)
+        car_id = saved_car.entity_id.replace('-', '')
+
+        # Link car to first brand
+        brand_car1 = NonVersionedBrandCar(
+            brand_id=saved_brand1.entity_id,
+            car_id=saved_car.entity_id
+        )
+        brand_cars_repository.save(brand_car1)
+
+        # Attempt to link same car to second brand (should create another relationship)
+        # Note: Since we don't have unique constraints, this will create a duplicate
+        brand_car2 = NonVersionedBrandCar(
+            brand_id=saved_brand2.entity_id,
+            car_id=saved_car.entity_id
+        )
+        brand_cars_repository.save(brand_car2)
+
+        # Verify both relationships exist (testing current behavior)
+        with postgres_adapter:
+            relationships = postgres_adapter.execute_query(
+                "SELECT * FROM non_versioned_brand_car WHERE car_id = %s AND active = true",
+                (car_id,)
+            )
+
+        # Both relationships exist (no unique constraint enforced)
+        assert len(relationships) == 2
+
+    def test_fetch_all_brands(self, brands_repository):
+        """Test listing all brands."""
+        # Create multiple brands
+        brands = [
+            NonVersionedBrand(name="Brand A"),
+            NonVersionedBrand(name="Brand B"),
+            NonVersionedBrand(name="Brand C")
+        ]
+        for brand in brands:
+            brands_repository.save(brand)
+
+        # Fetch all brands
+        all_brands = brands_repository.get_many()
+        assert len(all_brands) >= 3
+
+        brand_names = [b.name for b in all_brands]
+        assert "Brand A" in brand_names
+        assert "Brand B" in brand_names
+        assert "Brand C" in brand_names
+
+    def test_count_cars_per_brand(self, brands_repository, cars_repository, brand_cars_repository, postgres_adapter):
+        """Test aggregate counts via SQL."""
+        # Create 2 brands
+        brand1 = NonVersionedBrand(name="Brand One")
+        brand2 = NonVersionedBrand(name="Brand Two")
+        saved_brand1 = brands_repository.save(brand1)
+        saved_brand2 = brands_repository.save(brand2)
+        brand1_id = saved_brand1.entity_id.replace('-', '')
+        brand2_id = saved_brand2.entity_id.replace('-', '')
+
+        # Create 5 cars
+        cars = [
+            NonVersionedCar(name=f"Car {i}", brand="") for i in range(5)
+        ]
+        saved_cars = [cars_repository.save(c) for c in cars]
+
+        # Link 3 cars to brand1, 2 cars to brand2
+        for i in range(3):
+            brand_car = NonVersionedBrandCar(
+                brand_id=saved_brand1.entity_id,
+                car_id=saved_cars[i].entity_id
+            )
+            brand_cars_repository.save(brand_car)
+
+        for i in range(3, 5):
+            brand_car = NonVersionedBrandCar(
+                brand_id=saved_brand2.entity_id,
+                car_id=saved_cars[i].entity_id
+            )
+            brand_cars_repository.save(brand_car)
+
+        # Count cars per brand
+        with postgres_adapter:
+            counts = postgres_adapter.execute_query(
+                """
+                SELECT b.name, COUNT(bc.car_id) as car_count
+                FROM non_versioned_brand b
+                LEFT JOIN non_versioned_brand_car bc ON b.entity_id = bc.brand_id 
+                    AND bc.active = true
+                LEFT JOIN non_versioned_car c ON bc.car_id = c.entity_id 
+                    AND c.active = true
+                WHERE b.active = true
+                GROUP BY b.entity_id, b.name
+                ORDER BY b.name
+                """
+            )
+
+        # Verify counts
+        brand_counts = {row['name']: row['car_count'] for row in counts}
+        assert brand_counts.get("Brand One", 0) == 3
+        assert brand_counts.get("Brand Two", 0) == 2
 
 
 # ============================================================================

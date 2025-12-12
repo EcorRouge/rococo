@@ -264,17 +264,10 @@ class BaseRepository:
         instance: BaseModel
     ) -> BaseModel:
         """
-        Logically deletes a BaseModel instance from the database.
-        For VersionedModel, sets active flag to False.
-        For non-versioned models (BaseModel), performs a hard delete or similar operation.
+        Logically deletes a VersionedModel instance from the database by setting its active flag to False.
 
-        :param instance: The BaseModel instance to delete.
-        :return: The deleted BaseModel instance.
+        :param instance: The VersionedModel instance to delete.
+        :return: The deleted VersionedModel instance, which is now in a logically deleted state.
         """
-        if self._is_versioned_model():
-            # For VersionedModel, set active to False (soft delete)
-            instance.active = False
-            return self.save(instance)
-        else:
-            # For non-versioned models (BaseModel), just save (subclasses can override for hard delete)
-            return self.save(instance)
+        instance.active = False
+        return self.save(instance)

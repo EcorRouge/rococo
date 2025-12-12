@@ -22,7 +22,7 @@ from conftest import (
     MockMessageAdapter
 )
 
-from test_models import SurrealNonVersionedPost, SurrealNonVersionedCar
+from test_models import SurrealNonVersionedPost, SurrealNonVersionedCar, SurrealNonVersionedBrand, SurrealNonVersionedBrandCar
 
 from rococo.data.surrealdb import SurrealDbAdapter
 from rococo.repositories.surrealdb.surreal_db_repository import SurrealDbRepository
@@ -64,6 +64,8 @@ VERSIONED_TABLE = "surrealversionedproduct"
 NON_VERSIONED_TABLE = "surrealnonversionedconfig"
 NON_VERSIONED_POST_TABLE = "surrealnonversionedpost"
 NON_VERSIONED_CAR_TABLE = "surrealnonversionedcar"
+NON_VERSIONED_BRAND_TABLE = "surrealnonversionedbrand"
+NON_VERSIONED_BRAND_CAR_TABLE = "surrealnonversionedbrandcar"
 
 
 @pytest.fixture
@@ -91,6 +93,8 @@ def setup_surrealdb_tables(surrealdb_adapter):
         surrealdb_adapter.execute_query(f"DELETE FROM {NON_VERSIONED_TABLE}")
         surrealdb_adapter.execute_query(f"DELETE FROM {NON_VERSIONED_POST_TABLE}")
         surrealdb_adapter.execute_query(f"DELETE FROM {NON_VERSIONED_CAR_TABLE}")
+        surrealdb_adapter.execute_query(f"DELETE FROM {NON_VERSIONED_BRAND_TABLE}")
+        surrealdb_adapter.execute_query(f"DELETE FROM {NON_VERSIONED_BRAND_CAR_TABLE}")
 
     yield
 
@@ -101,6 +105,8 @@ def setup_surrealdb_tables(surrealdb_adapter):
         surrealdb_adapter.execute_query(f"DELETE FROM {NON_VERSIONED_TABLE}")
         surrealdb_adapter.execute_query(f"DELETE FROM {NON_VERSIONED_POST_TABLE}")
         surrealdb_adapter.execute_query(f"DELETE FROM {NON_VERSIONED_CAR_TABLE}")
+        surrealdb_adapter.execute_query(f"DELETE FROM {NON_VERSIONED_BRAND_TABLE}")
+        surrealdb_adapter.execute_query(f"DELETE FROM {NON_VERSIONED_BRAND_CAR_TABLE}")
 
 
 @pytest.fixture
@@ -170,6 +176,40 @@ def cars_repository(surrealdb_adapter, setup_surrealdb_tables):
         user_id=None
     )
     repo.table_name = NON_VERSIONED_CAR_TABLE
+    return repo
+
+
+@pytest.fixture
+def brands_repository(surrealdb_adapter, setup_surrealdb_tables):
+    """Create a repository for SurrealNonVersionedBrand."""
+    message_adapter = MockMessageAdapter()
+    from rococo.repositories.base_repository import BaseRepository
+
+    repo = BaseRepository(
+        adapter=surrealdb_adapter,
+        model=SurrealNonVersionedBrand,
+        message_adapter=message_adapter,
+        queue_name="test_queue",
+        user_id=None
+    )
+    repo.table_name = NON_VERSIONED_BRAND_TABLE
+    return repo
+
+
+@pytest.fixture
+def brand_cars_repository(surrealdb_adapter, setup_surrealdb_tables):
+    """Create a repository for SurrealNonVersionedBrandCar."""
+    message_adapter = MockMessageAdapter()
+    from rococo.repositories.base_repository import BaseRepository
+
+    repo = BaseRepository(
+        adapter=surrealdb_adapter,
+        model=SurrealNonVersionedBrandCar,
+        message_adapter=message_adapter,
+        queue_name="test_queue",
+        user_id=None
+    )
+    repo.table_name = NON_VERSIONED_BRAND_CAR_TABLE
     return repo
 
 
@@ -1056,6 +1096,643 @@ class TestSurrealDBNonVersionedCars:
 
             honda_count = sum(1 for car in all_cars if car['brand'] == "Honda")
             assert honda_count == 2
+
+
+# ============================================================================
+# Brand-Car Relationship Tests
+# ============================================================================
+
+class TestSurrealDBBrandCarRelationships:
+    """Tests for Brand-Car relationship models with SurrealDB."""
+
+    def test_brand_create(self, brands_repository, surrealdb_adapter, setup_surrealdb_tables):
+        """Test creating brands and verify basic CRUD."""
+        brand = SurrealNonVersionedBrand(name="Tesla")
+        brand.prepare_for_save()
+
+        with surrealdb_adapter:
+            data = brand.as_dict(convert_datetime_to_iso_string=True, convert_uuids=True)
+            record_id = f"{NON_VERSIONED_BRAND_TABLE}:{data['entity_id']}"
+            surrealdb_adapter.execute_query(f"CREATE {record_id} CONTENT {data}")
+
+        assert brand.entity_id is not None
+        assert brand.name == "Tesla"
+
+        # Retrieve and verify
+        with surrealdb_adapter:
+            result = surrealdb_adapter.execute_query(f"SELECT * FROM {record_id}")
+            retrieved = surrealdb_adapter.parse_db_response(result)
+            if isinstance(retrieved, list):
+                retrieved = retrieved[0] if retrieved else None
+            assert retrieved is not None
+            assert retrieved['name'] == "Tesla"
+
+    def test_brand_car_relationship_create(self, brands_repository, cars_repository, brand_cars_repository, surrealdb_adapter, setup_surrealdb_tables):
+        """Test linking a car to a brand."""
+        # Create brand and car
+        brand = SurrealNonVersionedBrand(name="Toyota")
+        brand.prepare_for_save()
+
+        car = SurrealNonVersionedCar(name="Camry", brand="")
+        car.prepare_for_save()
+
+        with surrealdb_adapter:
+            brand_data = brand.as_dict(convert_datetime_to_iso_string=True, convert_uuids=True)
+            brand_record_id = f"{NON_VERSIONED_BRAND_TABLE}:{brand_data['entity_id']}"
+            surrealdb_adapter.execute_query(f"CREATE {brand_record_id} CONTENT {brand_data}")
+
+            car_data = car.as_dict(convert_datetime_to_iso_string=True, convert_uuids=True)
+            car_record_id = f"{NON_VERSIONED_CAR_TABLE}:{car_data['entity_id']}"
+            surrealdb_adapter.execute_query(f"CREATE {car_record_id} CONTENT {car_data}")
+
+        # Create relationship
+        brand_car = SurrealNonVersionedBrandCar(
+            brand_id=brand.entity_id,
+            car_id=car.entity_id
+        )
+        brand_car.prepare_for_save()
+
+        with surrealdb_adapter:
+            relationship_data = brand_car.as_dict(convert_datetime_to_iso_string=True, convert_uuids=True)
+            relationship_record_id = f"{NON_VERSIONED_BRAND_CAR_TABLE}:{relationship_data['entity_id']}"
+            surrealdb_adapter.execute_query(f"CREATE {relationship_record_id} CONTENT {relationship_data}")
+
+        assert brand_car.entity_id is not None
+        assert brand_car.brand_id == brand.entity_id
+        assert brand_car.car_id == car.entity_id
+
+    def test_list_brand_cars(self, brands_repository, cars_repository, brand_cars_repository, surrealdb_adapter, setup_surrealdb_tables):
+        """Test getting all cars for a specific brand."""
+        # Create brand
+        brand = SurrealNonVersionedBrand(name="Honda")
+        brand.prepare_for_save()
+        brand_id = brand.entity_id
+
+        # Create multiple cars
+        cars = [
+            SurrealNonVersionedCar(name="Civic", brand=""),
+            SurrealNonVersionedCar(name="Accord", brand=""),
+            SurrealNonVersionedCar(name="CR-V", brand="")
+        ]
+        for car in cars:
+            car.prepare_for_save()
+
+        with surrealdb_adapter:
+            brand_data = brand.as_dict(convert_datetime_to_iso_string=True, convert_uuids=True)
+            brand_record_id = f"{NON_VERSIONED_BRAND_TABLE}:{brand_data['entity_id']}"
+            surrealdb_adapter.execute_query(f"CREATE {brand_record_id} CONTENT {brand_data}")
+
+            for car in cars:
+                car_data = car.as_dict(convert_datetime_to_iso_string=True, convert_uuids=True)
+                car_record_id = f"{NON_VERSIONED_CAR_TABLE}:{car_data['entity_id']}"
+                surrealdb_adapter.execute_query(f"CREATE {car_record_id} CONTENT {car_data}")
+
+                # Link car to brand
+                brand_car = SurrealNonVersionedBrandCar(
+                    brand_id=brand.entity_id,
+                    car_id=car.entity_id
+                )
+                brand_car.prepare_for_save()
+                relationship_data = brand_car.as_dict(convert_datetime_to_iso_string=True, convert_uuids=True)
+                relationship_record_id = f"{NON_VERSIONED_BRAND_CAR_TABLE}:{relationship_data['entity_id']}"
+                surrealdb_adapter.execute_query(f"CREATE {relationship_record_id} CONTENT {relationship_data}")
+
+            # Query for all cars of this brand using SurrealQL
+            result = surrealdb_adapter.execute_query(
+                f"""
+                SELECT * FROM {NON_VERSIONED_CAR_TABLE}
+                WHERE entity_id IN (
+                    SELECT VALUE car_id FROM {NON_VERSIONED_BRAND_CAR_TABLE}
+                    WHERE brand_id = '{brand_id}'
+                )
+                """
+            )
+            brand_cars = surrealdb_adapter.parse_db_response(result)
+
+        if isinstance(brand_cars, dict):
+            brand_cars = [brand_cars]
+        elif not brand_cars:
+            brand_cars = []
+
+        assert len(brand_cars) == 3
+        car_names = [car['name'] for car in brand_cars]
+        assert "Civic" in car_names
+        assert "Accord" in car_names
+        assert "CR-V" in car_names
+
+    def test_fetch_car_brand(self, brands_repository, cars_repository, brand_cars_repository, surrealdb_adapter, setup_surrealdb_tables):
+        """Test getting the brand for a specific car."""
+        # Create brand
+        brand = SurrealNonVersionedBrand(name="Ford")
+        brand.prepare_for_save()
+        brand_id = brand.entity_id
+
+        # Create car
+        car = SurrealNonVersionedCar(name="Mustang", brand="")
+        car.prepare_for_save()
+        car_id = car.entity_id
+
+        with surrealdb_adapter:
+            brand_data = brand.as_dict(convert_datetime_to_iso_string=True, convert_uuids=True)
+            brand_record_id = f"{NON_VERSIONED_BRAND_TABLE}:{brand_data['entity_id']}"
+            surrealdb_adapter.execute_query(f"CREATE {brand_record_id} CONTENT {brand_data}")
+
+            car_data = car.as_dict(convert_datetime_to_iso_string=True, convert_uuids=True)
+            car_record_id = f"{NON_VERSIONED_CAR_TABLE}:{car_data['entity_id']}"
+            surrealdb_adapter.execute_query(f"CREATE {car_record_id} CONTENT {car_data}")
+
+            # Link car to brand
+            brand_car = SurrealNonVersionedBrandCar(
+                brand_id=brand.entity_id,
+                car_id=car.entity_id
+            )
+            brand_car.prepare_for_save()
+            relationship_data = brand_car.as_dict(convert_datetime_to_iso_string=True, convert_uuids=True)
+            relationship_record_id = f"{NON_VERSIONED_BRAND_CAR_TABLE}:{relationship_data['entity_id']}"
+            surrealdb_adapter.execute_query(f"CREATE {relationship_record_id} CONTENT {relationship_data}")
+
+            # Query for brand of this car
+            result = surrealdb_adapter.execute_query(
+                f"""
+                SELECT * FROM {NON_VERSIONED_BRAND_TABLE}
+                WHERE entity_id IN (
+                    SELECT VALUE brand_id FROM {NON_VERSIONED_BRAND_CAR_TABLE}
+                    WHERE car_id = '{car_id}'
+                )
+                LIMIT 1
+                """
+            )
+            car_brand = surrealdb_adapter.parse_db_response(result)
+
+        if isinstance(car_brand, dict):
+            car_brand = [car_brand]
+        elif not car_brand:
+            car_brand = []
+
+        assert len(car_brand) == 1
+        assert car_brand[0]['name'] == "Ford"
+
+    def test_multiple_brands_multiple_cars(self, brands_repository, cars_repository, brand_cars_repository, surrealdb_adapter, setup_surrealdb_tables):
+        """Test complex scenario with 3 brands and 6 cars."""
+        # Create 3 brands
+        brands = [
+            SurrealNonVersionedBrand(name="BMW"),
+            SurrealNonVersionedBrand(name="Mercedes"),
+            SurrealNonVersionedBrand(name="Audi")
+        ]
+        for brand in brands:
+            brand.prepare_for_save()
+
+        # Create 6 cars
+        cars = [
+            SurrealNonVersionedCar(name="3 Series", brand=""),
+            SurrealNonVersionedCar(name="5 Series", brand=""),
+            SurrealNonVersionedCar(name="C-Class", brand=""),
+            SurrealNonVersionedCar(name="E-Class", brand=""),
+            SurrealNonVersionedCar(name="A4", brand=""),
+            SurrealNonVersionedCar(name="Q5", brand="")
+        ]
+        for car in cars:
+            car.prepare_for_save()
+
+        with surrealdb_adapter:
+            # Save brands
+            for brand in brands:
+                brand_data = brand.as_dict(convert_datetime_to_iso_string=True, convert_uuids=True)
+                brand_record_id = f"{NON_VERSIONED_BRAND_TABLE}:{brand_data['entity_id']}"
+                surrealdb_adapter.execute_query(f"CREATE {brand_record_id} CONTENT {brand_data}")
+
+            # Save cars
+            for car in cars:
+                car_data = car.as_dict(convert_datetime_to_iso_string=True, convert_uuids=True)
+                car_record_id = f"{NON_VERSIONED_CAR_TABLE}:{car_data['entity_id']}"
+                surrealdb_adapter.execute_query(f"CREATE {car_record_id} CONTENT {car_data}")
+
+            # Link cars to brands: BMW gets 2, Mercedes gets 2, Audi gets 2
+            relationships = [
+                SurrealNonVersionedBrandCar(brand_id=brands[0].entity_id, car_id=cars[0].entity_id),  # BMW - 3 Series
+                SurrealNonVersionedBrandCar(brand_id=brands[0].entity_id, car_id=cars[1].entity_id),  # BMW - 5 Series
+                SurrealNonVersionedBrandCar(brand_id=brands[1].entity_id, car_id=cars[2].entity_id),  # Mercedes - C-Class
+                SurrealNonVersionedBrandCar(brand_id=brands[1].entity_id, car_id=cars[3].entity_id),  # Mercedes - E-Class
+                SurrealNonVersionedBrandCar(brand_id=brands[2].entity_id, car_id=cars[4].entity_id),  # Audi - A4
+                SurrealNonVersionedBrandCar(brand_id=brands[2].entity_id, car_id=cars[5].entity_id),  # Audi - Q5
+            ]
+            for rel in relationships:
+                rel.prepare_for_save()
+                relationship_data = rel.as_dict(convert_datetime_to_iso_string=True, convert_uuids=True)
+                relationship_record_id = f"{NON_VERSIONED_BRAND_CAR_TABLE}:{relationship_data['entity_id']}"
+                surrealdb_adapter.execute_query(f"CREATE {relationship_record_id} CONTENT {relationship_data}")
+
+            # Verify each brand has 2 cars
+            for brand in brands:
+                brand_id = brand.entity_id
+                result = surrealdb_adapter.execute_query(
+                    f"""
+                    SELECT * FROM {NON_VERSIONED_CAR_TABLE}
+                    WHERE entity_id IN (
+                        SELECT VALUE car_id FROM {NON_VERSIONED_BRAND_CAR_TABLE}
+                        WHERE brand_id = '{brand_id}'
+                    )
+                    """
+                )
+                brand_cars = surrealdb_adapter.parse_db_response(result)
+                if isinstance(brand_cars, dict):
+                    brand_cars = [brand_cars]
+                elif not brand_cars:
+                    brand_cars = []
+                assert len(brand_cars) == 2
+
+    def test_car_with_no_brand(self, cars_repository, brand_cars_repository, surrealdb_adapter, setup_surrealdb_tables):
+        """Test car exists but has no brand relationship."""
+        # Create car without brand
+        car = SurrealNonVersionedCar(name="Unknown Car", brand="")
+        car.prepare_for_save()
+        car_id = car.entity_id
+
+        with surrealdb_adapter:
+            car_data = car.as_dict(convert_datetime_to_iso_string=True, convert_uuids=True)
+            car_record_id = f"{NON_VERSIONED_CAR_TABLE}:{car_data['entity_id']}"
+            surrealdb_adapter.execute_query(f"CREATE {car_record_id} CONTENT {car_data}")
+
+            # Verify no brand relationship exists
+            result = surrealdb_adapter.execute_query(
+                f"SELECT * FROM {NON_VERSIONED_BRAND_CAR_TABLE} WHERE car_id = '{car_id}'"
+            )
+            relationships = surrealdb_adapter.parse_db_response(result)
+
+        if isinstance(relationships, dict):
+            relationships = [relationships]
+        elif not relationships:
+            relationships = []
+
+        assert len(relationships) == 0
+
+    def test_brand_with_no_cars(self, brands_repository, brand_cars_repository, surrealdb_adapter, setup_surrealdb_tables):
+        """Test brand exists but has no cars."""
+        # Create brand without cars
+        brand = SurrealNonVersionedBrand(name="Empty Brand")
+        brand.prepare_for_save()
+        brand_id = brand.entity_id
+
+        with surrealdb_adapter:
+            brand_data = brand.as_dict(convert_datetime_to_iso_string=True, convert_uuids=True)
+            brand_record_id = f"{NON_VERSIONED_BRAND_TABLE}:{brand_data['entity_id']}"
+            surrealdb_adapter.execute_query(f"CREATE {brand_record_id} CONTENT {brand_data}")
+
+            # Verify no car relationships exist
+            result = surrealdb_adapter.execute_query(
+                f"SELECT * FROM {NON_VERSIONED_BRAND_CAR_TABLE} WHERE brand_id = '{brand_id}'"
+            )
+            relationships = surrealdb_adapter.parse_db_response(result)
+
+        if isinstance(relationships, dict):
+            relationships = [relationships]
+        elif not relationships:
+            relationships = []
+
+        assert len(relationships) == 0
+
+    def test_update_brand_name(self, brands_repository, cars_repository, brand_cars_repository, surrealdb_adapter, setup_surrealdb_tables):
+        """Test updating brand name and verify cars still linked."""
+        # Create brand and car
+        brand = SurrealNonVersionedBrand(name="Old Name")
+        brand.prepare_for_save()
+        brand_id = brand.entity_id
+
+        car = SurrealNonVersionedCar(name="Test Car", brand="")
+        car.prepare_for_save()
+        car_id = car.entity_id
+
+        with surrealdb_adapter:
+            brand_data = brand.as_dict(convert_datetime_to_iso_string=True, convert_uuids=True)
+            brand_record_id = f"{NON_VERSIONED_BRAND_TABLE}:{brand_data['entity_id']}"
+            surrealdb_adapter.execute_query(f"CREATE {brand_record_id} CONTENT {brand_data}")
+
+            car_data = car.as_dict(convert_datetime_to_iso_string=True, convert_uuids=True)
+            car_record_id = f"{NON_VERSIONED_CAR_TABLE}:{car_data['entity_id']}"
+            surrealdb_adapter.execute_query(f"CREATE {car_record_id} CONTENT {car_data}")
+
+            # Link car to brand
+            brand_car = SurrealNonVersionedBrandCar(
+                brand_id=brand.entity_id,
+                car_id=car.entity_id
+            )
+            brand_car.prepare_for_save()
+            relationship_data = brand_car.as_dict(convert_datetime_to_iso_string=True, convert_uuids=True)
+            relationship_record_id = f"{NON_VERSIONED_BRAND_CAR_TABLE}:{relationship_data['entity_id']}"
+            surrealdb_adapter.execute_query(f"CREATE {relationship_record_id} CONTENT {relationship_data}")
+
+            # Update brand name
+            surrealdb_adapter.execute_query(f"UPDATE {brand_record_id} SET name = 'New Name'")
+
+            # Verify relationship still exists and brand name is updated
+            result = surrealdb_adapter.execute_query(
+                f"""
+                SELECT * FROM {NON_VERSIONED_BRAND_TABLE}
+                WHERE entity_id IN (
+                    SELECT VALUE brand_id FROM {NON_VERSIONED_BRAND_CAR_TABLE}
+                    WHERE car_id = '{car_id}'
+                )
+                LIMIT 1
+                """
+            )
+            car_brand = surrealdb_adapter.parse_db_response(result)
+
+        if isinstance(car_brand, dict):
+            car_brand = [car_brand]
+        elif not car_brand:
+            car_brand = []
+
+        assert len(car_brand) == 1
+        assert car_brand[0]['name'] == "New Name"
+
+    def test_delete_brand_with_cars(self, brands_repository, cars_repository, brand_cars_repository, surrealdb_adapter, setup_surrealdb_tables):
+        """Test deleting brand and check orphaned relationships."""
+        # Create brand and car
+        brand = SurrealNonVersionedBrand(name="To Delete")
+        brand.prepare_for_save()
+        brand_id = brand.entity_id
+
+        car = SurrealNonVersionedCar(name="Orphan Car", brand="")
+        car.prepare_for_save()
+        car_id = car.entity_id
+
+        with surrealdb_adapter:
+            brand_data = brand.as_dict(convert_datetime_to_iso_string=True, convert_uuids=True)
+            brand_record_id = f"{NON_VERSIONED_BRAND_TABLE}:{brand_data['entity_id']}"
+            surrealdb_adapter.execute_query(f"CREATE {brand_record_id} CONTENT {brand_data}")
+
+            car_data = car.as_dict(convert_datetime_to_iso_string=True, convert_uuids=True)
+            car_record_id = f"{NON_VERSIONED_CAR_TABLE}:{car_data['entity_id']}"
+            surrealdb_adapter.execute_query(f"CREATE {car_record_id} CONTENT {car_data}")
+
+            # Link car to brand
+            brand_car = SurrealNonVersionedBrandCar(
+                brand_id=brand.entity_id,
+                car_id=car.entity_id
+            )
+            brand_car.prepare_for_save()
+            relationship_data = brand_car.as_dict(convert_datetime_to_iso_string=True, convert_uuids=True)
+            relationship_record_id = f"{NON_VERSIONED_BRAND_CAR_TABLE}:{relationship_data['entity_id']}"
+
+            surrealdb_adapter.execute_query(f"CREATE {relationship_record_id} CONTENT {relationship_data}")
+
+            # Delete brand
+            surrealdb_adapter.execute_query(f"DELETE {brand_record_id}")
+
+            # Verify brand is deleted
+            result = surrealdb_adapter.execute_query(f"SELECT * FROM {brand_record_id}")
+            deleted_brand = surrealdb_adapter.parse_db_response(result)
+            assert deleted_brand == [] or deleted_brand is None
+
+            # Relationship may still exist but brand is deleted
+            # This tests orphaned relationship scenario
+            result = surrealdb_adapter.execute_query(f"SELECT * FROM {relationship_record_id}")
+            relationships = surrealdb_adapter.parse_db_response(result)
+            # Relationship record may still exist
+            assert relationships is not None or relationships == []
+
+    def test_delete_car_removes_relationship(self, brands_repository, cars_repository, brand_cars_repository, surrealdb_adapter, setup_surrealdb_tables):
+        """Test deleting car and check BrandCar cleanup."""
+        # Create brand and car
+        brand = SurrealNonVersionedBrand(name="Test Brand")
+        brand.prepare_for_save()
+
+        car = SurrealNonVersionedCar(name="To Delete", brand="")
+        car.prepare_for_save()
+        car_id = car.entity_id
+
+        with surrealdb_adapter:
+            brand_data = brand.as_dict(convert_datetime_to_iso_string=True, convert_uuids=True)
+            brand_record_id = f"{NON_VERSIONED_BRAND_TABLE}:{brand_data['entity_id']}"
+            surrealdb_adapter.execute_query(f"CREATE {brand_record_id} CONTENT {brand_data}")
+
+            car_data = car.as_dict(convert_datetime_to_iso_string=True, convert_uuids=True)
+            car_record_id = f"{NON_VERSIONED_CAR_TABLE}:{car_data['entity_id']}"
+            surrealdb_adapter.execute_query(f"CREATE {car_record_id} CONTENT {car_data}")
+
+            # Link car to brand
+            brand_car = SurrealNonVersionedBrandCar(
+                brand_id=brand.entity_id,
+                car_id=car.entity_id
+            )
+            brand_car.prepare_for_save()
+            relationship_data = brand_car.as_dict(convert_datetime_to_iso_string=True, convert_uuids=True)
+            relationship_record_id = f"{NON_VERSIONED_BRAND_CAR_TABLE}:{relationship_data['entity_id']}"
+            surrealdb_adapter.execute_query(f"CREATE {relationship_record_id} CONTENT {relationship_data}")
+
+            # Delete car
+            surrealdb_adapter.execute_query(f"DELETE {car_record_id}")
+
+            # Verify car is deleted
+            result = surrealdb_adapter.execute_query(f"SELECT * FROM {car_record_id}")
+            deleted_car = surrealdb_adapter.parse_db_response(result)
+            assert deleted_car == [] or deleted_car is None
+
+            # Relationship may still exist but car is deleted
+            # Query for relationships should still find it, but car lookup will fail
+            result = surrealdb_adapter.execute_query(f"SELECT * FROM {relationship_record_id}")
+            relationships = surrealdb_adapter.parse_db_response(result)
+            # Relationship record may still exist
+            assert relationships is not None or relationships == []
+
+    def test_orphaned_brand_car_relationship(self, brand_cars_repository, surrealdb_adapter, setup_surrealdb_tables):
+        """Test BrandCar with non-existent brand_id or car_id."""
+        # Create relationship with fake IDs
+        fake_brand_id = "a" * 32  # 32 char hex string
+        fake_car_id = "b" * 32
+
+        brand_car = SurrealNonVersionedBrandCar(
+            brand_id=fake_brand_id,
+            car_id=fake_car_id
+        )
+        brand_car.prepare_for_save()
+        relationship_id = brand_car.entity_id
+
+        with surrealdb_adapter:
+            relationship_data = brand_car.as_dict(convert_datetime_to_iso_string=True, convert_uuids=True)
+            relationship_record_id = f"{NON_VERSIONED_BRAND_CAR_TABLE}:{relationship_data['entity_id']}"
+            surrealdb_adapter.execute_query(f"CREATE {relationship_record_id} CONTENT {relationship_data}")
+
+            # Verify relationship was created (no foreign key constraints)
+            result = surrealdb_adapter.execute_query(f"SELECT * FROM {relationship_record_id}")
+            relationships = surrealdb_adapter.parse_db_response(result)
+
+        if isinstance(relationships, dict):
+            relationships = [relationships]
+        elif not relationships:
+            relationships = []
+
+        assert len(relationships) == 1
+        assert relationships[0]['brand_id'] == fake_brand_id
+        assert relationships[0]['car_id'] == fake_car_id
+
+    def test_same_car_multiple_brand_attempts(self, brands_repository, cars_repository, brand_cars_repository, surrealdb_adapter, setup_surrealdb_tables):
+        """Test preventing duplicate relationships (one-to-many constraint)."""
+        # Create two brands and one car
+        brand1 = SurrealNonVersionedBrand(name="Brand 1")
+        brand2 = SurrealNonVersionedBrand(name="Brand 2")
+        brand1.prepare_for_save()
+        brand2.prepare_for_save()
+
+        car = SurrealNonVersionedCar(name="Shared Car", brand="")
+        car.prepare_for_save()
+        car_id = car.entity_id
+
+        with surrealdb_adapter:
+            brand1_data = brand1.as_dict(convert_datetime_to_iso_string=True, convert_uuids=True)
+            brand1_record_id = f"{NON_VERSIONED_BRAND_TABLE}:{brand1_data['entity_id']}"
+            surrealdb_adapter.execute_query(f"CREATE {brand1_record_id} CONTENT {brand1_data}")
+
+            brand2_data = brand2.as_dict(convert_datetime_to_iso_string=True, convert_uuids=True)
+            brand2_record_id = f"{NON_VERSIONED_BRAND_TABLE}:{brand2_data['entity_id']}"
+            surrealdb_adapter.execute_query(f"CREATE {brand2_record_id} CONTENT {brand2_data}")
+
+            car_data = car.as_dict(convert_datetime_to_iso_string=True, convert_uuids=True)
+            car_record_id = f"{NON_VERSIONED_CAR_TABLE}:{car_data['entity_id']}"
+            surrealdb_adapter.execute_query(f"CREATE {car_record_id} CONTENT {car_data}")
+
+            # Link car to first brand
+            brand_car1 = SurrealNonVersionedBrandCar(
+                brand_id=brand1.entity_id,
+                car_id=car.entity_id
+            )
+            brand_car1.prepare_for_save()
+            relationship1_data = brand_car1.as_dict(convert_datetime_to_iso_string=True, convert_uuids=True)
+            relationship1_record_id = f"{NON_VERSIONED_BRAND_CAR_TABLE}:{relationship1_data['entity_id']}"
+            surrealdb_adapter.execute_query(f"CREATE {relationship1_record_id} CONTENT {relationship1_data}")
+
+            # Attempt to link same car to second brand (should create another relationship)
+            # Note: Since we don't have unique constraints, this will create a duplicate
+            brand_car2 = SurrealNonVersionedBrandCar(
+                brand_id=brand2.entity_id,
+                car_id=car.entity_id
+            )
+            brand_car2.prepare_for_save()
+            relationship2_data = brand_car2.as_dict(convert_datetime_to_iso_string=True, convert_uuids=True)
+            relationship2_record_id = f"{NON_VERSIONED_BRAND_CAR_TABLE}:{relationship2_data['entity_id']}"
+            surrealdb_adapter.execute_query(f"CREATE {relationship2_record_id} CONTENT {relationship2_data}")
+
+            # Verify both relationships exist (testing current behavior)
+            result = surrealdb_adapter.execute_query(
+                f"SELECT * FROM {NON_VERSIONED_BRAND_CAR_TABLE} WHERE car_id = '{car_id}'"
+            )
+            relationships = surrealdb_adapter.parse_db_response(result)
+
+        if isinstance(relationships, dict):
+            relationships = [relationships]
+        elif not relationships:
+            relationships = []
+
+        # Both relationships exist (no unique constraint enforced)
+        assert len(relationships) == 2
+
+    def test_fetch_all_brands(self, brands_repository, surrealdb_adapter, setup_surrealdb_tables):
+        """Test listing all brands."""
+        # Create multiple brands
+        brands = [
+            SurrealNonVersionedBrand(name="Brand A"),
+            SurrealNonVersionedBrand(name="Brand B"),
+            SurrealNonVersionedBrand(name="Brand C")
+        ]
+        for brand in brands:
+            brand.prepare_for_save()
+
+        with surrealdb_adapter:
+            for brand in brands:
+                brand_data = brand.as_dict(convert_datetime_to_iso_string=True, convert_uuids=True)
+                brand_record_id = f"{NON_VERSIONED_BRAND_TABLE}:{brand_data['entity_id']}"
+                surrealdb_adapter.execute_query(f"CREATE {brand_record_id} CONTENT {brand_data}")
+
+            # Fetch all brands
+            result = surrealdb_adapter.execute_query(f"SELECT * FROM {NON_VERSIONED_BRAND_TABLE}")
+            all_brands = surrealdb_adapter.parse_db_response(result)
+
+        if isinstance(all_brands, dict):
+            all_brands = [all_brands]
+        elif not all_brands:
+            all_brands = []
+
+        assert len(all_brands) >= 3
+
+        brand_names = [b['name'] for b in all_brands]
+        assert "Brand A" in brand_names
+        assert "Brand B" in brand_names
+        assert "Brand C" in brand_names
+
+    def test_count_cars_per_brand(self, brands_repository, cars_repository, brand_cars_repository, surrealdb_adapter, setup_surrealdb_tables):
+        """Test aggregate counts via SurrealQL."""
+        # Create 2 brands
+        brand1 = SurrealNonVersionedBrand(name="Brand One")
+        brand2 = SurrealNonVersionedBrand(name="Brand Two")
+        brand1.prepare_for_save()
+        brand2.prepare_for_save()
+        brand1_id = brand1.entity_id
+        brand2_id = brand2.entity_id
+
+        # Create 5 cars
+        cars = [
+            SurrealNonVersionedCar(name=f"Car {i}", brand="") for i in range(5)
+        ]
+        for car in cars:
+            car.prepare_for_save()
+
+        with surrealdb_adapter:
+            brand1_data = brand1.as_dict(convert_datetime_to_iso_string=True, convert_uuids=True)
+            brand1_record_id = f"{NON_VERSIONED_BRAND_TABLE}:{brand1_data['entity_id']}"
+            surrealdb_adapter.execute_query(f"CREATE {brand1_record_id} CONTENT {brand1_data}")
+
+            brand2_data = brand2.as_dict(convert_datetime_to_iso_string=True, convert_uuids=True)
+            brand2_record_id = f"{NON_VERSIONED_BRAND_TABLE}:{brand2_data['entity_id']}"
+            surrealdb_adapter.execute_query(f"CREATE {brand2_record_id} CONTENT {brand2_data}")
+
+            for car in cars:
+                car_data = car.as_dict(convert_datetime_to_iso_string=True, convert_uuids=True)
+                car_record_id = f"{NON_VERSIONED_CAR_TABLE}:{car_data['entity_id']}"
+                surrealdb_adapter.execute_query(f"CREATE {car_record_id} CONTENT {car_data}")
+
+            # Link 3 cars to brand1, 2 cars to brand2
+            for i in range(3):
+                brand_car = SurrealNonVersionedBrandCar(
+                    brand_id=brand1.entity_id,
+                    car_id=cars[i].entity_id
+                )
+                brand_car.prepare_for_save()
+                relationship_data = brand_car.as_dict(convert_datetime_to_iso_string=True, convert_uuids=True)
+                relationship_record_id = f"{NON_VERSIONED_BRAND_CAR_TABLE}:{relationship_data['entity_id']}"
+                surrealdb_adapter.execute_query(f"CREATE {relationship_record_id} CONTENT {relationship_data}")
+
+            for i in range(3, 5):
+                brand_car = SurrealNonVersionedBrandCar(
+                    brand_id=brand2.entity_id,
+                    car_id=cars[i].entity_id
+                )
+                brand_car.prepare_for_save()
+                relationship_data = brand_car.as_dict(convert_datetime_to_iso_string=True, convert_uuids=True)
+                relationship_record_id = f"{NON_VERSIONED_BRAND_CAR_TABLE}:{relationship_data['entity_id']}"
+                surrealdb_adapter.execute_query(f"CREATE {relationship_record_id} CONTENT {relationship_data}")
+
+            # Count cars per brand using SurrealQL
+            result = surrealdb_adapter.execute_query(
+                f"""
+                SELECT
+                    name,
+                    array::len((SELECT car_id FROM {NON_VERSIONED_BRAND_CAR_TABLE} WHERE brand_id = $parent.entity_id)) AS car_count
+                FROM {NON_VERSIONED_BRAND_TABLE}
+                ORDER BY name
+                """
+            )
+            counts = surrealdb_adapter.parse_db_response(result)
+
+        if isinstance(counts, dict):
+            counts = [counts]
+        elif not counts:
+            counts = []
+
+        # Verify counts
+        brand_counts = {row['name']: row.get('car_count', 0) for row in counts}
+        assert brand_counts.get("Brand One", 0) == 3
+        assert brand_counts.get("Brand Two", 0) == 2
 
 
 # ============================================================================

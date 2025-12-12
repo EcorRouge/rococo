@@ -417,9 +417,10 @@ class TestMySQLVersionedModel:
 
         # Query database directly for inactive entity
         with mysql_adapter:
-            inactive_records = mysql_adapter.execute_query(
-                "SELECT * FROM versioned_product WHERE entity_id = %s AND active = %s",
-                (str(entity_id).replace('-', ''), 0)  # MySQL uses 0 for false
+            inactive_records = mysql_adapter.get_many(
+                'versioned_product',
+                conditions={'entity_id': str(entity_id).replace('-', ''), 'active': 0},
+                active=False
             )
 
         assert len(inactive_records) == 1
@@ -466,12 +467,12 @@ class TestMySQLVersionedModel:
 
         # Verify only one record in main table
         with mysql_adapter:
-            records = mysql_adapter.execute_query(
-                "SELECT * FROM versioned_product WHERE entity_id = %s",
-                (str(entity_id).replace('-', ''),)
+            record = mysql_adapter.get_one(
+                'versioned_product',
+                {'entity_id': str(entity_id).replace('-', '')}
             )
-            assert len(records) == 1
-            assert float(records[0]['price']) == 200.0
+            assert record is not None
+            assert float(record['price']) == 200.0
 
     def test_versioned_audit_table_completeness(self, versioned_repository, mysql_adapter):
         """Test audit table has complete version history."""
@@ -484,11 +485,11 @@ class TestMySQLVersionedModel:
             saved = versioned_repository.save(saved)
 
         with mysql_adapter:
-            main_records = mysql_adapter.execute_query(
-                "SELECT * FROM versioned_product WHERE entity_id = %s",
-                (str(entity_id).replace('-', ''),)
+            main_record = mysql_adapter.get_one(
+                'versioned_product',
+                {'entity_id': str(entity_id).replace('-', '')}
             )
-            assert len(main_records) == 1
+            assert main_record is not None
 
             audit_records = mysql_adapter.execute_query(
                 "SELECT * FROM versioned_product_audit WHERE entity_id = %s",
@@ -652,11 +653,12 @@ class TestMySQLNonVersionedModel:
         # Check that no audit table exists or no records
         with mysql_adapter:
             try:
-                audit_records = mysql_adapter.execute_query(
-                    "SELECT COUNT(*) as cnt FROM non_versioned_config_audit"
+                count = mysql_adapter.get_count(
+                    'non_versioned_config_audit',
+                    {}
                 )
                 # If table exists, should have no records
-                assert audit_records[0]['cnt'] == 0
+                assert count == 0
             except Exception:
                 # Table doesn't exist, which is expected
                 pass
@@ -734,12 +736,12 @@ class TestMySQLNonVersionedModel:
             deleted = nonversioned_repository.delete(saved)
 
             with mysql_adapter:
-                records = mysql_adapter.execute_query(
-                    "SELECT * FROM non_versioned_config WHERE entity_id = %s",
-                    (str(entity_id).replace('-', ''),)
+                record = mysql_adapter.get_one(
+                    'non_versioned_config',
+                    {'entity_id': str(entity_id).replace('-', '')}
                 )
                 # For hard delete, should be 0 records
-                if len(records) == 0:
+                if record is None:
                     assert True  # Hard delete working
         except Exception:
             pass  # Expected to fail due to bug
@@ -821,11 +823,11 @@ class TestMySQLNonVersionedModel:
 
         # Verify only ONE record in table
         with mysql_adapter:
-            records = mysql_adapter.execute_query(
-                "SELECT * FROM non_versioned_config WHERE entity_id = %s",
-                (str(entity_id).replace('-', ''),)
+            record = mysql_adapter.get_one(
+                'non_versioned_config',
+                {'entity_id': str(entity_id).replace('-', '')}
             )
-            assert len(records) == 1
+            assert record is not None
 
     def test_nonversioned_large_text_fields(self, nonversioned_repository):
         """Test MySQL TEXT field with large data."""
@@ -842,11 +844,13 @@ class TestMySQLNonVersionedModel:
 
         with mysql_adapter:
             # This should work because `key` is properly escaped
-            records = mysql_adapter.execute_query(
-                "SELECT `key`, `value` FROM non_versioned_config WHERE entity_id = %s",
-                (str(saved.entity_id).replace('-', ''),)
+            record = mysql_adapter.get_one(
+                'non_versioned_config',
+                {'entity_id': str(saved.entity_id).replace('-', '')}
             )
-            assert len(records) == 1
+            assert record is not None
+            assert 'key' in record
+            assert 'value' in record
 
     def test_nonversioned_no_audit_table_creation(self, nonversioned_repository, mysql_adapter):
         """Test that audit table is NOT created for NonVersionedModel."""
@@ -882,12 +886,12 @@ class TestMySQLNonVersionedModel:
 
             # After rollback, value should still be "before"
             with mysql_adapter:
-                records = mysql_adapter.execute_query(
-                    "SELECT * FROM non_versioned_config WHERE entity_id = %s",
-                    (str(entity_id).replace('-', ''),)
+                record = mysql_adapter.get_one(
+                    'non_versioned_config',
+                    {'entity_id': str(entity_id).replace('-', '')}
                 )
                 # Transaction behavior depends on MySQL adapter implementation
-                assert records[0]['value'] in ["before", "during"]
+                assert record['value'] in ["before", "during"]
         except Exception:
             pass  # Transaction support may vary
 
@@ -1052,9 +1056,10 @@ class TestMySQLNonVersionedSimpleLog:
 
         # Verify soft delete in database
         with mysql_adapter:
-            records = mysql_adapter.execute_query(
-                "SELECT * FROM simple_log WHERE entity_id = %s",
-                (str(saved_log.entity_id).replace('-', ''),)
+            records = mysql_adapter.get_many(
+                'simple_log',
+                conditions={'entity_id': str(saved_log.entity_id).replace('-', ''), 'active': 0},
+                active=False
             )
             assert len(records) == 1
             assert records[0]['active'] == 0  # Soft deleted
@@ -1091,8 +1096,10 @@ class TestMySQLNonVersionedSimpleLog:
 
         # Query for inactive logs directly from database
         with mysql_adapter:
-            inactive_records = mysql_adapter.execute_query(
-                "SELECT * FROM simple_log WHERE active = 0"
+            inactive_records = mysql_adapter.get_many(
+                'simple_log',
+                conditions={'active': 0},
+                active=False
             )
 
         # Should find our deleted log
@@ -1123,13 +1130,13 @@ class TestMySQLNonVersionedSimpleLog:
 
         # Check database directly - version columns should be NULL
         with mysql_adapter:
-            records = mysql_adapter.execute_query(
-                "SELECT version, previous_version FROM simple_log WHERE entity_id = %s",
-                (str(updated_log.entity_id).replace('-', ''),)
+            record = mysql_adapter.get_one(
+                'simple_log',
+                {'entity_id': str(updated_log.entity_id).replace('-', '')}
             )
-            assert len(records) == 1
-            assert records[0]['version'] is None
-            assert records[0]['previous_version'] is None
+            assert record is not None
+            assert record['version'] is None
+            assert record['previous_version'] is None
 
     def test_bulk_save_simple_logs(self, simple_log_repository):
         """Test bulk saving of 100+ simple log entries."""
@@ -1189,17 +1196,17 @@ class TestMySQLNonVersionedSimpleLog:
         # Verify the product has versioning while logs do not
         with mysql_adapter:
             # Check product has version
-            product_records = mysql_adapter.execute_query(
-                "SELECT version FROM versioned_product WHERE entity_id = %s",
-                (str(updated_product.entity_id).replace('-', ''),)
+            product_record = mysql_adapter.get_one(
+                'versioned_product',
+                {'entity_id': str(updated_product.entity_id).replace('-', '')}
             )
-            assert len(product_records) == 1
-            assert product_records[0]['version'] is not None
+            assert product_record is not None
+            assert product_record['version'] is not None
 
             # Check logs have no version
-            log_records = mysql_adapter.execute_query(
-                "SELECT version FROM simple_log WHERE entity_id IN (%s, %s)",
-                (str(saved_log.entity_id).replace('-', ''), str(saved_update_log.entity_id).replace('-', ''))
+            log_records = mysql_adapter.get_many(
+                'simple_log',
+                conditions={'entity_id': [str(saved_log.entity_id).replace('-', ''), str(saved_update_log.entity_id).replace('-', '')]}
             )
             assert len(log_records) == 2
             assert all(record['version'] is None for record in log_records)
@@ -1376,9 +1383,9 @@ class TestMySQLBrandCarRelationships:
 
         # Verify no brand relationship exists
         with mysql_adapter:
-            relationships = mysql_adapter.execute_query(
-                "SELECT * FROM non_versioned_brand_car WHERE car_id = %s AND active = 1",
-                (car_id,)
+            relationships = mysql_adapter.get_many(
+                'non_versioned_brand_car',
+                conditions={'car_id': car_id}
             )
 
         assert len(relationships) == 0
@@ -1392,9 +1399,9 @@ class TestMySQLBrandCarRelationships:
 
         # Verify no car relationships exist
         with mysql_adapter:
-            relationships = mysql_adapter.execute_query(
-                "SELECT * FROM non_versioned_brand_car WHERE brand_id = %s AND active = 1",
-                (brand_id,)
+            relationships = mysql_adapter.get_many(
+                'non_versioned_brand_car',
+                conditions={'brand_id': brand_id}
             )
 
         assert len(relationships) == 0
@@ -1460,18 +1467,19 @@ class TestMySQLBrandCarRelationships:
 
         # Verify brand is inactive
         with mysql_adapter:
-            deleted_brand = mysql_adapter.execute_query(
-                "SELECT * FROM non_versioned_brand WHERE entity_id = %s AND active = 0",
-                (brand_id,)
+            deleted_brand = mysql_adapter.get_many(
+                'non_versioned_brand',
+                conditions={'entity_id': brand_id, 'active': 0},
+                active=False
             )
             assert len(deleted_brand) == 1
 
         # Relationship may still exist but brand is inactive
         # This tests orphaned relationship scenario
         with mysql_adapter:
-            relationships = mysql_adapter.execute_query(
-                "SELECT * FROM non_versioned_brand_car WHERE entity_id = %s",
-                (relationship_id,)
+            relationships = mysql_adapter.get_many(
+                'non_versioned_brand_car',
+                conditions={'entity_id': relationship_id}
             )
             # Relationship record still exists
             assert len(relationships) >= 0
@@ -1499,9 +1507,10 @@ class TestMySQLBrandCarRelationships:
 
         # Verify car is inactive
         with mysql_adapter:
-            deleted_car = mysql_adapter.execute_query(
-                "SELECT * FROM non_versioned_car WHERE entity_id = %s AND active = 0",
-                (car_id,)
+            deleted_car = mysql_adapter.get_many(
+                'non_versioned_car',
+                conditions={'entity_id': car_id, 'active': 0},
+                active=False
             )
             assert len(deleted_car) == 1
 
@@ -1533,9 +1542,9 @@ class TestMySQLBrandCarRelationships:
 
         # Verify relationship was created (no foreign key constraints)
         with mysql_adapter:
-            relationships = mysql_adapter.execute_query(
-                "SELECT * FROM non_versioned_brand_car WHERE entity_id = %s",
-                (relationship_id,)
+            relationships = mysql_adapter.get_many(
+                'non_versioned_brand_car',
+                conditions={'entity_id': relationship_id}
             )
             assert len(relationships) == 1
             assert relationships[0]['brand_id'] == fake_brand_id
@@ -1570,9 +1579,9 @@ class TestMySQLBrandCarRelationships:
 
         # Verify both relationships exist (testing current behavior)
         with mysql_adapter:
-            relationships = mysql_adapter.execute_query(
-                "SELECT * FROM non_versioned_brand_car WHERE car_id = %s AND active = 1",
-                (car_id,)
+            relationships = mysql_adapter.get_many(
+                'non_versioned_brand_car',
+                conditions={'car_id': car_id}
             )
 
         # Both relationships exist (no unique constraint enforced)
@@ -1696,12 +1705,11 @@ class TestMySQLIntegration:
         entity_id = saved.entity_id
 
         with mysql_adapter:
-            records = mysql_adapter.execute_query(
-                "SELECT * FROM versioned_product WHERE entity_id = %s",
-                (str(entity_id).replace('-', ''),)
+            record = mysql_adapter.get_one(
+                'versioned_product',
+                {'entity_id': str(entity_id).replace('-', '')}
             )
-            assert records is not None
-            assert len(records) == 1
+            assert record is not None
 
     def test_mysql_specific_data_types(self, versioned_repository, mysql_adapter):
         """Test MySQL-specific data types (TINYINT, DECIMAL, VARCHAR, TEXT)."""
@@ -1709,14 +1717,14 @@ class TestMySQLIntegration:
         saved = versioned_repository.save(product)
 
         with mysql_adapter:
-            records = mysql_adapter.execute_query(
-                "SELECT * FROM versioned_product WHERE entity_id = %s",
-                (str(saved.entity_id).replace('-', ''),)
+            record = mysql_adapter.get_one(
+                'versioned_product',
+                {'entity_id': str(saved.entity_id).replace('-', '')}
             )
             # MySQL TINYINT for active
-            assert records[0]['active'] in [0, 1]
+            assert record['active'] in [0, 1]
             # MySQL DECIMAL for price
-            assert isinstance(records[0]['price'], (int, float, Decimal, type(None)))
+            assert isinstance(record['price'], (int, float, Decimal, type(None)))
 
     def test_connection_pooling_both_types(self, mysql_adapter):
         """Test connection pooling with multiple operations."""

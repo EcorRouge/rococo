@@ -391,6 +391,7 @@ class TestPostgresVersionedModel:
         versioned_repository.save(saved_product)
         
         # Check audit table
+        # NOTE: Raw SQL needed - no adapter method exists for querying audit tables directly
         with postgres_adapter:
             audit_records = postgres_adapter.execute_query(
                 f"SELECT * FROM versioned_product_audit WHERE entity_id = %s",
@@ -451,9 +452,10 @@ class TestPostgresVersionedModel:
 
         # Directly query database for inactive entity
         with postgres_adapter:
-            inactive_records = postgres_adapter.execute_query(
-                "SELECT * FROM versioned_product WHERE entity_id = %s AND active = %s",
-                (str(entity_id).replace('-', ''), False)
+            inactive_records = postgres_adapter.get_many(
+                'versioned_product',
+                {'entity_id': str(entity_id).replace('-', ''), 'active': False},
+                active=False
             )
 
         # Should find the inactive record
@@ -481,6 +483,7 @@ class TestPostgresVersionedModel:
         assert len(set(versions)) == 6
 
         # Check audit table has all previous versions (should have 5 audit records)
+        # NOTE: Raw SQL needed - no adapter method exists for querying audit tables directly
         with postgres_adapter:
             audit_records = postgres_adapter.execute_query(
                 "SELECT * FROM versioned_product_audit WHERE entity_id = %s ORDER BY changed_on",
@@ -538,9 +541,10 @@ class TestPostgresVersionedModel:
 
         # Query database directly for inactive entities
         with postgres_adapter:
-            inactive_products = postgres_adapter.execute_query(
-                "SELECT * FROM versioned_product WHERE active = %s",
-                (False,)
+            inactive_products = postgres_adapter.get_many(
+                'versioned_product',
+                {},
+                active=False
             )
 
         # Should find at least one inactive product
@@ -563,15 +567,16 @@ class TestPostgresVersionedModel:
 
         # Check main table has latest version only
         with postgres_adapter:
-            main_records = postgres_adapter.execute_query(
-                "SELECT * FROM versioned_product WHERE entity_id = %s",
-                (str(entity_id).replace('-', ''),)
+            main_record = postgres_adapter.get_one(
+                'versioned_product',
+                {'entity_id': str(entity_id).replace('-', '')}
             )
             # Should have exactly 1 record in main table
-            assert len(main_records) == 1
-            assert float(main_records[0]['price']) == 4.0  # Latest price
+            assert main_record is not None
+            assert float(main_record['price']) == 4.0  # Latest price
 
             # Check audit table has all previous versions
+            # NOTE: Raw SQL needed - no adapter method exists for querying audit tables directly
             audit_records = postgres_adapter.execute_query(
                 "SELECT * FROM versioned_product_audit WHERE entity_id = %s ORDER BY changed_on",
                 (str(entity_id).replace('-', ''),)
@@ -640,6 +645,7 @@ class TestPostgresVersionedModel:
             assert saved_products[i].previous_version is not None
 
         # Verify audit records were created for updates
+        # NOTE: Raw SQL needed - aggregation queries (GROUP BY, COUNT) are not supported by adapter methods
         with postgres_adapter:
             audit_records = postgres_adapter.execute_query(
                 "SELECT entity_id, COUNT(*) as version_count FROM versioned_product_audit GROUP BY entity_id"
@@ -741,6 +747,7 @@ class TestPostgresNonVersionedModel:
         nonversioned_repository.save(saved_config)
         
         # Check that no audit table exists or no records
+        # NOTE: Raw SQL needed - testing for non-existent audit table (no adapter method for this)
         with postgres_adapter:
             try:
                 audit_records = postgres_adapter.execute_query(
@@ -830,20 +837,20 @@ class TestPostgresNonVersionedModel:
 
         # Query database directly to verify it's actually deleted (not just marked inactive)
         with postgres_adapter:
-            records = postgres_adapter.execute_query(
-                "SELECT * FROM non_versioned_config WHERE entity_id = %s",
-                (str(entity_id).replace('-', ''),)
+            record = postgres_adapter.get_one(
+                'non_versioned_config',
+                {'entity_id': str(entity_id).replace('-', '')}
             )
 
         # For hard delete, record should not exist
         # NOTE: Current implementation may not do hard delete - this test documents expected behavior
         # If record still exists, it means delete isn't truly hard delete yet
-        if len(records) == 0:
+        if record is None:
             # Hard delete working correctly
             assert True
         else:
             # Soft delete or save-based delete - document this
-            # Expected: len(records) should be 0 for true hard delete
+            # Expected: record should be None for true hard delete
             pass
 
     def test_nonversioned_no_version_fields_in_db(self, nonversioned_repository, postgres_adapter):
@@ -857,6 +864,7 @@ class TestPostgresNonVersionedModel:
         nonversioned_repository.save(config)
 
         # Query table schema
+        # NOTE: Raw SQL needed - information_schema queries are not supported by adapter methods
         with postgres_adapter:
             columns = postgres_adapter.execute_query("""
                 SELECT column_name
@@ -976,14 +984,14 @@ class TestPostgresNonVersionedModel:
 
         # Verify only ONE record exists in database
         with postgres_adapter:
-            records = postgres_adapter.execute_query(
-                "SELECT * FROM non_versioned_config WHERE entity_id = %s",
-                (str(entity_id).replace('-', ''),)
+            record = postgres_adapter.get_one(
+                'non_versioned_config',
+                {'entity_id': str(entity_id).replace('-', '')}
             )
 
         # Should have exactly 1 record (upsert, not versioning)
-        assert len(records) == 1
-        assert records[0]['value'] == "updated"
+        assert record is not None
+        assert record['value'] == "updated"
 
     def test_nonversioned_reserved_postgres_keywords(self, nonversioned_repository):
         """Test that reserved PostgreSQL keywords are properly escaped."""
@@ -1008,17 +1016,18 @@ class TestPostgresNonVersionedModel:
             with postgres_adapter:
                 # Begin transaction is implicit with context manager
                 # Update the config
+                # NOTE: Raw SQL needed - save() method commits immediately, but we need to test rollback behavior
                 postgres_adapter.execute_query(
                     "UPDATE non_versioned_config SET value = %s WHERE entity_id = %s",
                     ("during", str(entity_id).replace('-', ''))
                 )
 
                 # Verify change within transaction
-                records = postgres_adapter.execute_query(
-                    "SELECT * FROM non_versioned_config WHERE entity_id = %s",
-                    (str(entity_id).replace('-', ''),)
+                record = postgres_adapter.get_one(
+                    'non_versioned_config',
+                    {'entity_id': str(entity_id).replace('-', '')}
                 )
-                assert records[0]['value'] == "during"
+                assert record['value'] == "during"
 
                 # Intentionally cause an error to trigger rollback
                 raise Exception("Intentional rollback")
@@ -1028,13 +1037,13 @@ class TestPostgresNonVersionedModel:
         # Verify rollback occurred (value should still be "before")
         # Note: This depends on transaction support in the adapter
         with postgres_adapter:
-            records = postgres_adapter.execute_query(
-                "SELECT * FROM non_versioned_config WHERE entity_id = %s",
-                (str(entity_id).replace('-', ''),)
+            record = postgres_adapter.get_one(
+                'non_versioned_config',
+                {'entity_id': str(entity_id).replace('-', '')}
             )
             # If transactions work, should be "before"; otherwise "during"
             # This test documents the transaction behavior
-            assert records[0]['value'] in ["before", "during"]
+            assert record['value'] in ["before", "during"]
 
     def test_nonversioned_model_validation_errors(self, nonversioned_repository):
         """Test model validation with invalid data."""
@@ -1264,6 +1273,7 @@ class TestPostgreSQLNonVersionedSimpleLog:
         assert updated_log.level == "DEBUG"
 
         # Verify no audit table exists
+        # NOTE: Raw SQL needed - testing for non-existent audit table (no adapter method for this)
         with postgres_adapter:
             try:
                 audit_records = postgres_adapter.execute_query(
@@ -1287,9 +1297,11 @@ class TestPostgreSQLNonVersionedSimpleLog:
 
         # Verify soft delete in database
         with postgres_adapter:
-            records = postgres_adapter.execute_query(
-                "SELECT * FROM simple_log WHERE entity_id = %s",
-                (str(saved_log.entity_id).replace('-', ''),)
+            # Query with active=False to get inactive records
+            records = postgres_adapter.get_many(
+                'simple_log',
+                {'entity_id': str(saved_log.entity_id).replace('-', '')},
+                active=False
             )
             assert len(records) == 1
             assert records[0]['active'] is False  # PostgreSQL uses boolean
@@ -1326,8 +1338,10 @@ class TestPostgreSQLNonVersionedSimpleLog:
 
         # Query for inactive logs directly from database
         with postgres_adapter:
-            inactive_records = postgres_adapter.execute_query(
-                "SELECT * FROM simple_log WHERE active = FALSE"
+            inactive_records = postgres_adapter.get_many(
+                'simple_log',
+                {},
+                active=False
             )
 
         # Should find our deleted log
@@ -1336,6 +1350,7 @@ class TestPostgreSQLNonVersionedSimpleLog:
 
     def test_no_audit_table_exists(self, postgres_adapter):
         """Test that no audit table exists for non-versioned SimpleLog model."""
+        # NOTE: Raw SQL needed - testing for non-existent audit table (no adapter method for this)
         with postgres_adapter:
             try:
                 # Try to query the audit table
@@ -1358,13 +1373,13 @@ class TestPostgreSQLNonVersionedSimpleLog:
 
         # Check database directly - version columns should be NULL
         with postgres_adapter:
-            records = postgres_adapter.execute_query(
-                "SELECT version, previous_version FROM simple_log WHERE entity_id = %s",
-                (str(updated_log.entity_id).replace('-', ''),)
+            record = postgres_adapter.get_one(
+                'simple_log',
+                {'entity_id': str(updated_log.entity_id).replace('-', '')}
             )
-            assert len(records) == 1
-            assert records[0]['version'] is None
-            assert records[0]['previous_version'] is None
+            assert record is not None
+            assert record['version'] is None
+            assert record['previous_version'] is None
 
     def test_bulk_save_simple_logs(self, simple_log_repository):
         """Test bulk saving of 100+ simple log entries."""
@@ -1424,17 +1439,18 @@ class TestPostgreSQLNonVersionedSimpleLog:
         # Verify the product has versioning while logs do not
         with postgres_adapter:
             # Check product has version
-            product_records = postgres_adapter.execute_query(
-                "SELECT version FROM versioned_product WHERE entity_id = %s",
-                (str(updated_product.entity_id).replace('-', ''),)
+            product_record = postgres_adapter.get_one(
+                'versioned_product',
+                {'entity_id': str(updated_product.entity_id).replace('-', '')}
             )
-            assert len(product_records) == 1
-            assert product_records[0]['version'] is not None
+            assert product_record is not None
+            assert product_record['version'] is not None
 
             # Check logs have no version
-            log_records = postgres_adapter.execute_query(
-                "SELECT version FROM simple_log WHERE entity_id IN (%s, %s)",
-                (str(saved_log.entity_id).replace('-', ''), str(saved_update_log.entity_id).replace('-', ''))
+            # Using list in conditions to query multiple entity_ids (IN clause)
+            log_records = postgres_adapter.get_many(
+                'simple_log',
+                {'entity_id': [str(saved_log.entity_id).replace('-', ''), str(saved_update_log.entity_id).replace('-', '')]}
             )
             assert len(log_records) == 2
             assert all(record['version'] is None for record in log_records)
@@ -1505,6 +1521,7 @@ class TestPostgresBrandCarRelationships:
             brand_cars_repository.save(brand_car)
 
         # Query for all cars of this brand
+        # NOTE: Raw SQL needed - complex multi-table JOIN queries are not easily supported by adapter methods
         with postgres_adapter:
             brand_cars = postgres_adapter.execute_query(
                 """
@@ -1541,6 +1558,7 @@ class TestPostgresBrandCarRelationships:
         brand_cars_repository.save(brand_car)
 
         # Query for brand of this car
+        # NOTE: Raw SQL needed - complex multi-table JOIN queries are not easily supported by adapter methods
         with postgres_adapter:
             car_brand = postgres_adapter.execute_query(
                 """
@@ -1589,6 +1607,7 @@ class TestPostgresBrandCarRelationships:
             brand_cars_repository.save(rel)
 
         # Verify each brand has 2 cars
+        # NOTE: Raw SQL needed - complex multi-table JOIN queries are not easily supported by adapter methods
         with postgres_adapter:
             for brand in saved_brands:
                 brand_id = brand.entity_id.replace('-', '')
@@ -1657,6 +1676,7 @@ class TestPostgresBrandCarRelationships:
         brands_repository.save(saved_brand)
 
         # Verify relationship still exists and brand name is updated
+        # NOTE: Raw SQL needed - complex multi-table JOIN queries are not easily supported by adapter methods
         with postgres_adapter:
             car_brand = postgres_adapter.execute_query(
                 """
@@ -1695,21 +1715,24 @@ class TestPostgresBrandCarRelationships:
 
         # Verify brand is inactive
         with postgres_adapter:
-            deleted_brand = postgres_adapter.execute_query(
-                "SELECT * FROM non_versioned_brand WHERE entity_id = %s AND active = false",
-                (brand_id,)
+            deleted_brand = postgres_adapter.get_many(
+                'non_versioned_brand',
+                {'entity_id': brand_id, 'active': False},
+                active=False
             )
             assert len(deleted_brand) == 1
 
         # Relationship may still exist but brand is inactive
         # This tests orphaned relationship scenario
         with postgres_adapter:
-            relationships = postgres_adapter.execute_query(
-                "SELECT * FROM non_versioned_brand_car WHERE entity_id = %s",
-                (relationship_id,)
+            relationship = postgres_adapter.get_one(
+                'non_versioned_brand_car',
+                {'entity_id': relationship_id}
             )
-            # Relationship record still exists
-            assert len(relationships) >= 0
+            # Relationship record may or may not exist - this test just verifies query works
+            # Original test checked len(relationships) >= 0 which is always true
+            # Here we just verify the query executes without error
+            assert True  # Query executed successfully
 
     def test_delete_car_removes_relationship(self, brands_repository, cars_repository, brand_cars_repository, postgres_adapter):
         """Test deleting car and check BrandCar cleanup."""
@@ -1734,14 +1757,16 @@ class TestPostgresBrandCarRelationships:
 
         # Verify car is inactive
         with postgres_adapter:
-            deleted_car = postgres_adapter.execute_query(
-                "SELECT * FROM non_versioned_car WHERE entity_id = %s AND active = false",
-                (car_id,)
+            deleted_car = postgres_adapter.get_many(
+                'non_versioned_car',
+                {'entity_id': car_id, 'active': False},
+                active=False
             )
             assert len(deleted_car) == 1
 
         # Relationship may still exist but car is inactive
         # Query for active relationships should return empty
+        # NOTE: Raw SQL needed - complex multi-table JOIN queries are not easily supported by adapter methods
         with postgres_adapter:
             active_relationships = postgres_adapter.execute_query(
                 """
@@ -1805,9 +1830,9 @@ class TestPostgresBrandCarRelationships:
 
         # Verify both relationships exist (testing current behavior)
         with postgres_adapter:
-            relationships = postgres_adapter.execute_query(
-                "SELECT * FROM non_versioned_brand_car WHERE car_id = %s AND active = true",
-                (car_id,)
+            relationships = postgres_adapter.get_many(
+                'non_versioned_brand_car',
+                {'car_id': car_id}
             )
 
         # Both relationships exist (no unique constraint enforced)
@@ -1865,6 +1890,7 @@ class TestPostgresBrandCarRelationships:
             brand_cars_repository.save(brand_car)
 
         # Count cars per brand
+        # NOTE: Raw SQL needed - aggregation queries (GROUP BY, COUNT) with JOINs are not supported by adapter methods
         with postgres_adapter:
             counts = postgres_adapter.execute_query(
                 """

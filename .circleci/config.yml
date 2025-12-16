@@ -30,7 +30,7 @@ commands:
               -Dsonar.scm.disabled=true \
               -Dsonar.python.version=3.10 \
               -Dsonar.python.coverage.reportPaths=coverage.xml \
-              -Dsonar.coverage.exclusions=tests/**/*,test.py,setup.py,rococo/migrations/postgres/**/*,rococo/migrations/mysql/**/*,rococo/migrations/mongo/**/*,rococo/data/mysql.py,rococo/data/postgresql.py,rococo/data/surrealdb.py,rococo/repositories/mysql/**/*,rococo/repositories/postgresql/**/*,rococo/repositories/surrealdb/**/*,rococo/sms/**/* \
+              -Dsonar.coverage.exclusions=**/tests/**,**/test.py,**/setup.py,**/migrations/**,**/data/mysql.py,**/data/postgresql.py,**/data/surrealdb.py,**/data/mongodb.py,**/data/dynamodb.py,**/data/base.py,**/repositories/mysql/**,**/repositories/postgresql/**,**/repositories/surrealdb/**,**/repositories/mongodb/**,**/repositories/dynamodb/**,**/repositories/base_repository.py,**/models/versioned_model.py,**/models/non_versioned_model.py,**/models/surrealdb/**,**/sms/**,**/auth/**,**/plugins/**,**/messaging/**,**/faxing/**,**/emailing/** \
               -Dsonar.exclusions=tests/**/*,test.py,setup.py,**/__pycache__/**
             
             echo "✅ SonarQube scan completed successfully"

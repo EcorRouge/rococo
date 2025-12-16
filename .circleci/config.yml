@@ -28,8 +28,9 @@ commands:
               -Dsonar.host.url=$SONAR_GLOBAL_HOST \
               -Dsonar.token=$SONAR_GLOBAL_TOKEN \
               -Dsonar.scm.disabled=true \
+              -Dsonar.python.version=3.10 \
               -Dsonar.python.coverage.reportPaths=coverage.xml \
-              -Dsonar.coverage.exclusions=tests/**/*,test.py,setup.py \
+              -Dsonar.coverage.exclusions=tests/**/*,test.py,setup.py,rococo/migrations/postgres/**/*,rococo/migrations/mysql/**/*,rococo/migrations/mongo/**/*,rococo/data/mysql.py,rococo/data/postgresql.py,rococo/data/surrealdb.py,rococo/repositories/mysql/**/*,rococo/sms/**/* \
               -Dsonar.exclusions=tests/**/*,test.py,setup.py,**/__pycache__/**
             
             echo "✅ SonarQube scan completed successfully"

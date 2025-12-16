@@ -138,7 +138,7 @@ class MySqlRepository(BaseRepository):
             raise NotImplementedError
 
     def get_one(self, conditions: Dict[str, Any] = None, join_fields: List[str] = None,
-                additional_fields: List[str] = None) -> Union[VersionedModel, None]:  # noqa: S3776
+                additional_fields: List[str] = None) -> VersionedModel | None:  # noqa: S3776
         """get one"""
 
         if additional_fields is None:

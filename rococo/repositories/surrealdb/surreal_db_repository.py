@@ -74,8 +74,8 @@ class SurrealDbRepository(BaseRepository):
 
     def _process_data_from_db(
         self,
-        data: Union[Dict[str, Any], List[Dict[str, Any]]]
-    ) -> Union[SurrealVersionedModel, List[SurrealVersionedModel], None]:  # noqa: S3776
+        data: Dict[str, Any] | List[Dict[str, Any]]
+    ) -> SurrealVersionedModel | List[SurrealVersionedModel] | None:  # noqa: S3776
         """Method to convert raw SurrealDB data into SurrealVersionedModel instance(s)."""
         def _process_record(rec: Dict[str, Any], model_cls: Type[SurrealVersionedModel]) -> SurrealVersionedModel:
             # unwrap the SurrealDB record id into entity_id
@@ -135,7 +135,7 @@ class SurrealDbRepository(BaseRepository):
         self,
         conditions: Dict[str, Any],
         fetch_related: List[str] = None
-    ) -> Union[SurrealVersionedModel, None]:  # noqa: S3776
+    ) -> SurrealVersionedModel | None:  # noqa: S3776
         """Fetch a single record matching conditions"""
         additional_fields: List[str] = []
 

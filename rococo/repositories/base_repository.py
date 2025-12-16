@@ -69,7 +69,7 @@ class BaseRepository:
         self,
         conditions: Dict[str, Any],
         fetch_related: List[str] = None
-    ) -> Union[VersionedModel, None]:
+    ) -> VersionedModel | None:
         """
         Fetches a single record from the specified table based on given conditions.
 

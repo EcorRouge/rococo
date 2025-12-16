@@ -712,8 +712,8 @@ def test_dataclass_field_to_dict_conversion():
 
     # Test with list of dataclass fields
     errors = [
-        OrganizationImportError(message="Error 1", code=400),
-        OrganizationImportError(message="Error 2", code=404)
+        OrganizationImportError(message=_ERROR_1_MSG, code=400),
+        OrganizationImportError(message=_ERROR_2_MSG, code=404)
     ]
     model_with_list = OrganizationImport(errors=errors)
     result_with_list = model_with_list.as_dict()
@@ -721,9 +721,9 @@ def test_dataclass_field_to_dict_conversion():
     # The list of dataclasses should be converted to list of dicts
     assert isinstance(result_with_list['errors'], list)
     assert len(result_with_list['errors']) == 2
-    assert result_with_list['errors'][0]['message'] == "Error 1"
+    assert result_with_list['errors'][0]['message'] == _ERROR_1_MSG
     assert result_with_list['errors'][0]['code'] == 400
-    assert result_with_list['errors'][1]['message'] == "Error 2"
+    assert result_with_list['errors'][1]['message'] == _ERROR_2_MSG
     assert result_with_list['errors'][1]['code'] == 404
 
     # Test with None values
@@ -771,8 +771,8 @@ def test_dataclass_field_from_dict_conversion():
     data_with_list = {
         "entity_id": "test-id",
         "errors": [
-            {"message": "Error 1", "code": 400},
-            {"message": "Error 2", "code": 404}
+            {"message": _ERROR_1_MSG, "code": 400},
+            {"message": _ERROR_2_MSG, "code": 404}
         ]
     }
 
@@ -782,10 +782,10 @@ def test_dataclass_field_from_dict_conversion():
     assert isinstance(model_with_list.errors, list)
     assert len(model_with_list.errors) == 2
     assert isinstance(model_with_list.errors[0], OrganizationImportError)
-    assert model_with_list.errors[0].message == "Error 1"
+    assert model_with_list.errors[0].message == _ERROR_1_MSG
     assert model_with_list.errors[0].code == 400
     assert isinstance(model_with_list.errors[1], OrganizationImportError)
-    assert model_with_list.errors[1].message == "Error 2"
+    assert model_with_list.errors[1].message == _ERROR_2_MSG
     assert model_with_list.errors[1].code == 404
 
     # Test with None values
@@ -1069,7 +1069,7 @@ def test_extra_fields_with_enum_and_dataclass():
     data = {
         "entity_id": "test-id",
         "status": "inactive",  # Should become enum
-        "error": {"message": "test error"},  # Should become dataclass
+        "error": {"message": _TEST_ERROR_LOWER},  # Should become dataclass
         "custom_field": "custom_value",  # Should go to extra
         "dynamic_config": {"setting": "value"}  # Should go to extra
     }
@@ -1082,7 +1082,7 @@ def test_extra_fields_with_enum_and_dataclass():
 
     # Verify dataclass conversion
     assert isinstance(model.error, ErrorInfo)
-    assert model.error.message == "test error"
+    assert model.error.message == _TEST_ERROR_LOWER
 
     # Verify extra fields
     assert model.extra["custom_field"] == "custom_value"
@@ -1095,7 +1095,7 @@ def test_extra_fields_with_enum_and_dataclass():
     assert result["status"] == "inactive"
 
     # Dataclass should be dict
-    assert result["error"] == {"message": "test error"}
+    assert result["error"] == {"message": _TEST_ERROR_LOWER}
 
     # Extra fields should be unwrapped
     assert result["custom_field"] == "custom_value"
@@ -1749,25 +1749,25 @@ def test_field_alias_in_as_dict():
     class ModelWithAliases(VersionedModel):
         name: str = field(default="test", metadata={'alias': 'display_name'})
         user_email: str = field(
-            default="test@example.com", metadata={'alias': 'email'})
+            default=_TEST_EMAIL, metadata={'alias': 'email'})
         score: int = field(default=100, metadata={'alias': 'rating'})
         # Field without alias
         description: str = "test description"
 
     model = ModelWithAliases(
-        name="Test User",
-        user_email="user@test.com",
+        name=_TEST_USER,
+        user_email=_USER_TEST_EMAIL,
         score=95,
-        description="A test user"
+        description=_A_TEST_USER
     )
 
     result = model.as_dict()
 
     # Aliased fields should use their aliases as keys
     assert "display_name" in result
-    assert result["display_name"] == "Test User"
+    assert result["display_name"] == _TEST_USER
     assert "email" in result
-    assert result["email"] == "user@test.com"
+    assert result["email"] == _USER_TEST_EMAIL
     assert "rating" in result
     assert result["rating"] == 95
 
@@ -1778,7 +1778,7 @@ def test_field_alias_in_as_dict():
 
     # Non-aliased fields should use original names
     assert "description" in result
-    assert result["description"] == "A test user"
+    assert result["description"] == _A_TEST_USER
 
     # Big 6 fields should always use original names (no aliases)
     assert "entity_id" in result
@@ -1795,17 +1795,17 @@ def test_field_alias_in_from_dict():
     class ModelWithAliases(VersionedModel):
         name: str = field(default="test", metadata={'alias': 'display_name'})
         user_email: str = field(
-            default="test@example.com", metadata={'alias': 'email'})
+            default=_TEST_EMAIL, metadata={'alias': 'email'})
         score: int = field(default=100, metadata={'alias': 'rating'})
         description: str = "test description"
 
     # Create data using aliases
     data = {
         "entity_id": "test-id",
-        "display_name": "Test User",
-        "email": "user@test.com",
+        "display_name": _TEST_USER,
+        "email": _USER_TEST_EMAIL,
         "rating": 95,
-        "description": "A test user",
+        "description": _A_TEST_USER,
         # Big 6 fields should use original names
         "active": True,
         "version": "test-version"
@@ -1814,10 +1814,10 @@ def test_field_alias_in_from_dict():
     model = ModelWithAliases.from_dict(data)
 
     # Fields should be correctly mapped from aliases to original field names
-    assert model.name == "Test User"
-    assert model.user_email == "user@test.com"
+    assert model.name == _TEST_USER
+    assert model.user_email == _USER_TEST_EMAIL
     assert model.score == 95
-    assert model.description == "A test user"
+    assert model.description == _A_TEST_USER
 
     # Big 6 fields should work normally
     assert model.entity_id == "test-id"
@@ -1832,7 +1832,7 @@ def test_field_alias_roundtrip_conversion():
     class ModelWithAliases(VersionedModel):
         full_name: str = field(default="test", metadata={'alias': 'name'})
         contact_email: str = field(
-            default="test@example.com", metadata={'alias': 'email'})
+            default=_TEST_EMAIL, metadata={'alias': 'email'})
         user_score: int = field(default=100, metadata={'alias': 'score'})
         notes: str = "test notes"
 
@@ -1913,7 +1913,7 @@ def test_field_alias_big_6_fields_not_aliased():
         # Custom field with alias
         name: str = field(default="test", metadata={'alias': 'display_name'})
 
-    model = ModelWithAliases(name="Test User")
+    model = ModelWithAliases(name=_TEST_USER)
     result = model.as_dict()
 
     # Big 6 fields should always use original names, never aliases
@@ -1926,7 +1926,7 @@ def test_field_alias_big_6_fields_not_aliased():
 
     # Custom fields should use aliases
     assert "display_name" in result
-    assert result["display_name"] == "Test User"
+    assert result["display_name"] == _TEST_USER
     assert "name" not in result
 
 
@@ -2020,7 +2020,7 @@ def test_field_alias_with_extra_fields():
         score: int = field(default=100, metadata={'alias': 'rating'})
 
     # Create model with extra fields
-    model = ModelWithAliasesAndExtra(name="Test User", score=95)
+    model = ModelWithAliasesAndExtra(name=_TEST_USER, score=95)
     model.extra = {
         "custom_field": "custom_value",
         "dynamic_data": {"nested": "value"}
@@ -2030,7 +2030,7 @@ def test_field_alias_with_extra_fields():
 
     # Aliased fields should use aliases
     assert "display_name" in result
-    assert result["display_name"] == "Test User"
+    assert result["display_name"] == _TEST_USER
     assert "rating" in result
     assert result["rating"] == 95
 
@@ -2042,7 +2042,7 @@ def test_field_alias_with_extra_fields():
 
     # Test roundtrip with extra fields
     restored = ModelWithAliasesAndExtra.from_dict(result)
-    assert restored.name == "Test User"
+    assert restored.name == _TEST_USER
     assert restored.score == 95
     assert restored.extra["custom_field"] == "custom_value"
     assert restored.extra["dynamic_data"] == {"nested": "value"}

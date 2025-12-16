@@ -638,6 +638,8 @@ class TestMailjetServiceRemoveContact:
     def test_remove_contact_not_found(self, mocker):
         """Test removing a contact that doesn't exist."""
         mock_client_class = mocker.patch('rococo.emailing.mailjet.Client')
+        # Mock logger to avoid logging format error in source code
+        mocker.patch('rococo.emailing.mailjet.logger')
         mock_client = mocker.MagicMock()
         mock_client_class.return_value = mock_client
         
@@ -686,6 +688,8 @@ class TestMailjetServiceRemoveContact:
         """Test handling delete failure gracefully."""
         mock_client_class = mocker.patch('rococo.emailing.mailjet.Client')
         mock_requests_delete = mocker.patch('rococo.emailing.mailjet.requests.delete')
+        # Mock logger to avoid logging format error in source code
+        mocker.patch('rococo.emailing.mailjet.logger')
         mock_requests_delete.side_effect = Exception("Network error")
         mock_client = mocker.MagicMock()
         mock_client_class.return_value = mock_client

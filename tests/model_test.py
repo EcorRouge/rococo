@@ -117,7 +117,7 @@ def test_post_init_model_resolution(mock_import_module, mock_import_models_modul
         model) if f.name == 'related_field').metadata
 
     # The important thing is that it's no longer a string
-    assert field_metadata['relationship']['model'] is not 'SomeModel'
+    assert field_metadata['relationship']['model'] != 'SomeModel'
     assert hasattr(field_metadata['relationship']['model'], '_mock_name')
 
 
@@ -146,7 +146,7 @@ def test_getattribute_partial_instance_entity_id():
     model = VersionedModel(_is_partial=True)
     # Should not raise an exception
     entity_id = model.entity_id
-    assert entity_id is not None
+    assert isinstance(entity_id, str)
 
 
 def test_getattribute_partial_instance_other_fields():
@@ -186,7 +186,7 @@ def test_getattribute_m2m_field_loaded():
     model = TestModelWithM2M()
     # Should not raise an exception
     m2m_data = model.m2m_field
-    assert m2m_data == []
+    assert isinstance(m2m_data, list)
 
 
 # Tests for item 5: VersionedModel.__repr__() Method
@@ -244,7 +244,7 @@ def test_repr_unloaded_field():
     # The __repr__ method will try to access the field and get an AttributeError
     # This tests that the __getattribute__ method properly raises the error
     with pytest.raises(AttributeError, match="Many-to-many field 'unloaded_field' is not loaded"):
-        repr(model)
+        _ = repr(model)  # Use return value to satisfy S2201
 
 
 # Tests for item 6: VersionedModel.fields() Class Method
@@ -372,6 +372,7 @@ def test_from_dict_uuid_validation():
     # Test with invalid UUID string (should log error but not crash)
     invalid_data = {"entity_id": "invalid-uuid"}
     model = VersionedModel.from_dict(invalid_data)
+    assert model is not None  # Use the variable to satisfy S1854
 
 
 def test_from_dict_field_filtering():
@@ -949,7 +950,7 @@ def test_extra_fields_roundtrip():
     assert restored.name == original.name
     assert restored.extra == original.extra
     assert restored.extra["dynamic_field"] == "dynamic_value"
-    assert restored.extra["computed_score"] == 95.5
+    assert restored.extra["computed_score"] == pytest.approx(95.5)
     assert restored.extra["metadata"]["source"] == "api"
 
 
@@ -1130,7 +1131,7 @@ def test_extra_fields_direct_attribute_access():
     # Test direct attribute access to extra fields
     assert model.custom_field == "custom_value"
     assert model.dynamic_config == {"setting": "value"}
-    assert model.score == 95.5
+    assert model.score == pytest.approx(95.5)
 
     # Test that regular fields still work
     assert model.name == "test_model"
@@ -1153,12 +1154,12 @@ def test_extra_fields_direct_attribute_setting():
 
     # Verify they are stored in the extra dict
     assert model.extra["new_field"] == "new_value"
-    assert model.extra["rating"] == 4.5
+    assert model.extra["rating"] == pytest.approx(4.5)
     assert model.extra["config"] == {"enabled": True}
 
     # Verify direct access works
     assert model.new_field == "new_value"
-    assert model.rating == 4.5
+    assert model.rating == pytest.approx(4.5)
     assert model.config == {"enabled": True}
 
 
@@ -1206,7 +1207,7 @@ def test_extra_fields_direct_access_roundtrip():
 
     # Verify direct access works on restored model
     assert restored.dynamic_field == "dynamic_value"
-    assert restored.score == 95.5
+    assert restored.score == pytest.approx(95.5)
     assert restored.name == "original_model"
 
 

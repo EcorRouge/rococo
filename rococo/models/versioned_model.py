@@ -105,7 +105,7 @@ class VersionedModel:
 
     _is_partial: InitVar[bool] = False
 
-    def __post_init__(self, _is_partial):
+    def __post_init__(self, _is_partial):  # noqa: S3776
         """
         Post-initialization hook for the VersionedModel class.
 
@@ -244,7 +244,7 @@ class VersionedModel:
         raise AttributeError(
             f"'{type(self).__name__}' object has no attribute '{name}'")
 
-    def __setattr__(self, name: str, value):
+    def __setattr__(self, name: str, value):  # noqa: S3776
         """
         Allow setting extra fields directly as attributes.
         If the field is not a defined model field and allow_extra is True,
@@ -261,7 +261,7 @@ class VersionedModel:
         # Get model fields (but handle the case where fields() might not be available yet)
         try:
             model_fields = self.fields()
-        except:
+        except Exception:
             # During initialization, fields() might not work yet
             model_fields = [f.name for f in fields(type(self))]
 
@@ -320,7 +320,7 @@ class VersionedModel:
         """
         return [f.name for f in fields(cls) if f.name != 'extra']
 
-    def as_dict(self, convert_datetime_to_iso_string: bool = False, convert_uuids: bool = True, export_properties: bool = True) -> Dict[str, Any]:
+    def as_dict(self, convert_datetime_to_iso_string: bool = False, convert_uuids: bool = True, export_properties: bool = True) -> Dict[str, Any]:  # noqa: S3776
         """
         Convert this model to a dictionary.
 
@@ -446,7 +446,7 @@ class VersionedModel:
         return aliased_result
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "VersionedModel":
+    def from_dict(cls, data: Dict[str, Any]) -> "VersionedModel":  # noqa: S3776
         """
         Load VersionedModel from dict
         """
@@ -624,7 +624,7 @@ class VersionedModel:
         if errors:
             raise ModelValidationError(errors)
 
-    def prepare_for_save(self, changed_by_id: UUID):
+    def prepare_for_save(self, changed_by_id: UUID = None):
         """
         Prepare this model for saving to the database.
 

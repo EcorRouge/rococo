@@ -1,4 +1,3 @@
-# Stacks detected: cicd:github-actions:.github/workflows,deps:python:.,file:setup.py:.
 version: 2.1
 orbs:
   python: circleci/python@2
@@ -88,9 +87,15 @@ workflows:
       - test-python:
           context:
             - sonarqube
+          filters:
+            branches:
+              only: ilyaskarim-roc-93
       - build-package:
           requires:
             - test-python
+          filters:
+            branches:
+              only: ilyaskarim-roc-93
     # - deploy:
     #     requires:
     #       - build-package

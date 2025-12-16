@@ -35,8 +35,8 @@ def validate_confirmation_token(token, secret_key: str, expiration: int, encodin
             return email
         else:
             return False
-    except Exception as ex:
-        raise (ex)
+    except Exception:
+        raise
 
 
 def generate_access_token(entity_id, secret_key: str, expiration: int, encoding: str = 'utf-8'):
@@ -65,5 +65,5 @@ def validate_access_token(token, secret_key: str, expiration: int, encoding: str
         if hmac.compare_digest(signature, expected_signature):
             return entity_id
         return False
-    except Exception as ex:
-        raise (ex)
+    except Exception:
+        raise

@@ -39,6 +39,7 @@ class SqsConnection(MessageAdapter):
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
+        # No cleanup needed - SQS connections are stateless
         pass
 
     def _read_consume_config(self):

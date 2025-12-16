@@ -12,6 +12,9 @@ from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
 
+# Constants for repeated log messages
+_VAR_NOT_FOUND_WARNING = "Warning: var %s not found."
+
 
 class BaseConfig:
     """
@@ -86,7 +89,7 @@ class BaseConfig:
                 logger.error(
                     "Error: Invalid input format. Please provide a comma-delimited string.")
                 return False
-        logger.warning("Warning: var %s not found.", var_name)
+        logger.warning(_VAR_NOT_FOUND_WARNING, var_name)
         return False
 
     def get_var_as_list(self, var_name: str) -> Optional[List]:
@@ -94,7 +97,7 @@ class BaseConfig:
         Returns a comma-delimited var as list
         """
         if var_name not in self.env_vars.keys():
-            logger.warning("Warning: var %s not found.", var_name)
+            logger.warning(_VAR_NOT_FOUND_WARNING, var_name)
             return None
 
         try:
@@ -113,7 +116,8 @@ class BaseConfig:
             except ValueError:
                 logger.error("Error: Invalid input format. Please provide a proper json string.")
                 return False
-        logger.warning("Warning: var %s not found.", var_name)
+        logger.warning(_VAR_NOT_FOUND_WARNING, var_name)
+        return False
         return False
 
     @abstractmethod

@@ -135,7 +135,7 @@ class MongoDbRepositoryTestCase(unittest.TestCase):
         """
         self.repository._execute_within_context = MagicMock()
         instances = [TestVersionedModel(
-            entity_id=uuid.uuid4().hex) for i in range(3)]
+            entity_id=uuid.uuid4().hex) for _ in range(3)]
 
         # stub insert_many to return a list of dummy docs
         self.db_adapter_mock.insert_many.return_value = [
@@ -342,8 +342,7 @@ class MongoDbRepositoryTestCase(unittest.TestCase):
         # Call delete method
         result = self.repository.delete(test_instance, "test_collection")
 
-        # Record the time after calling delete
-        after_delete_time = datetime.now(timezone.utc)
+        # Delete time is recorded internally by the method
 
         # Verify that the instance is marked as inactive
         self.assertFalse(result.active)

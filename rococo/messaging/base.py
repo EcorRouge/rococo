@@ -9,6 +9,7 @@ class MessageAdapter:
     """Abstract class for a connection to a message queue."""
 
     def __init__(self):
+        # Abstract base class - no initialization needed
         pass
 
     @abstractmethod
@@ -44,6 +45,7 @@ class BaseServiceProcessor:  # pylint: disable=R0903
     """Abstract class for processing data from a message queue."""
 
     def __init__(self):
+        # Abstract base class - no initialization needed
         pass
 
     @abstractmethod

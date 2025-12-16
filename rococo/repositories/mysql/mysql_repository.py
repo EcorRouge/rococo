@@ -75,7 +75,7 @@ class MySqlRepository(BaseRepository):
 
         return formatted_data_for_adapter
 
-    def _process_data_from_db(self, data):
+    def _process_data_from_db(self, data):  # noqa: S3776
         """Method to convert data dictionary fetched from MySQL to a VersionedModel instance."""
 
         def _process_record(data: dict, model):
@@ -116,6 +116,7 @@ class MySqlRepository(BaseRepository):
                             data[field.name] = _process_record(
                                 field_data, field_model_class)
                     elif isinstance(field_value, UUID):
+                        # UUID values are already in correct format, no conversion needed
                         pass
                     else:
                         raise NotImplementedError
@@ -134,7 +135,7 @@ class MySqlRepository(BaseRepository):
             raise NotImplementedError
 
     def get_one(self, conditions: Dict[str, Any] = None, join_fields: List[str] = None,
-                additional_fields: List[str] = None) -> Union[VersionedModel, None]:
+                additional_fields: List[str] = None) -> Union[VersionedModel, None]:  # noqa: S3776
         """get one"""
 
         if additional_fields is None:
@@ -147,7 +148,7 @@ class MySqlRepository(BaseRepository):
                 if '.' in field_name:
                     parent_field, child_field = field_name.rsplit('.', 1)
                     if parent_field not in joined_fields:
-                        raise Exception(
+                        raise RuntimeError(
                             f"Parent field {parent_field} needs to be joined before joining {child_field} field. Raised while joining {field_name} for model {self.model.__name__}.")
                     parent_model = joined_fields[parent_field]
                 else:
@@ -158,7 +159,7 @@ class MySqlRepository(BaseRepository):
                 join_field = next((field for field in fields(
                     parent_model) if field.name == child_field), None)
                 if join_field is None or join_field.metadata.get('field_type') != 'entity_id':
-                    raise Exception(
+                    raise RuntimeError(
                         f"Invalid join field {child_field} specified for model {parent_model.__name__}.")
                 join_model = join_field.metadata.get(
                     'relationship').get('model')
@@ -225,7 +226,7 @@ class MySqlRepository(BaseRepository):
             sort: List[tuple] = None,
             limit: int = None,
             offset: int = None
-    ) -> List[VersionedModel]:
+    ) -> List[VersionedModel]:  # noqa: S3776
         """get many"""
         if additional_fields is None:
             additional_fields = []
@@ -237,7 +238,7 @@ class MySqlRepository(BaseRepository):
                 if '.' in field_name:
                     parent_field, child_field = field_name.rsplit('.', 1)
                     if parent_field not in joined_fields:
-                        raise Exception(
+                        raise RuntimeError(
                             f"Parent field {parent_field} needs to be joined before joining {child_field} field. Raised while joining {field_name} for model {self.model.__name__}.")
                     parent_model = joined_fields[parent_field]
                 else:
@@ -248,7 +249,7 @@ class MySqlRepository(BaseRepository):
                 join_field = next((field for field in fields(
                     parent_model) if field.name == child_field), None)
                 if join_field is None or join_field.metadata.get('field_type') != 'entity_id':
-                    raise Exception(
+                    raise RuntimeError(
                         f"Invalid join field {child_field} specified for model {parent_model.__name__}.")
                 join_model = join_field.metadata.get(
                     'relationship').get('model')

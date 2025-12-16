@@ -5,6 +5,10 @@ from collections import OrderedDict
 from dotenv import dotenv_values
 from abc import abstractmethod, ABC
 
+# Constants for repeated strings
+_ENV_SECRETS_FILE = '.env.secrets'
+
+
 class BaseCli(ABC):
     # These class attributes must be provided by the subclass
     DB_TYPE = None                # 'mysql' or 'postgres'
@@ -40,7 +44,7 @@ class BaseCli(ABC):
         subparsers.add_parser('version', help="Get DB version.")
         return parser
 
-    def load_env(self, args):
+    def load_env(self, args):  # noqa: S3776
         # Check if env files are provided
         if not args.env_files:
             # First, check environment variables in the current environment
@@ -50,8 +54,8 @@ class BaseCli(ABC):
                 # If any required env vars are missing, check .env files
                 print(f"Missing environment variables: {', '.join(missing_vars)}. Trying to load from .env files...")
 
-                if os.path.exists('.env.secrets') and os.path.isfile('.env.secrets'):
-                    secrets_env = dotenv_values('.env.secrets')
+                if os.path.exists(_ENV_SECRETS_FILE) and os.path.isfile(_ENV_SECRETS_FILE):
+                    secrets_env = dotenv_values(_ENV_SECRETS_FILE)
                     app_env_name = secrets_env.get('APP_ENV')
                     
                     if app_env_name and os.path.exists(f'{app_env_name}.env') and os.path.isfile(f'{app_env_name}.env'):
@@ -61,7 +65,7 @@ class BaseCli(ABC):
                         self.parser.error('APP_ENV not found in .env.secrets or corresponding .env file missing.')
                         return None
                 else:
-                    self.parser.error('.env.secrets not found. Specify env file(s) with --env-files.')
+                    self.parser.error(f'{_ENV_SECRETS_FILE} not found. Specify env file(s) with --env-files.')
                     return None
             else:
                 # If all required environment variables are present

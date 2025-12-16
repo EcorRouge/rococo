@@ -110,7 +110,7 @@ class PostgreSQLRepository(BaseRepository):
         limit: int = None,
         offset: int = None,
         fetch_related: List[str] = None
-    ) -> List[VersionedModel]:
+    ) -> List[VersionedModel]:  # noqa: S3776
         """Get many records, with optional related fields fetched"""
 
         if conditions is not None:

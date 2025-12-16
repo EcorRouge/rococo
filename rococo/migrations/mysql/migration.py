@@ -100,7 +100,7 @@ class MySQLMigration(MigrationBase):
         self.execute(query, commit=commit)
 
     def insert_db_version_data(self, commit: bool = True):
-        query = f"INSERT INTO db_version (version) VALUES (0000000000);"
+        query = "INSERT INTO db_version (version) VALUES (0000000000);"
         self.execute(query, commit=commit)
 
     def update_version_table(self, version, commit: bool = True):

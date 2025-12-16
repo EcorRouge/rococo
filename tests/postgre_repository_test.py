@@ -25,7 +25,7 @@ class TestVersionedModel(VersionedModel):
     changed_by_id: Union[UUID, str, None] = dc_field(
         default_factory=lambda: UUID(int=0))
 
-    name: str = None  # Example custom field
+    name: Optional[str] = None  # Example custom field
     related_item_id: Optional[UUID] = dc_field(
         default=None)  # For fetch_related tests
     related_items_ids: Optional[List[UUID]] = dc_field(
@@ -33,7 +33,7 @@ class TestVersionedModel(VersionedModel):
 
     # active and changed_on are inherited
 
-    def as_dict(self, convert_datetime_to_iso_string=False, convert_uuids=True, export_properties=True):
+    def as_dict(self, convert_datetime_to_iso_string=False, convert_uuids=True, export_properties=True):  # noqa: S3776
         # This as_dict should be robust enough for different calls
         data_dict = {}
         for f_info in fields(self):
@@ -74,7 +74,7 @@ class TestVersionedModel(VersionedModel):
         return data_dict
 
     @classmethod
-    def from_dict(cls, data: dict):
+    def from_dict(cls, data: dict):  # noqa: S3776
         if data is None:
             return None
 

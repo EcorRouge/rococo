@@ -139,7 +139,7 @@ class DynamoDbRepository(BaseRepository):
     def delete(
         self,
         instance: VersionedModel
-    ) -> VersionedModel:
+    ) -> VersionedModel:  # noqa: S3776
         self.logger.info(
             f"Deleting entity_id={getattr(instance, 'entity_id', 'N/A')} from {self.table_name}")
 

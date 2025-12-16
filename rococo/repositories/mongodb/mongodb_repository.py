@@ -161,7 +161,7 @@ class MongoDbRepository(BaseRepository):
         self,
         instance: VersionedModel,
         collection_name: str
-    ) -> VersionedModel:
+    ) -> VersionedModel:  # noqa: S3776
         """
         Logically deletes a VersionedModel instance from the database by setting its active flag to False.
 

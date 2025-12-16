@@ -8,7 +8,7 @@ from uuid import UUID, uuid4
 import json
 import datetime
 from dataclasses import dataclass, fields, field as dc_field
-from typing import Union
+from typing import Union, Optional
 
 from rococo.repositories.mysql.mysql_repository import MySqlRepository
 # Assuming VersionedModel is correctly imported if used directly (it's a base class)
@@ -24,10 +24,10 @@ class TestVersionedModel(VersionedModel):
     previous_version: Union[UUID, None] = dc_field(default=None)
     changed_by_id: Union[UUID, str, None] = dc_field(
         default_factory=lambda: UUID(int=0))
-    name: str = None
+    name: Optional[str] = None
     # active and changed_on are inherited from VersionedModel
 
-    def as_dict(self, convert_datetime_to_iso_string=False, convert_uuids=True, export_properties=True):
+    def as_dict(self, convert_datetime_to_iso_string=False, convert_uuids=True, export_properties=True):  # noqa: S3776
         data_dict = {}
         for f_info in fields(self):
             val = getattr(self, f_info.name, None)
@@ -67,7 +67,7 @@ class TestVersionedModel(VersionedModel):
         return {k: v for k, v in data_dict.items() if v is not None or k in ['previous_version', 'name', 'changed_by_id']}
 
     @classmethod
-    def from_dict(cls, data: dict):
+    def from_dict(cls, data: dict):  # noqa: S3776
         if data is None:
             return None
 
@@ -190,7 +190,7 @@ def test_get_one_existing_record(repository, mock_adapter, model_instance):
 
     mock_adapter.get_one.assert_called_once()
     call_args_list = mock_adapter.get_one.call_args_list
-    args, kwargs_adapter_call = call_args_list[0]
+    args, _ = call_args_list[0]
     assert args[1]['entity_id'] == model_instance.entity_id.hex.replace(
         '-', '')
 
@@ -206,7 +206,7 @@ def test_get_one_non_existing_record(repository, mock_adapter):
 
     mock_adapter.get_one.assert_called_once()
     call_args_list = mock_adapter.get_one.call_args_list
-    args, kwargs_adapter_call = call_args_list[0]
+    args, _ = call_args_list[0]
     assert args[1]['entity_id'] == entity_id_to_check.hex.replace('-', '')
 
 
@@ -245,7 +245,7 @@ def test_get_many_records(repository, mock_adapter, test_user_id):
 
     mock_adapter.get_many.assert_called_once()
     call_args_list = mock_adapter.get_many.call_args_list
-    args, kwargs_adapter_call = call_args_list[0]
+    args, _ = call_args_list[0]
     assert args[1]['active']
 
 

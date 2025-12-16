@@ -70,7 +70,7 @@ class TestVersionedModel(VersionedModel):
             self.changed_by_id = changed_by_id
 
     @classmethod
-    def from_dict(cls, data: dict) -> 'TestVersionedModel':
+    def from_dict(cls, data: dict) -> 'TestVersionedModel':  # noqa: S3776
         """
         Load TestVersionedModel from dict.
 

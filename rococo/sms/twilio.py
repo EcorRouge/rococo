@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 class TwilioService(SMSService):
 
     def __init__(self):
+        # Initialization is handled in __call__ when config is provided
         pass
 
 

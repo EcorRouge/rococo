@@ -15,10 +15,11 @@ logger = logging.getLogger(__name__)
 class MailjetService(EmailService):
 
     def __init__(self):
+        # Initialization is handled in __call__ when config is provided
         pass
 
     @staticmethod
-    def _convert_addresses(addresses: List[Union[str, dict]]) -> List[dict]:
+    def _convert_addresses(addresses: List[Union[str, dict]]) -> List[dict]:  # noqa: S3776
         """
         Convert a list of addresses to Mailjet format.
 

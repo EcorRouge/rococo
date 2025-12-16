@@ -35,7 +35,7 @@ class SurrealDbRepository(BaseRepository):
             raise ValueError(f"Expected table name {table_name}, got {prefix}")
         return uuid
 
-    def _process_data_before_save(self, instance: SurrealVersionedModel) -> Dict[str, Any]:
+    def _process_data_before_save(self, instance: SurrealVersionedModel) -> Dict[str, Any]:  # noqa: S3776
         """Convert VersionedModel instance to a dict suitable for SurrealDB"""
         super()._process_data_before_save(instance)
         data = instance.as_dict(
@@ -75,7 +75,7 @@ class SurrealDbRepository(BaseRepository):
     def _process_data_from_db(
         self,
         data: Union[Dict[str, Any], List[Dict[str, Any]]]
-    ) -> Union[SurrealVersionedModel, List[SurrealVersionedModel], None]:
+    ) -> Union[SurrealVersionedModel, List[SurrealVersionedModel], None]:  # noqa: S3776
         """Method to convert raw SurrealDB data into SurrealVersionedModel instance(s)."""
         def _process_record(rec: Dict[str, Any], model_cls: Type[SurrealVersionedModel]) -> SurrealVersionedModel:
             # unwrap the SurrealDB record id into entity_id
@@ -135,7 +135,7 @@ class SurrealDbRepository(BaseRepository):
         self,
         conditions: Dict[str, Any],
         fetch_related: List[str] = None
-    ) -> Union[SurrealVersionedModel, None]:
+    ) -> Union[SurrealVersionedModel, None]:  # noqa: S3776
         """Fetch a single record matching conditions"""
         additional_fields: List[str] = []
 
@@ -207,7 +207,7 @@ class SurrealDbRepository(BaseRepository):
         sort: List[tuple] = None,
         limit: int = 100,
         fetch_related: List[str] = None,
-    ) -> List[SurrealVersionedModel]:
+    ) -> List[SurrealVersionedModel]:  # noqa: S3776
         """Fetch multiple records matching conditions"""
         additional_fields: List[str] = []
 

@@ -74,7 +74,7 @@ class PostgresMigration(MigrationBase):
         query = f"CREATE INDEX {index_name} ON {table_name} ({indexed_column});"
         self.execute(query, commit=commit)
 
-    def remove_index(self, table_name, index_name, commit: bool = True):
+    def remove_index(self, _table_name, index_name, commit: bool = True):
         query = f"DROP INDEX IF EXISTS {index_name};"
         self.execute(query, commit=commit)
 

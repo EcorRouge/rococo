@@ -116,7 +116,7 @@ class RabbitMqConnection(MessageAdapter):
 
     def consume_messages(self, queue_name: str,
                          callback_function: Callable[[dict], bool],
-                         num_threads: int = 1):
+                         num_threads: int = 1):  # noqa: S3776
         """
         Consumes messages from the specified queue.
 

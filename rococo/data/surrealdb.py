@@ -46,7 +46,7 @@ class SurrealDbAdapter(DbAdapter):
     def _call_db(self, function_name, *args, **kwargs):
         """Calls a function specified by function_name argument in SurrealDB connection passing forward args and kwargs."""
         if not self._db:
-            raise Exception("No connection to SurrealDB.")
+            raise RuntimeError("No connection to SurrealDB.")
         return self._event_loop.run_until_complete(getattr(self._db, function_name)(*args, **kwargs))
 
     def _build_condition_string(self, key, value):
@@ -61,12 +61,12 @@ class SurrealDbAdapter(DbAdapter):
         elif isinstance(value, UUID):
             return f"{key}='{str(value)}'"
         else:
-            raise Exception(
+            raise ValueError(
                 f"Unsuppported type {type(value)} for condition key: {key}, value: {value}")
 
     def run_transaction(self, operations_list: List[Any]):
         """Executes a list of operations against the database as a transaction."""
-        # TODO: Update this method when SurrealDB Python SDK supports transactions.
+        # FUTURE: Update this method when SurrealDB Python SDK supports transactions.
         for operation in operations_list:
             self._call_db(*operation)
 
@@ -130,7 +130,7 @@ class SurrealDbAdapter(DbAdapter):
         query += " LIMIT 1"
 
         if fetch_related:
-            query += f" FETCH {', '.join(field for field in fetch_related)}"
+            query += f" FETCH {', '.join(fetch_related)}"
 
         db_response = self.parse_db_response(self.execute_query(query))
 
@@ -167,7 +167,7 @@ class SurrealDbAdapter(DbAdapter):
         query += f" LIMIT {int(limit)}"
 
         if fetch_related:
-            query += f" FETCH {', '.join(field for field in fetch_related)}"
+            query += f" FETCH {', '.join(fetch_related)}"
 
         db_response = self.parse_db_response(self.execute_query(query))
 

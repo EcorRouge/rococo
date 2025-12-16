@@ -65,7 +65,7 @@ class PostgreSQLAdapter(DbAdapter):
     def _call_cursor(self, function_name, *args, **kwargs):
         """Calls a function specified by function_name argument in PostgreSQL Cursor passing forward args and kwargs."""
         if not self._cursor:
-            raise Exception("No cursor is available.")
+            raise RuntimeError("No cursor is available.")
         return getattr(self._cursor, function_name)(*args, **kwargs)
 
     def _build_condition_string(self, table, key, value):
@@ -86,7 +86,7 @@ class PostgreSQLAdapter(DbAdapter):
         elif value is None:
             return f"{key} IS NULL", []
         else:
-            raise Exception(
+            raise ValueError(
                 f"Unsupported type {type(value)} for condition key: {key}, value: {value}")
 
     def get_move_entity_to_audit_table_query(self, table, entity_id):
@@ -287,10 +287,6 @@ class PostgreSQLAdapter(DbAdapter):
         """Returns a query to update a row or insert a new one in PostgreSQL."""
         columns = ', '.join(data.keys())
         placeholders = ', '.join(['%s'] * len(data))
-
-        # Prepare the update columns in the form 'column_name = EXCLUDED.column_name'
-        update_columns = ', '.join(
-            [f"{col} = EXCLUDED.{col}" for col in data.keys()])
 
         # The first column will be used for update condition (non-unique column, can be any)
         unique_column = list(data.keys())[0]

@@ -11,12 +11,14 @@ class DynamoDbAdapter(DbAdapter):
     """DynamoDB adapter using PynamoDB with dynamic model generation."""
 
     def __init__(self):
+        # No initialization needed - uses environment variables for AWS credentials
         pass
 
     def __enter__(self):
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
+        # No cleanup needed for DynamoDB adapter
         pass
 
     def _map_type_to_attribute(self, field_type: Any, is_hash_key: bool = False, is_range_key: bool = False):
@@ -115,7 +117,7 @@ class DynamoDbAdapter(DbAdapter):
         except Exception as e:
              raise RuntimeError(f"get_one failed: {e}")
 
-    def get_many(self, table: str, conditions: Dict[str, Any] = None, sort: List[Tuple[str, str]] = None, limit: int = 100, model_cls: Type[VersionedModel] = None) -> List[Dict[str, Any]]:
+    def get_many(self, table: str, conditions: Dict[str, Any] = None, sort: List[Tuple[str, str]] = None, limit: int = 100, model_cls: Type[VersionedModel] = None) -> List[Dict[str, Any]]:  # noqa: S3776
         if model_cls is None:
             raise ValueError("model_cls is required for DynamoDB get_many")
 

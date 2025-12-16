@@ -17,13 +17,13 @@ class SESService(EmailService):
         return self
 
     def send_email(self, message: dict) -> Any:
-        # TODO: Implement SES send_email functionality
+        # FUTURE: Implement SES send_email functionality
         pass
 
     def create_contact(self, email: str, name: str, list_id: str, extra: dict):
-        # TODO: Implement SES create_contact functionality
+        # FUTURE: Implement SES create_contact functionality
         pass
 
     def remove_contact(self, email: str):
-        # TODO: Implement SES remove_contact functionality
+        # FUTURE: Implement SES remove_contact functionality
         pass

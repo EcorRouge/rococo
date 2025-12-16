@@ -18,25 +18,22 @@ def generate_confirmation_token(email, secret_key: str, encoding: str = 'utf-8')
 
 def validate_confirmation_token(token, secret_key: str, expiration: int, encoding: str = 'utf-8'):
     """Validates confirmation tokens"""
-    try:
-        # Split the token into email, timestamp, and signature parts
-        email, timestamp, signature = token.split(':')
-        # Check if the token has expired
-        if int(timestamp) + expiration < int(time.time()):
-            return False
-        # Recreate the signature using the provided email and timestamp
-        expected_signature = hmac.new(
-            key=secret_key.encode(encoding),
-            msg=(email + timestamp).encode(encoding),
-            digestmod=hashlib.sha256
-        ).hexdigest()
-        # Verify if the recreated signature matches the provided one
-        if hmac.compare_digest(signature, expected_signature):
-            return email
-        else:
-            return False
-    except Exception:
-        raise
+    # Split the token into email, timestamp, and signature parts
+    email, timestamp, signature = token.split(':')
+    # Check if the token has expired
+    if int(timestamp) + expiration < int(time.time()):
+        return False
+    # Recreate the signature using the provided email and timestamp
+    expected_signature = hmac.new(
+        key=secret_key.encode(encoding),
+        msg=(email + timestamp).encode(encoding),
+        digestmod=hashlib.sha256
+    ).hexdigest()
+    # Verify if the recreated signature matches the provided one
+    if hmac.compare_digest(signature, expected_signature):
+        return email
+    else:
+        return False
 
 
 def generate_access_token(entity_id, secret_key: str, expiration: int, encoding: str = 'utf-8'):
@@ -53,17 +50,14 @@ def generate_access_token(entity_id, secret_key: str, expiration: int, encoding:
 
 def validate_access_token(token, secret_key: str, expiration: int, encoding: str = 'utf-8'):
     """Similar to validate_confirmation_token, but for access tokens"""
-    try:
-        entity_id, timestamp, signature = token.split(':')
-        if int(timestamp) + expiration < int(time.time()):
-            return False
-        expected_signature = hmac.new(
-            key=secret_key.encode(encoding),
-            msg=(entity_id + timestamp).encode(encoding),
-            digestmod=hashlib.sha256
-        ).hexdigest()
-        if hmac.compare_digest(signature, expected_signature):
-            return entity_id
+    entity_id, timestamp, signature = token.split(':')
+    if int(timestamp) + expiration < int(time.time()):
         return False
-    except Exception:
-        raise
+    expected_signature = hmac.new(
+        key=secret_key.encode(encoding),
+        msg=(entity_id + timestamp).encode(encoding),
+        digestmod=hashlib.sha256
+    ).hexdigest()
+    if hmac.compare_digest(signature, expected_signature):
+        return entity_id
+    return False

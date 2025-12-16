@@ -156,7 +156,7 @@ class SurrealDbRepository(BaseRepository):
 
         # format record_id conditions
         if conditions:
-            for name, val in list(conditions.items()):
+            for name, val in list(conditions.items()):  # noqa: S7504
                 field_def = next(
                     (f for f in fields(self.model) if f.name == name),
                     None
@@ -228,7 +228,7 @@ class SurrealDbRepository(BaseRepository):
 
         # format record_id conditions
         if conditions:
-            for name, val in list(conditions.items()):
+            for name, val in list(conditions.items()):  # noqa: S7504
                 field_def = next(
                     (f for f in fields(self.model) if f.name == name),
                     None

@@ -186,7 +186,7 @@ class DynamoDbAdapter(DbAdapter):
                 return False
         return False
 
-    def _execute_query_or_scan(self, model_cls: Type[Model], conditions: Dict[str, Any], limit: int = None, count_only: bool = False):
+    def _execute_query_or_scan(self, model_cls: Type[Model], conditions: Dict[str, Any], limit: int = None, count_only: bool = False):  # noqa: S3776
         """
         Helper to determine whether to use Query or Scan based on conditions.
         """

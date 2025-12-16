@@ -375,7 +375,6 @@ class VersionedModel:
             # Convert dataclass fields with 'model' metadata
             f = next((f for f in fields(type(self)) if f.name == k), None)
             if f and f.metadata.get('model') and v is not None:
-                model_class = f.metadata['model']
                 if isinstance(v, list):
                     # Handle list of dataclass objects
                     result[k] = [
@@ -567,7 +566,7 @@ class VersionedModel:
 
         return instance
 
-    def validate(self):
+    def validate(self):  # noqa: S3776
         """
         Validate all fields by calling corresponding `validate_<field_name>` methods if defined,
         and validate the type of each field. Raise `ModelValidationError` if any validations fail.

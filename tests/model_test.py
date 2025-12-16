@@ -9,6 +9,19 @@ from unittest.mock import patch, MagicMock
 from rococo.models import VersionedModel
 from rococo.models.versioned_model import ModelValidationError, get_uuid_hex
 
+# Test constants for S1192 - avoid duplicate literal strings
+_TEST_ERROR_MSG = "Test error"
+_ERROR_1_MSG = "Error 1"
+_ERROR_2_MSG = "Error 2"
+_TEST_ERROR_LOWER = "test error"
+_TEST_EMAIL = "test@example.com"
+_TEST_USER = "Test User"
+_USER_TEST_EMAIL = "user@test.com"
+_A_TEST_USER = "A test user"
+_DATETIME_0900 = "2024-01-15T09:00:00+00:00"
+_DATETIME_1030 = "2024-01-15T10:30:00+00:00"
+_DATETIME_1100 = "2024-01-15T11:00:00+00:00"
+
 
 def test_prepare_for_save():
     """
@@ -688,13 +701,13 @@ def test_dataclass_field_to_dict_conversion():
         )
 
     # Test with single dataclass field
-    error = OrganizationImportError(message="Test error", code=500)
+    error = OrganizationImportError(message="_TEST_ERROR_MSG", code=500)
     model = OrganizationImport(runtime_error=error)
     result = model.as_dict()
 
     # The dataclass should be converted to dict
     assert isinstance(result['runtime_error'], dict)
-    assert result['runtime_error']['message'] == "Test error"
+    assert result['runtime_error']['message'] == "_TEST_ERROR_MSG"
     assert result['runtime_error']['code'] == 500
 
     # Test with list of dataclass fields
@@ -742,7 +755,7 @@ def test_dataclass_field_from_dict_conversion():
     data = {
         "entity_id": "test-id",
         "runtime_error": {
-            "message": "Test error",
+            "message": "_TEST_ERROR_MSG",
             "code": 500
         }
     }
@@ -751,7 +764,7 @@ def test_dataclass_field_from_dict_conversion():
 
     # The dict should be converted to dataclass
     assert isinstance(model.runtime_error, OrganizationImportError)
-    assert model.runtime_error.message == "Test error"
+    assert model.runtime_error.message == "_TEST_ERROR_MSG"
     assert model.runtime_error.code == 500
 
     # Test with list of dataclass fields
@@ -844,24 +857,24 @@ def test_dataclass_field_without_metadata():
         runtime_error: Optional[OrganizationImportError] = None
 
     # Test as_dict - should remain as dataclass object
-    error = OrganizationImportError(message="Test error")
+    error = OrganizationImportError(message="_TEST_ERROR_MSG")
     model = OrganizationImport(runtime_error=error)
     result = model.as_dict()
 
     # Without metadata, the dataclass should remain as-is
     assert isinstance(result['runtime_error'], OrganizationImportError)
-    assert result['runtime_error'].message == "Test error"
+    assert result['runtime_error'].message == "_TEST_ERROR_MSG"
 
     # Test from_dict - should remain as dict
     data = {
         "entity_id": "test-id",
-        "runtime_error": {"message": "Test error"}
+        "runtime_error": {"message": "_TEST_ERROR_MSG"}
     }
 
     restored = OrganizationImport.from_dict(data)
     # Without metadata, the dict should remain as dict
     assert isinstance(restored.runtime_error, dict)
-    assert restored.runtime_error['message'] == "Test error"
+    assert restored.runtime_error['message'] == "_TEST_ERROR_MSG"
 
 
 # Tests for extra fields support
@@ -1664,7 +1677,7 @@ def test_repository_integration_with_enum_dataclass_and_properties():
     # Create complex model
     model = ComplexModelWithAllFeatures(
         status=Status.inactive,
-        error=ErrorInfo(message="Test error", code=404),
+        error=ErrorInfo(message="_TEST_ERROR_MSG", code=404),
         name="complex_test"
     )
     model.extra_field = "extra_value"
@@ -1677,7 +1690,7 @@ def test_repository_integration_with_enum_dataclass_and_properties():
 
     # Dataclass should be converted to dict
     assert isinstance(processed_data_no_props["error"], dict)
-    assert processed_data_no_props["error"]["message"] == "Test error"
+    assert processed_data_no_props["error"]["message"] == "_TEST_ERROR_MSG"
     assert processed_data_no_props["error"]["code"] == 404
 
     # Extra fields should be unwrapped
@@ -1693,14 +1706,14 @@ def test_repository_integration_with_enum_dataclass_and_properties():
 
     # All previous assertions should still hold
     assert processed_data_with_props["status"] == "inactive"
-    assert processed_data_with_props["error"]["message"] == "Test error"
+    assert processed_data_with_props["error"]["message"] == "_TEST_ERROR_MSG"
     assert processed_data_with_props["extra_field"] == "extra_value"
 
     # Properties should now be included
     assert "status_display" in processed_data_with_props
     assert processed_data_with_props["status_display"] == "Status: inactive"
     assert "error_summary" in processed_data_with_props
-    assert processed_data_with_props["error_summary"] == "Test error (404)"
+    assert processed_data_with_props["error_summary"] == "_TEST_ERROR_MSG (404)"
 
 
 def test_as_dict_partial_instance_with_properties():

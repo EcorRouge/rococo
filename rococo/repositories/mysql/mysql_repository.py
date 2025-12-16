@@ -11,6 +11,9 @@ from rococo.messaging import MessageAdapter
 from rococo.models import VersionedModel
 from rococo.repositories import BaseRepository
 
+# Constant for regex pattern used to convert CamelCase to snake_case
+_CAMELCASE_TO_SNAKE_PATTERN = r'(?<!^)(?=[A-Z])'
+
 
 class MySqlRepository(BaseRepository):
     """MySqlRepository class"""
@@ -25,7 +28,7 @@ class MySqlRepository(BaseRepository):
     ):
         super().__init__(db_adapter, model, message_adapter, queue_name, user_id=user_id)
         self.table_name = re.sub(
-            r'(?<!^)(?=[A-Z])', '_', model.__name__).lower()
+            _CAMELCASE_TO_SNAKE_PATTERN, '_', model.__name__).lower()
         self.model()
 
     def _process_data_before_save(self, instance: VersionedModel):
@@ -90,7 +93,7 @@ class MySqlRepository(BaseRepository):
                     field_model_class = field.metadata.get(
                         'relationship', {}).get('model') or model
                     field_table_name = re.sub(
-                        r'(?<!^)(?=[A-Z])', '_', field_model_class.__name__).lower()
+                        _CAMELCASE_TO_SNAKE_PATTERN, '_', field_model_class.__name__).lower()
 
                     field_value = data[field.name]
 
@@ -155,7 +158,7 @@ class MySqlRepository(BaseRepository):
                     parent_model = self.model
                     child_field = field_name
                 parent_table_name = re.sub(
-                    r'(?<!^)(?=[A-Z])', '_', parent_model.__name__).lower()
+                    _CAMELCASE_TO_SNAKE_PATTERN, '_', parent_model.__name__).lower()
                 join_field = next((field for field in fields(
                     parent_model) if field.name == child_field), None)
                 if join_field is None or join_field.metadata.get('field_type') != 'entity_id':
@@ -164,7 +167,7 @@ class MySqlRepository(BaseRepository):
                 join_model = join_field.metadata.get(
                     'relationship').get('model')
                 join_table_name = re.sub(
-                    r'(?<!^)(?=[A-Z])', '_', join_model.__name__).lower()
+                    _CAMELCASE_TO_SNAKE_PATTERN, '_', join_model.__name__).lower()
                 join_stmt_list.append(
                     f'INNER JOIN {join_table_name} ON {parent_table_name}.{child_field}={join_table_name}.entity_id AND {join_table_name}.active=true')
                 join_field_list = [
@@ -245,7 +248,7 @@ class MySqlRepository(BaseRepository):
                     parent_model = self.model
                     child_field = field_name
                 parent_table_name = re.sub(
-                    r'(?<!^)(?=[A-Z])', '_', parent_model.__name__).lower()
+                    _CAMELCASE_TO_SNAKE_PATTERN, '_', parent_model.__name__).lower()
                 join_field = next((field for field in fields(
                     parent_model) if field.name == child_field), None)
                 if join_field is None or join_field.metadata.get('field_type') != 'entity_id':
@@ -254,7 +257,7 @@ class MySqlRepository(BaseRepository):
                 join_model = join_field.metadata.get(
                     'relationship').get('model')
                 join_table_name = re.sub(
-                    r'(?<!^)(?=[A-Z])', '_', join_model.__name__).lower()
+                    _CAMELCASE_TO_SNAKE_PATTERN, '_', join_model.__name__).lower()
                 join_stmt_list.append(
                     f'INNER JOIN {join_table_name} ON {parent_table_name}.{child_field}={join_table_name}.entity_id AND {join_table_name}.active=true')
                 join_field_list = [

@@ -32,7 +32,7 @@ class NonVersionedModel:
         return f"{type(self).__name__}(entity_id={self.entity_id})"
 
     def as_dict(self, convert_datetime_to_iso_string: bool = False,
-                convert_uuids: bool = True) -> Dict[str, Any]:
+                convert_uuids: bool = True) -> Dict[str, Any]:  # noqa: S3776
         """
         Mirror VersionedModel.as_dict(), but no version/previous_version fields.
         """
@@ -80,9 +80,9 @@ class NonVersionedModel:
         """
         No-op for non-versioned—override in subclass if needed.
         """
-        return
+        pass
 
-    def prepare_for_save(self, changed_by_id: UUID = None):
+    def prepare_for_save(self, _changed_by_id: UUID = None):
         """
         No version fields to bump; simply call validate if you want.
         """

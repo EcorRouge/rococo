@@ -10,6 +10,12 @@ from unittest.mock import MagicMock
 from rococo.repositories.mongodb.mongodb_repository import MongoDbRepository
 from rococo.models import VersionedModel
 
+# Test constants for S1192 - avoid duplicate literal strings
+_DATETIME_0900 = "2024-01-15T09:00:00+00:00"
+_DATETIME_1030 = "2024-01-15T10:30:00+00:00"
+_DATETIME_1100 = "2024-01-15T11:00:00+00:00"
+_TZ_OFFSET = "+00:00"
+
 
 class TestVersionedModel(VersionedModel):
     def __post_init__(self, _is_partial):

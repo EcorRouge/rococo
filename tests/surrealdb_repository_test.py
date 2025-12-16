@@ -315,10 +315,10 @@ class SurrealDbRepositoryTestCase(unittest.TestCase):
         inst1 = self._create_test_instance(id=r1['id'], entity_id=e1, name='g', version=e1)
         inst2 = self._create_test_instance(id=r2['id'], entity_id=e2, name='g', version=e2)
         # have from_dict return the right instance based on entity_id
-        self.mock_model_from_dict.side_effect = lambda rec: (
-                inst1 if ((rec['entity_id'] if isinstance(rec, dict) else rec.entity_id) == e1) 
-                else inst2
-            )
+        def get_matching_instance(rec):
+            rec_entity_id = rec['entity_id'] if isinstance(rec, dict) else rec.entity_id
+            return inst1 if rec_entity_id == e1 else inst2
+        self.mock_model_from_dict.side_effect = get_matching_instance
 
         results = self.repository.get_many({'name':'g'}, limit=10)
         self.assertEqual([r.id for r in results], [inst1.id, inst2.id])

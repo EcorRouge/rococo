@@ -89,13 +89,13 @@ workflows:
             - sonarqube
           filters:
             branches:
-              only: ilyaskarim-roc-93
+              only: ilyaskarim-ROC-93
       - build-package:
           requires:
             - test-python
           filters:
             branches:
-              only: ilyaskarim-roc-93
+              only: ilyaskarim-ROC-93
     # - deploy:
     #     requires:
     #       - build-package

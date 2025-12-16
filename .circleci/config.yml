@@ -41,7 +41,6 @@ jobs:
       - image: cimg/python:3.10-node
     steps:
       - checkout
-      - security_scans
       - python/install-packages:
           pkg-manager: pip
       - python/install-packages:
@@ -64,6 +63,8 @@ jobs:
       - store_artifacts:
           path: coverage.xml
           destination: coverage-report
+      # Run SonarQube AFTER tests generate coverage.xml
+      - security_scans
 
   build-package:
     # build python package

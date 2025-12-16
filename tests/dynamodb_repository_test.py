@@ -196,6 +196,124 @@ class TestDynamoDbRepository(unittest.TestCase):
              self.repository.delete(person)
              mock_save.assert_called()
 
+    def test_get_one_not_found(self):
+        """Test get_one returns None when record not found."""
+        PersonModel.get_attributes = MagicMock()
+        
+        mock_hash_attr = MagicMock()
+        mock_hash_attr.is_hash_key = True
+        mock_hash_attr.is_range_key = False
+        
+        PersonModel.get_attributes.return_value = {'entity_id': mock_hash_attr}
+        
+        with patch.object(PersonModel, 'query') as mock_query:
+            mock_query.return_value = []
+            
+            result = self.repository.get_one({'entity_id': uuid4().hex})
+            
+            self.assertIsNone(result)
+
+    def test_get_many_empty_results(self):
+        """Test get_many returns empty list when no records found."""
+        PersonModel.get_attributes = MagicMock()
+        
+        mock_hash_attr = MagicMock()
+        mock_hash_attr.is_hash_key = True
+        mock_hash_attr.is_range_key = False
+        
+        PersonModel.get_attributes.return_value = {'entity_id': mock_hash_attr}
+        
+        with patch.object(PersonModel, 'scan') as mock_scan:
+            mock_scan.return_value = []
+            
+            result = self.repository.get_many({'first_name': 'NonExistent'})
+            
+            self.assertEqual(result, [])
+
+    def test_get_many_multiple_records(self):
+        """Test get_many returns multiple records."""
+        PersonModel.get_attributes = MagicMock()
+        
+        mock_hash_attr = MagicMock()
+        mock_hash_attr.is_hash_key = True
+        mock_hash_attr.is_range_key = False
+        
+        PersonModel.get_attributes.return_value = {'entity_id': mock_hash_attr}
+        
+        with patch.object(PersonModel, 'scan') as mock_scan:
+            mock_item1 = MagicMock()
+            mock_item1.attribute_values = {'entity_id': uuid4().hex, 'first_name': 'John', 'active': True}
+            mock_item2 = MagicMock()
+            mock_item2.attribute_values = {'entity_id': uuid4().hex, 'first_name': 'Jane', 'active': True}
+            mock_scan.return_value = [mock_item1, mock_item2]
+            
+            result = self.repository.get_many({'active': True})
+            
+            self.assertEqual(len(result), 2)
+            self.assertEqual(result[0].first_name, 'John')
+            self.assertEqual(result[1].first_name, 'Jane')
+
+    def test_get_many_with_no_conditions(self):
+        """Test get_many with no conditions (scans all)."""
+        PersonModel.get_attributes = MagicMock()
+        
+        mock_hash_attr = MagicMock()
+        mock_hash_attr.is_hash_key = True
+        mock_hash_attr.is_range_key = False
+        
+        PersonModel.get_attributes.return_value = {'entity_id': mock_hash_attr}
+        
+        with patch.object(PersonModel, 'scan') as mock_scan:
+            mock_item = MagicMock()
+            mock_item.attribute_values = {'entity_id': uuid4().hex, 'first_name': 'John', 'active': True}
+            mock_scan.return_value = [mock_item]
+            
+            result = self.repository.get_many()
+            
+            self.assertEqual(len(result), 1)
+
+    def test_save_without_message(self):
+        """Test saving a record without sending message."""
+        person = Person(first_name='Jane', last_name='Doe')
+        
+        with patch.object(PersonModel, 'save') as mock_save:
+            saved_person = self.repository.save(person, send_message=False)
+            
+            self.assertEqual(saved_person.first_name, 'Jane')
+            mock_save.assert_called()
+            
+            # Verify message was NOT sent
+            self.message_adapter.send_message.assert_not_called()
+
+    def test_delete_sets_active_false(self):
+        """Test delete sets active=False on the instance."""
+        person = Person(first_name='Jane')
+        entity_id = uuid4().hex
+        person.entity_id = entity_id
+        
+        with patch.object(PersonModel, 'save') as mock_save:
+            deleted_person = self.repository.delete(person)
+            
+            # Ensure active is set to False
+            self.assertFalse(deleted_person.active)
+            
+            # Ensure save was called
+            mock_save.assert_called()
+
+    def test_process_data_before_save(self):
+        """Test _process_data_before_save prepares data correctly."""
+        person = Person(first_name='Jane', last_name='Doe')
+        
+        data = self.repository._process_data_before_save(person)
+        
+        self.assertIn('entity_id', data)
+        self.assertIn('first_name', data)
+        self.assertEqual(data['first_name'], 'Jane')
+        # Check that datetime is converted to ISO string
+        self.assertIn('changed_on', data)
+        self.assertIsInstance(data['changed_on'], str)
+
 
 if __name__ == '__main__':
     unittest.main()
+

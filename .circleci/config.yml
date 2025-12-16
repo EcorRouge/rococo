@@ -24,10 +24,13 @@ commands:
             # NOTE: Update the projectKey below to match your project
             sonar-scanner \
               -Dsonar.projectKey=rococo \
-              -Dsonar.sources=. \
+              -Dsonar.sources=rococo \
               -Dsonar.host.url=$SONAR_GLOBAL_HOST \
               -Dsonar.token=$SONAR_GLOBAL_TOKEN \
-              -Dsonar.scm.disabled=true
+              -Dsonar.scm.disabled=true \
+              -Dsonar.python.coverage.reportPaths=coverage.xml \
+              -Dsonar.coverage.exclusions=tests/**/*,test.py,setup.py \
+              -Dsonar.exclusions=tests/**/*,test.py,setup.py,**/__pycache__/**
             
             echo "✅ SonarQube scan completed successfully"
 
@@ -45,14 +48,22 @@ jobs:
           pip-dependency-file: requirements.txt
           pkg-manager: pip
       - python/install-packages:
-          args: pytest pytest-mock
+          args: pytest pytest-mock pytest-cov
           pkg-manager: pip
           pypi-cache: false
       - run:
-          name: Run tests
-          command: pytest --junitxml=junit.xml || ((($? == 5)) && echo 'Did not find any tests to run.')
+          name: Run tests with coverage
+          command: |
+            pytest --junitxml=junit.xml \
+              --cov=rococo \
+              --cov-report=xml:coverage.xml \
+              --cov-report=term-missing \
+              || ((($? == 5)) && echo 'Did not find any tests to run.')
       - store_test_results:
           path: junit.xml
+      - store_artifacts:
+          path: coverage.xml
+          destination: coverage-report
 
   build-package:
     # build python package

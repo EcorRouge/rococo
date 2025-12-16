@@ -389,3 +389,320 @@ class TestMailjetAddressConversion:
             {"Email": "   "}
         ]
         assert result == expected
+
+
+class TestMailjetServiceInitialization:
+    """Tests for MailjetService initialization and __call__ method."""
+
+    def test_mailjet_service_init(self):
+        """Test MailjetService constructor."""
+        service = MailjetService()
+        # Constructor should not fail
+        assert service is not None
+
+    def test_mailjet_service_call(self, mocker):
+        """Test MailjetService __call__ method initializes properly."""
+        # Mock the Mailjet Client
+        mock_client_class = mocker.patch('rococo.emailing.mailjet.Client')
+        mock_client = mocker.MagicMock()
+        mock_client_class.return_value = mock_client
+        
+        # Create a mock config
+        mock_config = mocker.MagicMock()
+        mock_config.SOURCE_EMAIL = "Test Sender <sender@example.com>"
+        mock_config.MAILJET_API_KEY = "test_api_key"
+        mock_config.MAILJET_API_SECRET = "test_api_secret"
+        mock_config.MAILJET_API_VERSION = "v3.1"
+        
+        service = MailjetService()
+        result = service(mock_config)
+        
+        assert result is service
+        assert service.from_address == {"Name": "Test Sender ", "Email": "sender@example.com"}
+        mock_client_class.assert_called_once_with(
+            auth=("test_api_key", "test_api_secret"),
+            version="v3.1"
+        )
+
+
+class TestMailjetServiceSendEmail:
+    """Tests for MailjetService send_email method."""
+
+    def test_send_email_basic(self, mocker):
+        """Test send_email with basic message."""
+        mock_client_class = mocker.patch('rococo.emailing.mailjet.Client')
+        mock_client = mocker.MagicMock()
+        mock_client_class.return_value = mock_client
+        mock_send_result = mocker.MagicMock()
+        mock_client.send.create.return_value = mock_send_result
+        
+        mock_config = mocker.MagicMock()
+        mock_config.SOURCE_EMAIL = "Test Sender <sender@example.com>"
+        mock_config.MAILJET_API_KEY = "test_api_key"
+        mock_config.MAILJET_API_SECRET = "test_api_secret"
+        mock_config.MAILJET_API_VERSION = "v3.1"
+        mock_config.ERROR_REPORTING_EMAIL = None
+        mock_config.EMAIL_PROVIDER = "mailjet"
+        mock_config.get_event.return_value = {"id": {"mailjet": 12345}}
+        
+        service = MailjetService()
+        service(mock_config)
+        
+        message = {
+            "event": "user_signup",
+            "data": {"name": "John"},
+            "to_emails": ["user@example.com"],
+            "cc_emails": [],
+            "bcc_emails": []
+        }
+        
+        result = service.send_email(message)
+        
+        assert result == mock_send_result
+        mock_client.send.create.assert_called_once()
+
+    def test_send_email_with_error_reporting(self, mocker):
+        """Test send_email with error reporting email configured."""
+        mock_client_class = mocker.patch('rococo.emailing.mailjet.Client')
+        mock_client = mocker.MagicMock()
+        mock_client_class.return_value = mock_client
+        mock_send_result = mocker.MagicMock()
+        mock_client.send.create.return_value = mock_send_result
+        
+        mock_config = mocker.MagicMock()
+        mock_config.SOURCE_EMAIL = "Test Sender <sender@example.com>"
+        mock_config.MAILJET_API_KEY = "test_api_key"
+        mock_config.MAILJET_API_SECRET = "test_api_secret"
+        mock_config.MAILJET_API_VERSION = "v3.1"
+        mock_config.ERROR_REPORTING_EMAIL = "errors@example.com"
+        mock_config.EMAIL_PROVIDER = "mailjet"
+        mock_config.get_event.return_value = {"id": {"mailjet": 12345}}
+        
+        service = MailjetService()
+        service(mock_config)
+        
+        message = {
+            "event": "user_signup",
+            "data": {"name": "John"},
+            "to_emails": ["user@example.com"],
+            "cc_emails": None,
+            "bcc_emails": None
+        }
+        
+        result = service.send_email(message)
+        
+        # Verify error reporting was included
+        call_args = mock_client.send.create.call_args
+        data = call_args[1]['data']
+        assert 'TemplateErrorReporting' in data['Messages'][0]
+        assert data['Messages'][0]['TemplateErrorReporting']['Email'] == "errors@example.com"
+
+
+class TestMailjetServiceCreateContact:
+    """Tests for MailjetService create_contact method."""
+
+    def test_create_contact_new_contact(self, mocker):
+        """Test creating a new contact."""
+        mock_client_class = mocker.patch('rococo.emailing.mailjet.Client')
+        mock_client = mocker.MagicMock()
+        mock_client_class.return_value = mock_client
+        
+        # Mock successful contact creation
+        mock_create_response = mocker.MagicMock()
+        mock_create_response.json.return_value = {"Data": [{"ID": 123456}]}
+        mock_client.contact.create.return_value = mock_create_response
+        
+        mock_config = mocker.MagicMock()
+        mock_config.SOURCE_EMAIL = "Test Sender <sender@example.com>"
+        mock_config.MAILJET_API_KEY = "test_api_key"
+        mock_config.MAILJET_API_SECRET = "test_api_secret"
+        mock_config.MAILJET_API_VERSION = "v3.1"
+        
+        service = MailjetService()
+        service(mock_config)
+        
+        service.create_contact("user@example.com", "John Doe", "", {})
+        
+        mock_client.contact.create.assert_called_once()
+
+    def test_create_contact_existing_contact(self, mocker):
+        """Test creating a contact that already exists."""
+        mock_client_class = mocker.patch('rococo.emailing.mailjet.Client')
+        mock_client = mocker.MagicMock()
+        mock_client_class.return_value = mock_client
+        
+        # Mock contact creation returning error (contact exists)
+        mock_create_response = mocker.MagicMock()
+        mock_create_response.json.return_value = {"ErrorMessage": "Contact already exists"}
+        mock_client.contact.create.return_value = mock_create_response
+        
+        # Mock get returning existing contact
+        mock_get_response = mocker.MagicMock()
+        mock_get_response.json.return_value = {"Data": [{"ID": 789}]}
+        mock_client.contact.get.return_value = mock_get_response
+        
+        mock_config = mocker.MagicMock()
+        mock_config.SOURCE_EMAIL = "Test Sender <sender@example.com>"
+        mock_config.MAILJET_API_KEY = "test_api_key"
+        mock_config.MAILJET_API_SECRET = "test_api_secret"
+        mock_config.MAILJET_API_VERSION = "v3.1"
+        
+        service = MailjetService()
+        service(mock_config)
+        
+        service.create_contact("user@example.com", "John Doe", "", {})
+        
+        mock_client.contact.get.assert_called_once_with(id="user@example.com")
+
+    def test_create_contact_with_extra_data(self, mocker):
+        """Test creating a contact with extra data."""
+        mock_client_class = mocker.patch('rococo.emailing.mailjet.Client')
+        mock_client = mocker.MagicMock()
+        mock_client_class.return_value = mock_client
+        
+        mock_create_response = mocker.MagicMock()
+        mock_create_response.json.return_value = {"Data": [{"ID": 123456}]}
+        mock_client.contact.create.return_value = mock_create_response
+        
+        mock_config = mocker.MagicMock()
+        mock_config.SOURCE_EMAIL = "Test Sender <sender@example.com>"
+        mock_config.MAILJET_API_KEY = "test_api_key"
+        mock_config.MAILJET_API_SECRET = "test_api_secret"
+        mock_config.MAILJET_API_VERSION = "v3.1"
+        
+        service = MailjetService()
+        service(mock_config)
+        
+        extra_data = {"company": "Acme Inc", "role": "Developer"}
+        service.create_contact("user@example.com", "John Doe", "", extra_data)
+        
+        mock_client.contactdata.update.assert_called_once()
+
+    def test_create_contact_with_list_id(self, mocker):
+        """Test creating a contact with list_id."""
+        mock_client_class = mocker.patch('rococo.emailing.mailjet.Client')
+        mock_client = mocker.MagicMock()
+        mock_client_class.return_value = mock_client
+        
+        mock_create_response = mocker.MagicMock()
+        mock_create_response.json.return_value = {"Data": [{"ID": 123456}]}
+        mock_client.contact.create.return_value = mock_create_response
+        
+        mock_config = mocker.MagicMock()
+        mock_config.SOURCE_EMAIL = "Test Sender <sender@example.com>"
+        mock_config.MAILJET_API_KEY = "test_api_key"
+        mock_config.MAILJET_API_SECRET = "test_api_secret"
+        mock_config.MAILJET_API_VERSION = "v3.1"
+        
+        service = MailjetService()
+        service(mock_config)
+        
+        service.create_contact("user@example.com", "John Doe", "list123", {})
+        
+        mock_client.listrecipient.create.assert_called_once()
+
+
+class TestMailjetServiceRemoveContact:
+    """Tests for MailjetService remove_contact method."""
+
+    def test_remove_contact_success(self, mocker):
+        """Test successfully removing a contact."""
+        mock_client_class = mocker.patch('rococo.emailing.mailjet.Client')
+        mock_requests_delete = mocker.patch('rococo.emailing.mailjet.requests.delete')
+        mock_client = mocker.MagicMock()
+        mock_client_class.return_value = mock_client
+        
+        # Mock successful contact lookup
+        mock_get_response = mocker.MagicMock()
+        mock_get_response.json.return_value = {"Data": [{"ID": 123456}]}
+        mock_client.contact.get.return_value = mock_get_response
+        
+        mock_config = mocker.MagicMock()
+        mock_config.SOURCE_EMAIL = "Test Sender <sender@example.com>"
+        mock_config.MAILJET_API_KEY = "test_api_key"
+        mock_config.MAILJET_API_SECRET = "test_api_secret"
+        mock_config.MAILJET_API_VERSION = "v3.1"
+        
+        service = MailjetService()
+        service(mock_config)
+        
+        service.remove_contact("user@example.com")
+        
+        mock_client.contact.get.assert_called_once_with(id="user@example.com")
+        mock_requests_delete.assert_called_once_with(
+            "https://api.mailjet.com/v4/contacts/123456",
+            auth=("test_api_key", "test_api_secret"),
+            timeout=15
+        )
+
+    def test_remove_contact_not_found(self, mocker):
+        """Test removing a contact that doesn't exist."""
+        mock_client_class = mocker.patch('rococo.emailing.mailjet.Client')
+        mock_client = mocker.MagicMock()
+        mock_client_class.return_value = mock_client
+        
+        # Mock contact not found
+        mock_client.contact.get.side_effect = Exception("Contact not found")
+        
+        mock_config = mocker.MagicMock()
+        mock_config.SOURCE_EMAIL = "Test Sender <sender@example.com>"
+        mock_config.MAILJET_API_KEY = "test_api_key"
+        mock_config.MAILJET_API_SECRET = "test_api_secret"
+        mock_config.MAILJET_API_VERSION = "v3.1"
+        
+        service = MailjetService()
+        service(mock_config)
+        
+        # Should not raise an exception
+        service.remove_contact("nonexistent@example.com")
+
+    def test_remove_contact_multiple_contacts(self, mocker):
+        """Test removing multiple contacts with same email."""
+        mock_client_class = mocker.patch('rococo.emailing.mailjet.Client')
+        mock_requests_delete = mocker.patch('rococo.emailing.mailjet.requests.delete')
+        mock_client = mocker.MagicMock()
+        mock_client_class.return_value = mock_client
+        
+        # Mock multiple contacts
+        mock_get_response = mocker.MagicMock()
+        mock_get_response.json.return_value = {"Data": [{"ID": 123}, {"ID": 456}]}
+        mock_client.contact.get.return_value = mock_get_response
+        
+        mock_config = mocker.MagicMock()
+        mock_config.SOURCE_EMAIL = "Test Sender <sender@example.com>"
+        mock_config.MAILJET_API_KEY = "test_api_key"
+        mock_config.MAILJET_API_SECRET = "test_api_secret"
+        mock_config.MAILJET_API_VERSION = "v3.1"
+        
+        service = MailjetService()
+        service(mock_config)
+        
+        service.remove_contact("user@example.com")
+        
+        # Should delete both contacts
+        assert mock_requests_delete.call_count == 2
+
+    def test_remove_contact_delete_failure(self, mocker):
+        """Test handling delete failure gracefully."""
+        mock_client_class = mocker.patch('rococo.emailing.mailjet.Client')
+        mock_requests_delete = mocker.patch('rococo.emailing.mailjet.requests.delete')
+        mock_requests_delete.side_effect = Exception("Network error")
+        mock_client = mocker.MagicMock()
+        mock_client_class.return_value = mock_client
+        
+        mock_get_response = mocker.MagicMock()
+        mock_get_response.json.return_value = {"Data": [{"ID": 123456}]}
+        mock_client.contact.get.return_value = mock_get_response
+        
+        mock_config = mocker.MagicMock()
+        mock_config.SOURCE_EMAIL = "Test Sender <sender@example.com>"
+        mock_config.MAILJET_API_KEY = "test_api_key"
+        mock_config.MAILJET_API_SECRET = "test_api_secret"
+        mock_config.MAILJET_API_VERSION = "v3.1"
+        
+        service = MailjetService()
+        service(mock_config)
+        
+        # Should not raise an exception
+        service.remove_contact("user@example.com")
+

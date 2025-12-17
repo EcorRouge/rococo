@@ -11,6 +11,7 @@ class BaseCli(ABC):
     REQUIRED_ENV_VARS = []        # List of env variable names
     ADAPTER_CLASS = None          # e.g. MySqlAdapter or PostgresAdapter
     MIGRATION_CLASS = None        # e.g. MySQLMigration or PostgresMigration
+    ENV_SECRETS_FILE = '.env.secrets'
 
     def __init__(self):
         self.parser = self._create_parser()
@@ -40,44 +41,54 @@ class BaseCli(ABC):
         subparsers.add_parser('version', help="Get DB version.")
         return parser
 
-    def load_env(self, args):
-        # Check if env files are provided
-        if not args.env_files:
-            # First, check environment variables in the current environment
-            missing_vars = [var for var in self.REQUIRED_ENV_VARS if not os.getenv(var)]
-            
-            if missing_vars:
-                # If any required env vars are missing, check .env files
-                print(f"Missing environment variables: {', '.join(missing_vars)}. Trying to load from .env files...")
+    def _load_from_secrets(self):
+        """Helper to load env vars from secrets file if needed."""
+        if os.path.exists(self.ENV_SECRETS_FILE) and os.path.isfile(self.ENV_SECRETS_FILE):
+            secrets_env = dotenv_values(self.ENV_SECRETS_FILE)
+            app_env_name = secrets_env.get('APP_ENV')
 
-                if os.path.exists('.env.secrets') and os.path.isfile('.env.secrets'):
-                    secrets_env = dotenv_values('.env.secrets')
-                    app_env_name = secrets_env.get('APP_ENV')
-                    
-                    if app_env_name and os.path.exists(f'{app_env_name}.env') and os.path.isfile(f'{app_env_name}.env'):
-                        app_env = dotenv_values(f'{app_env_name}.env')
-                        merged_env = OrderedDict(list(secrets_env.items()) + list(app_env.items()))
-                    else:
-                        self.parser.error('APP_ENV not found in .env.secrets or corresponding .env file missing.')
-                        return None
-                else:
-                    self.parser.error('.env.secrets not found. Specify env file(s) with --env-files.')
-                    return None
+            if app_env_name and os.path.exists(f'{app_env_name}.env') and os.path.isfile(f'{app_env_name}.env'):
+                app_env = dotenv_values(f'{app_env_name}.env')
+                return OrderedDict(list(secrets_env.items()) + list(app_env.items()))
             else:
-                # If all required environment variables are present
-                merged_env = {var: os.getenv(var) for var in self.REQUIRED_ENV_VARS}
+                self.parser.error(f'APP_ENV not found in {self.ENV_SECRETS_FILE} or corresponding .env file missing.')
+                return None
         else:
-            # Load env files if specified
-            merged_env = []
-            for env_file in args.env_files:
-                if os.path.exists(env_file) and os.path.isfile(env_file):
-                    merged_env += list(dotenv_values(env_file).items())
-                else:
-                    self.parser.error(f"{env_file} file not found.")
-                    return
-            merged_env = OrderedDict(merged_env)
+            self.parser.error(f'{self.ENV_SECRETS_FILE} not found. Specify env file(s) with --env-files.')
+            return None
 
-        return merged_env
+    def _load_from_cli_args(self, args):
+        """Helper to load env vars from files specified in CLI args."""
+        merged_env = []
+        for env_file in args.env_files:
+            if os.path.exists(env_file) and os.path.isfile(env_file):
+                merged_env += list(dotenv_values(env_file).items())
+            else:
+                self.parser.error(f"{env_file} file not found.")
+                return None
+        return OrderedDict(merged_env)
+
+    def load_env(self, args):
+        """
+        Load environment variables.
+        If --env-files is provided, load from them.
+        Otherwise, check if required vars are present in os.environ.
+        If missing, try to load from .env.secrets and corresponding APP_ENV file.
+        """
+        # Load env files if specified
+        if args.env_files:
+            return self._load_from_cli_args(args)
+
+        # First, check environment variables in the current environment
+        missing_vars = [var for var in self.REQUIRED_ENV_VARS if not os.getenv(var)]
+        
+        if not missing_vars:
+             # If all required environment variables are present
+            return {var: os.getenv(var) for var in self.REQUIRED_ENV_VARS}
+            
+        # If any required env vars are missing, check .env files
+        print(f"Missing environment variables: {', '.join(missing_vars)}. Trying to load from .env files...")
+        return self._load_from_secrets()
 
     def get_migrations_dir(self, args):
         migrations_dir = None

@@ -16,6 +16,9 @@ logger = logging.getLogger(__name__)
 class TwilioService(SMSService):
 
     def __init__(self):
+        """
+        Initializes the TwilioService.
+        """
         pass
 
 

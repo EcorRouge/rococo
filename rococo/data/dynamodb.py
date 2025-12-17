@@ -11,12 +11,14 @@ class DynamoDbAdapter(DbAdapter):
     """DynamoDB adapter using PynamoDB with dynamic model generation."""
 
     def __init__(self):
+        # No initialization required
         pass
 
     def __enter__(self):
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
+        # No cleanup required
         pass
 
     def _map_type_to_attribute(self, field_type: Any, is_hash_key: bool = False, is_range_key: bool = False):
@@ -184,59 +186,69 @@ class DynamoDbAdapter(DbAdapter):
                 return False
         return False
 
-    def _execute_query_or_scan(self, model_cls: Type[Model], conditions: Dict[str, Any], limit: int = None, count_only: bool = False):
-        """
-        Helper to determine whether to use Query or Scan based on conditions.
-        """
-        # Find hash key and range key using public API instead of _meta
+    def _get_model_keys(self, model_cls: Type[Model]) -> Tuple[Optional[str], Optional[str]]:
+        """Helper to retrieve hash and range keys from model."""
         hash_key_name = None
         range_key_name = None
-        
         for name, attr in model_cls.get_attributes().items():
             if getattr(attr, 'is_hash_key', False):
                 hash_key_name = name
             if getattr(attr, 'is_range_key', False):
                 range_key_name = name
+        return hash_key_name, range_key_name
 
+    def _execute_query(self, model_cls: Type[Model], conditions: Dict[str, Any], 
+                       hash_key_name: str, range_key_name: str, hash_key_val: Any, 
+                       limit: int = None, count_only: bool = False):
+        """Helper for Query execution."""
+        range_key_condition = None
+        filter_condition = None
+
+        for key, value in conditions.items():
+            if key == hash_key_name:
+                continue
+            
+            attr = getattr(model_cls, key)
+            cond = (attr == value)
+            
+            if key == range_key_name:
+                range_key_condition = cond
+            else:
+                if filter_condition is None:
+                    filter_condition = cond
+                else:
+                    filter_condition = filter_condition & cond
+        
+        if count_only:
+            return model_cls.count(hash_key_val, range_key_condition=range_key_condition, filter_condition=filter_condition)
+        else:
+            return model_cls.query(hash_key_val, range_key_condition=range_key_condition, filter_condition=filter_condition, limit=limit)
+
+    def _execute_scan(self, model_cls: Type[Model], conditions: Dict[str, Any], limit: int = None, count_only: bool = False):
+        """Helper for Scan execution."""
+        scan_condition = None
+        if conditions:
+            for key, value in conditions.items():
+                attr = getattr(model_cls, key)
+                cond = (attr == value)
+                if scan_condition is None:
+                    scan_condition = cond
+                else:
+                    scan_condition = scan_condition & cond
+        
+        if count_only:
+            return model_cls.count(filter_condition=scan_condition)
+        else:
+            return model_cls.scan(scan_condition, limit=limit)
+
+    def _execute_query_or_scan(self, model_cls: Type[Model], conditions: Dict[str, Any], limit: int = None, count_only: bool = False):
+        """
+        Helper to determine whether to use Query or Scan based on conditions.
+        """
+        hash_key_name, range_key_name = self._get_model_keys(model_cls)
         hash_key_val = conditions.get(hash_key_name) if conditions else None
         
         if hash_key_val is not None:
-            # Query path: Hash key is present
-            range_key_condition = None
-            filter_condition = None
-            
-            for key, value in conditions.items():
-                if key == hash_key_name:
-                    continue
-                
-                attr = getattr(model_cls, key)
-                cond = (attr == value)
-                
-                if key == range_key_name:
-                    range_key_condition = cond
-                else:
-                    if filter_condition is None:
-                        filter_condition = cond
-                    else:
-                        filter_condition = filter_condition & cond
-            
-            if count_only:
-                return model_cls.count(hash_key_val, range_key_condition=range_key_condition, filter_condition=filter_condition)
-            else:
-                return model_cls.query(hash_key_val, range_key_condition=range_key_condition, filter_condition=filter_condition, limit=limit)
+            return self._execute_query(model_cls, conditions, hash_key_name, range_key_name, hash_key_val, limit, count_only)
         else:
-            # Scan path: Hash key is missing
-            scan_condition = None
-            if conditions:
-                for key, value in conditions.items():
-                    attr = getattr(model_cls, key)
-                    cond = (attr == value)
-                    if scan_condition is None:
-                        scan_condition = cond
-                    else:
-                        scan_condition = scan_condition & cond
-            
-            if count_only:
-                return model_cls.count(filter_condition=scan_condition)
-            else:
-                return model_cls.scan(scan_condition, limit=limit)
+            return self._execute_scan(model_cls, conditions, limit, count_only)

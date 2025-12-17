@@ -3,6 +3,7 @@ RecoveryCode model
 """
 
 from dataclasses import dataclass, field
+from typing import Optional
 
 from . import VersionedModel
 
@@ -11,10 +12,10 @@ from . import VersionedModel
 class RecoveryCode(VersionedModel):
     """An OTP method model."""
 
-    otp_method: str = field(default=None, metadata={
+    otp_method: Optional[str] = field(default=None, metadata={
         'relationship': {'model': 'OtpMethod'},
         'field_type': 'entity_id'
     })
-    secret: str = None
-    name: str = None
+    secret: Optional[str] = None
+    name: Optional[str] = None
     enabled: bool = False

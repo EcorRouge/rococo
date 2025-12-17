@@ -25,13 +25,22 @@ class TestVersionedModel(VersionedModel):
     changed_by_id: Union[UUID, str, None] = dc_field(
         default_factory=lambda: UUID(int=0))
 
-    name: str = None  # Example custom field
+    name: Optional[str] = None  # Example custom field
     related_item_id: Optional[UUID] = dc_field(
         default=None)  # For fetch_related tests
     related_items_ids: Optional[List[UUID]] = dc_field(
         default_factory=list)  # For fetch_related (many)
 
     # active and changed_on are inherited
+
+    def _process_field_value(self, val, convert_uuids, convert_datetime_to_iso_string):
+        if isinstance(val, UUID):
+            return str(val) if convert_uuids else val
+        elif isinstance(val, list) and all(isinstance(item, UUID) for item in val):
+            return [str(item) if convert_uuids else item for item in val]
+        elif isinstance(val, datetime.datetime):
+            return val.isoformat() if convert_datetime_to_iso_string else val
+        return val
 
     def as_dict(self, convert_datetime_to_iso_string=False, convert_uuids=True, export_properties=True):
         # This as_dict should be robust enough for different calls
@@ -50,16 +59,7 @@ class TestVersionedModel(VersionedModel):
                     data_dict[f_info.name] = None
                 continue
 
-            if isinstance(val, UUID):
-                data_dict[f_info.name] = str(val) if convert_uuids else val
-            elif isinstance(val, list) and all(isinstance(item, UUID) for item in val):
-                data_dict[f_info.name] = [
-                    str(item) if convert_uuids else item for item in val]
-            elif isinstance(val, datetime.datetime):
-                data_dict[f_info.name] = val.isoformat(
-                ) if convert_datetime_to_iso_string else val
-            else:
-                data_dict[f_info.name] = val
+            data_dict[f_info.name] = self._process_field_value(val, convert_uuids, convert_datetime_to_iso_string)
 
         # Ensure 'name' is included if it's an attribute
         if hasattr(self, 'name'):
@@ -73,6 +73,70 @@ class TestVersionedModel(VersionedModel):
         # The _process_data_before_save method will handle None values appropriately for the DB.
         return data_dict
 
+    @staticmethod
+    def _is_uuid_type(field_type):
+        return field_type is UUID or \
+            (hasattr(field_type, '__origin__') and field_type.__origin__ is Union and UUID in getattr(
+                field_type, '__args__', []))
+
+    @staticmethod
+    def _is_datetime_type(field_type):
+        return field_type is datetime.datetime or \
+            (hasattr(field_type, '__origin__') and field_type.__origin__ is Union and datetime.datetime in getattr(
+                field_type, '__args__', []))
+
+    @staticmethod
+    def _is_list_uuid_type(field_type):
+        return (hasattr(field_type, '__origin__') and field_type.__origin__ is list and
+                len(getattr(field_type, '__args__', [])) == 1 and
+                getattr(field_type, '__args__', [None])[0] is UUID)
+
+    @classmethod
+    def _convert_value(cls, f_info, val):
+        field_type_actual = f_info.type
+        
+        if cls._is_uuid_type(field_type_actual):
+            return cls._handle_uuid_conversion(val)
+        elif cls._is_list_uuid_type(field_type_actual):
+            return cls._handle_list_uuid_conversion(val)
+        elif cls._is_datetime_type(field_type_actual):
+            return cls._handle_datetime_conversion(val)
+        return val
+
+    @staticmethod
+    def _handle_uuid_conversion(val):
+        if isinstance(val, str):
+            try:
+                return UUID(val)
+            except ValueError:
+                return None
+        if isinstance(val, UUID) or val is None:
+            return val
+        return val
+
+    @staticmethod
+    def _handle_list_uuid_conversion(val):
+        if isinstance(val, list):
+            if all(isinstance(item, str) for item in val):
+                return [UUID(item) for item in val]
+            if all(isinstance(item, UUID) for item in val):
+                return val
+        return []
+
+    @staticmethod
+    def _handle_datetime_conversion(val):
+        if isinstance(val, str):
+            try:
+                iso_val = val
+                if iso_val.endswith('Z'):
+                    iso_val = iso_val[:-1] + '+00:00'
+                return datetime.datetime.fromisoformat(iso_val)
+            except ValueError:
+                return None
+        if isinstance(val, datetime.datetime) or val is None:
+            return val
+        return val
+
     @classmethod
     def from_dict(cls, data: dict):
         if data is None:
@@ -81,56 +145,7 @@ class TestVersionedModel(VersionedModel):
         init_args = {}
         for f_info in fields(cls):
             if f_info.name in data:
-                val = data[f_info.name]
-                field_type_actual = f_info.type
-
-                is_uuid_type = field_type_actual is UUID or \
-                    (hasattr(field_type_actual, '__origin__') and field_type_actual.__origin__ is Union and UUID in getattr(
-                        field_type_actual, '__args__', []))
-
-                is_datetime_type = field_type_actual is datetime.datetime or \
-                    (hasattr(field_type_actual, '__origin__') and field_type_actual.__origin__ is Union and datetime.datetime in getattr(
-                        field_type_actual, '__args__', []))
-
-                is_list_uuid_type = (hasattr(field_type_actual, '__origin__') and field_type_actual.__origin__ is list and
-                                     len(getattr(field_type_actual, '__args__', [])) == 1 and
-                                     getattr(field_type_actual, '__args__', [None])[0] is UUID)
-
-                if is_uuid_type:
-                    if isinstance(val, str):
-                        try:
-                            init_args[f_info.name] = UUID(val)
-                        except ValueError:
-                            init_args[f_info.name] = None
-                    elif isinstance(val, UUID):
-                        init_args[f_info.name] = val
-                    elif val is None:
-                        init_args[f_info.name] = None
-                elif is_list_uuid_type:
-                    if isinstance(val, list) and all(isinstance(item, str) for item in val):
-                        init_args[f_info.name] = [UUID(item) for item in val]
-                    elif isinstance(val, list) and all(isinstance(item, UUID) for item in val):
-                        init_args[f_info.name] = val
-                    else:
-                        # Default to empty list if conversion fails or type mismatch
-                        init_args[f_info.name] = []
-                elif is_datetime_type:
-                    if isinstance(val, str):
-                        try:
-                            iso_val = val
-                            if iso_val.endswith('Z'):
-                                iso_val = iso_val[:-1] + '+00:00'
-                            init_args[f_info.name] = datetime.datetime.fromisoformat(
-                                iso_val)
-                        except ValueError:
-                            init_args[f_info.name] = None
-                    elif isinstance(val, datetime.datetime):
-                        init_args[f_info.name] = val
-                    elif val is None:
-                        init_args[f_info.name] = None
-                else:
-                    init_args[f_info.name] = val
-
+                init_args[f_info.name] = cls._convert_value(f_info, data[f_info.name])
         return cls(**init_args)
 
 
@@ -571,3 +586,19 @@ def test_get_many_with_fetch_related(mock_fetch_related, repository, mock_adapte
         result_instance, 'related_items_ids')
     assert hasattr(result_instance, 'related_items_ids')
     assert result_instance.related_items_ids == related_data_mock_list
+
+def test_get_count_no_query_no_index(repository, mock_adapter):
+    # Default conditions
+    expected_db_conditions = {'latest': True, 'active': True}
+    
+    mock_adapter.get_count.return_value = 10
+    
+    # Call without args
+    count = repository.get_count()
+    
+    assert count == 10
+    mock_adapter.get_count.assert_called_once_with(
+        repository.table_name,
+        expected_db_conditions,
+        options=None
+    )

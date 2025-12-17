@@ -67,6 +67,30 @@ class PostgreSQLRepository(BaseRepository):
             data[field.name] = field_value
         return data
 
+    def _fetch_related_for_instances(
+        self,
+        instances: List[VersionedModel],
+        fetch_related: List[str]
+    ):
+        """Helper to fetch related entities for a list of instances."""
+        if not fetch_related:
+            return
+
+        for instance in instances:
+            related_instances = {}
+            for related_field in fetch_related:
+                if hasattr(instance, related_field):
+                    related_entities = self.fetch_related_entities_for_field(
+                        instance, related_field
+                    )
+                    if related_entities is not None:
+                        related_instances[related_field] = related_entities
+
+            # Replace related_instances in the main instance
+            for key, value in related_instances.items():
+                setattr(instance, key, value)
+
+
     def get_one(
         self,
         conditions: Dict[str, Any] = None,
@@ -88,18 +112,7 @@ class PostgreSQLRepository(BaseRepository):
 
         # Handle fetching related entities
         if fetch_related:
-            related_instances = {}
-            for related_field in fetch_related:
-                if hasattr(instance, related_field):
-                    related_entities = self.fetch_related_entities_for_field(
-                        instance, related_field
-                    )
-                    if related_entities is not None:
-                        related_instances[related_field] = related_entities
-
-            # Replace related_instances in the main instance
-            for key, value in related_instances.items():
-                setattr(instance, key, value)
+            self._fetch_related_for_instances([instance], fetch_related)
 
         return instance
 
@@ -128,20 +141,9 @@ class PostgreSQLRepository(BaseRepository):
         instances = [self.model.from_dict(record) for record in records]
 
         # Handle fetching related entities for each instance
+        # Handle fetching related entities for each instance
         if fetch_related:
-            for instance in instances:
-                related_instances = {}
-                for related_field in fetch_related:
-                    if hasattr(instance, related_field):
-                        related_entities = self.fetch_related_entities_for_field(
-                            instance, related_field
-                        )
-                        if related_entities is not None:
-                            related_instances[related_field] = related_entities
-
-                # Replace related_instances in the main instance
-                for key, value in related_instances.items():
-                    setattr(instance, key, value)
+            self._fetch_related_for_instances(instances, fetch_related)
 
         return instances
 

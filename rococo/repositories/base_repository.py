@@ -100,7 +100,7 @@ class BaseRepository:
         context: str = "value",
         min_val: int = None,
         max_val: int = None
-    ) -> int:
+    ) -> Union[int, None]:
         """
         Validate and convert to integer with optional range check.
         This prevents injection attacks in LIMIT, OFFSET, and other numeric contexts
@@ -131,7 +131,7 @@ class BaseRepository:
         # Convert to integer (will raise ValueError if not convertible)
         try:
             int_value = int(value)
-        except (ValueError, TypeError) as e:
+        except (ValueError, TypeError):
             raise ValueError(
                 f"Invalid {context}: must be an integer, got {type(value).__name__} '{value}'"
             )

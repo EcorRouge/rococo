@@ -103,7 +103,38 @@ class VersionedModel:
     changed_on: datetime = field(default_factory=default_datetime)
     extra: Dict[str, Any] = field(default_factory=dict)
 
-    _is_partial: InitVar[bool] = False
+    _is_partial: InitVar[bool] = field(default=False)  # noqa: E501
+
+    def _resolve_model_class(self, model_name: str, current_module, models_module, rococo_module):
+        """Resolve a model class by name from available modules."""
+        field_model_cls = getattr(current_module, model_name, None)
+        if not field_model_cls and models_module:
+            field_model_cls = getattr(models_module, model_name, None)
+        if not field_model_cls and rococo_module:
+            field_model_cls = getattr(rococo_module, model_name, None)
+        return field_model_cls
+
+    def _handle_uuid_list_field(self, f):
+        """Handle initialization of UUID list fields."""
+        hint = get_type_hints(self.__class__).get(f.name)
+        is_uuid_list = (getattr(hint, '__origin__', None) is list and
+                        UUID in getattr(hint, '__args__', []))
+        if not is_uuid_list:
+            return
+
+        value = getattr(self, f.name)
+        if value is None:
+            setattr(self, f.name, [])
+        elif isinstance(value, str):
+            self._parse_uuid_string_to_list(f.name, value)
+
+    def _parse_uuid_string_to_list(self, field_name: str, value: str):
+        """Parse a string representation of UUIDs into a list."""
+        try:
+            uuid_list = [UUID(u.strip()) for u in value[1:-1].split(',') if u.strip()]
+            setattr(self, field_name, uuid_list)
+        except ValueError:
+            logger.info(f"Invalid UUIDs in list for field '{field_name}'")
 
     def __post_init__(self, _is_partial):
         """
@@ -126,34 +157,22 @@ class VersionedModel:
         rococo_module = importlib.import_module('rococo.models')
 
         for f in fields(self):
-            # Resolve and load related model classes if specified as string in metadata
-            metadata = f.metadata.get('relationship', {})
-            model_name = metadata.get('model')
-            if isinstance(model_name, str):
-                field_model_cls = (
-                    getattr(current_module, model_name, None)
-                    or (getattr(models_module, model_name, None) if models_module else None)
-                    or (getattr(rococo_module, model_name, None) if rococo_module else None)
-                )
-                if not field_model_cls:
-                    raise ImportError(
-                        f"Unable to import {model_name} class from current/module/models.")
-                metadata['model'] = field_model_cls
+            self._resolve_field_model(f, current_module, models_module, rococo_module)
+            self._handle_uuid_list_field(f)
 
-            # Handle list of uuid.UUID specifically
-            hint = get_type_hints(self.__class__).get(f.name)
-            if getattr(hint, '__origin__', None) is list and UUID in getattr(hint, '__args__', []):
-                value = getattr(self, f.name)
-                if value is None:
-                    setattr(self, f.name, [])
-                elif isinstance(value, str):
-                    try:
-                        uuid_list = [UUID(u.strip())
-                                     for u in value[1:-1].split(',') if u.strip()]
-                        setattr(self, f.name, uuid_list)
-                    except ValueError:
-                        logger.info(
-                            f"Invalid UUIDs in list for field '{f.name}'")
+    def _resolve_field_model(self, f, current_module, models_module, rococo_module):
+        """Resolve and load related model classes if specified as string in metadata."""
+        metadata = f.metadata.get('relationship', {})
+        model_name = metadata.get('model')
+        if not isinstance(model_name, str):
+            return
+
+        field_model_cls = self._resolve_model_class(
+            model_name, current_module, models_module, rococo_module)
+        if not field_model_cls:
+            raise ImportError(
+                f"Unable to import {model_name} class from current/module/models.")
+        metadata['model'] = field_model_cls
 
     def __getattribute__(self, name):
         """
@@ -261,7 +280,7 @@ class VersionedModel:
         # Get model fields (but handle the case where fields() might not be available yet)
         try:
             model_fields = self.fields()
-        except:
+        except (TypeError, AttributeError):
             # During initialization, fields() might not work yet
             model_fields = [f.name for f in fields(type(self))]
 
@@ -320,6 +339,90 @@ class VersionedModel:
         """
         return [f.name for f in fields(cls) if f.name != 'extra']
 
+    def _convert_value_for_dict(self, v, convert_datetime_to_iso_string: bool, convert_uuids: bool):
+        """Convert a value for dictionary output."""
+        if convert_datetime_to_iso_string and isinstance(v, datetime):
+            return v.isoformat()
+        if convert_uuids and isinstance(v, UUID):
+            return str(v)
+        if isinstance(v, Enum):
+            return v.value
+        return v
+
+    def _convert_m2m_field(self, v, convert_datetime_to_iso_string: bool):
+        """Convert many-to-many list field."""
+        if v is None:
+            return None  # Signal to remove
+        if isinstance(v, list):
+            return [obj.as_dict(convert_datetime_to_iso_string) for obj in v]
+        return v
+
+    def _convert_reference_field(self, v, convert_datetime_to_iso_string: bool, convert_uuids: bool):
+        """Convert record_id or entity_id field."""
+        if isinstance(v, VersionedModel):
+            return {'entity_id': str(v.entity_id)} if v._is_partial else v.as_dict(convert_datetime_to_iso_string)
+        if isinstance(v, UUID):
+            return str(v) if convert_uuids else v
+        if isinstance(v, list) and v and all(isinstance(i, UUID) for i in v):
+            return [str(i) if convert_uuids else i for i in v]
+        if is_dataclass(v) and hasattr(v, 'as_dict'):
+            return v.as_dict(convert_datetime_to_iso_string, convert_uuids)
+        if isinstance(v, dict):
+            return str(v.get('entity_id')) if convert_uuids else v.get('entity_id')
+        return v
+
+    def _convert_model_field(self, v):
+        """Convert dataclass fields with 'model' metadata."""
+        if v is None:
+            return v
+        if isinstance(v, list):
+            return [obj.__dict__ if is_dataclass(obj) else obj for obj in v]
+        if is_dataclass(v):
+            return v.__dict__
+        return v
+
+    def _process_field_for_dict(self, v, f, convert_datetime_to_iso_string: bool, convert_uuids: bool):
+        """Process a single field for dictionary conversion."""
+        field_type = f.metadata.get('field_type') if f else None
+
+        if field_type == 'm2m_list':
+            return self._convert_m2m_field(v, convert_datetime_to_iso_string)
+        if field_type in ['record_id', 'entity_id']:
+            v = self._convert_reference_field(v, convert_datetime_to_iso_string, convert_uuids)
+
+        v = self._convert_value_for_dict(v, convert_datetime_to_iso_string, convert_uuids)
+
+        if f and f.metadata.get('model') and v is not None:
+            v = self._convert_model_field(v)
+        return v
+
+    def _export_properties_to_dict(self, result: Dict, convert_datetime_to_iso_string: bool, convert_uuids: bool):
+        """Export @property methods to dictionary."""
+        for attr_name in dir(type(self)):
+            if attr_name.startswith('_') or attr_name in result:
+                continue
+            attr = getattr(type(self), attr_name, None)
+            if not isinstance(attr, property):
+                continue
+            try:
+                prop_value = getattr(self, attr_name)
+                result[attr_name] = self._convert_value_for_dict(
+                    prop_value, convert_datetime_to_iso_string, convert_uuids)
+            except Exception:
+                pass  # Skip properties that raise exceptions
+
+    def _apply_field_aliases(self, result: Dict) -> Dict:
+        """Apply field aliases for serialization."""
+        aliased_result = {}
+        for k, v in result.items():
+            if k in BIG_6_FIELDS:
+                aliased_result[k] = v
+                continue
+            f = next((f for f in fields(type(self)) if f.name == k), None)
+            alias = f.metadata.get('alias') if f else None
+            aliased_result[alias if alias else k] = v
+        return aliased_result
+
     def as_dict(self, convert_datetime_to_iso_string: bool = False, convert_uuids: bool = True, export_properties: bool = True) -> Dict[str, Any]:
         """
         Convert this model to a dictionary.
@@ -338,234 +441,206 @@ class VersionedModel:
         result = {k: v for k, v in self.__dict__.items() if k in self.fields()}
         keys_to_remove = []
 
-        for k, v in result.items():
+        for k, v in result.copy().items():
             f = next((f for f in fields(type(self)) if f.name == k), None)
-
-            if f.metadata.get('field_type') == 'm2m_list':
-                if v is None:
-                    keys_to_remove.append(k)
-                elif isinstance(v, list):
-                    result[k] = [obj.as_dict(
-                        convert_datetime_to_iso_string) for obj in v]
-
-            elif f.metadata.get('field_type') in ['record_id', 'entity_id']:
-                # Handle references or nested versioned models
-                if isinstance(v, VersionedModel):
-                    result[k] = {'entity_id': str(v.entity_id)} if v._is_partial else v.as_dict(
-                        convert_datetime_to_iso_string)
-                elif isinstance(v, UUID):
-                    result[k] = str(v) if convert_uuids else v
-                elif isinstance(v, list) and all(isinstance(i, UUID) for i in v):
-                    result[k] = [str(i) if convert_uuids else i for i in v]
-                elif is_dataclass(v):
-                    result[k] = v.as_dict(
-                        convert_datetime_to_iso_string, convert_uuids) if hasattr(v, 'as_dict') else v
-                elif isinstance(v, dict):
-                    result[k] = str(v.get('entity_id')
-                                    ) if convert_uuids else v.get('entity_id')
-
-            if convert_datetime_to_iso_string and isinstance(v, datetime):
-                result[k] = v.isoformat()
-            if convert_uuids and isinstance(v, UUID):
-                result[k] = str(v)
-            # Convert enum values to their string representation
-            if isinstance(v, Enum):
-                result[k] = v.value
-
-            # Convert dataclass fields with 'model' metadata
-            f = next((f for f in fields(type(self)) if f.name == k), None)
-            if f and f.metadata.get('model') and v is not None:
-                model_class = f.metadata['model']
-                if isinstance(v, list):
-                    # Handle list of dataclass objects
-                    result[k] = [
-                        obj.__dict__ if is_dataclass(obj) else obj
-                        for obj in v
-                    ]
-                elif is_dataclass(v):
-                    # Handle single dataclass object
-                    result[k] = v.__dict__
+            converted = self._process_field_for_dict(v, f, convert_datetime_to_iso_string, convert_uuids)
+            if converted is None and f and f.metadata.get('field_type') == 'm2m_list':
+                keys_to_remove.append(k)
+            else:
+                result[k] = converted
 
         for k in keys_to_remove:
             result.pop(k, None)
 
-        # Handle extra fields - unwrap them into the result dict
         if hasattr(self, 'extra') and self.extra:
-            for extra_key, extra_value in self.extra.items():
-                result[extra_key] = extra_value
-
-        # Remove the 'extra' field itself from the result
+            result.update(self.extra)
         result.pop('extra', None)
 
-        # Export properties if requested
         if export_properties:
-            for attr_name in dir(type(self)):
-                # Skip private attributes and methods
-                if attr_name.startswith('_'):
-                    continue
+            self._export_properties_to_dict(result, convert_datetime_to_iso_string, convert_uuids)
 
-                # Get the attribute from the class
-                attr = getattr(type(self), attr_name, None)
+        return self._apply_field_aliases(result)
 
-                # Check if it's a property
-                if isinstance(attr, property):
-                    # Skip if it's already in the result (from regular fields)
-                    if attr_name not in result:
-                        try:
-                            # Get the property value
-                            prop_value = getattr(self, attr_name)
+    @classmethod
+    def _build_alias_mapping(cls) -> Dict[str, str]:
+        """Build a mapping from field aliases to field names."""
+        return {f.metadata['alias']: f.name for f in fields(cls)
+                if f.name not in BIG_6_FIELDS and f.metadata.get('alias')}
 
-                            # Apply the same conversions as regular fields
-                            if convert_datetime_to_iso_string and isinstance(prop_value, datetime):
-                                prop_value = prop_value.isoformat()
-                            if convert_uuids and isinstance(prop_value, UUID):
-                                prop_value = str(prop_value)
-                            if isinstance(prop_value, Enum):
-                                prop_value = prop_value.value
+    @classmethod
+    def _convert_aliased_data(cls, data: Dict[str, Any], alias_to_field: Dict[str, str]) -> Dict[str, Any]:
+        """Convert aliased keys back to field names."""
+        return {alias_to_field.get(k, k): v for k, v in data.items()}
 
-                            result[attr_name] = prop_value
-                        except Exception:
-                            # Skip properties that raise exceptions when accessed
-                            pass
+    @classmethod
+    def _convert_uuid_field(cls, k: str, v) -> Any:
+        """Convert a UUID field value."""
+        if not v or isinstance(v, UUID):
+            return v
+        try:
+            return UUID(v).hex
+        except ValueError:
+            logger.info(f"'{v}' is not a valid UUID.")
+            return v
 
-        # Apply field aliases for serialization (only for custom fields, not Big 6)
-        aliased_result = {}
-        for k, v in result.items():
-            if k not in BIG_6_FIELDS:
-                f = next((f for f in fields(type(self)) if f.name == k), None)
-                if f and f.metadata.get('alias'):
-                    # Use alias as the key in the output
-                    aliased_result[f.metadata['alias']] = v
-                else:
-                    # Use original field name
-                    aliased_result[k] = v
-            else:
-                # Big 6 fields always use original names
-                aliased_result[k] = v
+    @classmethod
+    def _convert_enum_or_datetime(cls, v, expected_type) -> Any:
+        """Convert string values to enum or datetime types."""
+        if not isinstance(v, str):
+            return v
 
-        return aliased_result
+        origin = get_origin(expected_type)
+        if origin is Union:
+            return cls._convert_union_type(v, get_args(expected_type))
+
+        if isinstance(expected_type, type) and issubclass(expected_type, Enum):
+            return cls._try_convert_enum(v, expected_type)
+
+        if expected_type is datetime:
+            return cls._try_convert_datetime(v)
+
+        return v
+
+    @classmethod
+    def _convert_union_type(cls, v: str, args) -> Any:
+        """Convert value for Union/Optional types."""
+        for arg in args:
+            if arg is type(None):
+                continue
+            if isinstance(arg, type) and issubclass(arg, Enum):
+                result = cls._try_convert_enum(v, arg)
+                if result != v:
+                    return result
+            if arg is datetime:
+                result = cls._try_convert_datetime(v)
+                if result != v:
+                    return result
+        return v
+
+    @classmethod
+    def _try_convert_enum(cls, v: str, enum_type) -> Any:
+        """Try to convert a string to an enum value."""
+        try:
+            return enum_type(v)
+        except ValueError:
+            return v
+
+    @classmethod
+    def _try_convert_datetime(cls, v: str) -> Any:
+        """Try to convert a string to a datetime value."""
+        try:
+            return isoparse(v)
+        except (ValueError, TypeError):
+            return v
+
+    @classmethod
+    def _convert_model_from_dict(cls, v, model_class) -> Any:
+        """Convert dict/list values to model instances."""
+        if isinstance(v, list):
+            return [model_class(**item) if isinstance(item, dict) else item for item in v]
+        if isinstance(v, dict):
+            return model_class(**v)
+        return v
+
+    @classmethod
+    def _collect_extra_data(cls, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Collect extra fields not in the model definition."""
+        model_fields = cls.fields()
+        extra_data = {k: v for k, v in data.items() if k not in model_fields and k != 'extra'}
+        if 'extra' in data and isinstance(data['extra'], dict):
+            extra_data.update(data['extra'])
+        return extra_data
+
+    @classmethod
+    def _filter_extra_data(cls, extra_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Filter out read-only properties from extra data."""
+        return {k: v for k, v in extra_data.items()
+                if not (isinstance(getattr(cls, k, None), property) and
+                        getattr(cls, k).fset is None)}
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "VersionedModel":
         """
         Load VersionedModel from dict
         """
-        # Handle field aliases for deserialization (only for custom fields, not Big 6)
-        # Create a mapping from alias to field name for custom fields
-        alias_to_field = {}
-        for f in fields(cls):
-            if f.name not in BIG_6_FIELDS and f.metadata.get('alias'):
-                alias_to_field[f.metadata['alias']] = f.name
-
-        # Convert aliased keys back to field names
-        converted_data = {}
-        for k, v in data.items():
-            if k in alias_to_field:
-                # Use the original field name
-                converted_data[alias_to_field[k]] = v
-            else:
-                # Use the key as-is
-                converted_data[k] = v
-
-        clean_data = {k: v for k, v in converted_data.items()
-                      if k in cls.fields()}
+        alias_to_field = cls._build_alias_mapping()
+        converted_data = cls._convert_aliased_data(data, alias_to_field)
+        clean_data = {k: v for k, v in converted_data.items() if k in cls.fields()}
         hints = get_type_hints(cls)
 
         for k, v in clean_data.items():
             if k in BIG_6_UUID_FIELDS:
-                try:
-                    clean_data[k] = UUID(
-                        v).hex if v and not isinstance(v, UUID) else v
-                except ValueError:
-                    logger.info(f"'{v}' is not a valid UUID.")
-
-            # Handle enum conversion from string values and datetime conversion from ISO strings
+                clean_data[k] = cls._convert_uuid_field(k, v)
             elif v is not None:
                 expected_type = hints.get(k)
                 if expected_type:
-                    # Handle Optional[EnumType] (Union[EnumType, None])
-                    origin = get_origin(expected_type)
-                    if origin is Union:
-                        args = get_args(expected_type)
-                        # Find the non-None type in the Union
-                        enum_type = next((arg for arg in args if arg is not type(
-                            None) and isinstance(arg, type) and issubclass(arg, Enum)), None)
-                        if enum_type and isinstance(v, str):
-                            try:
-                                clean_data[k] = enum_type(v)
-                            except ValueError:
-                                # If the string value doesn't match any enum value, leave as is
-                                pass
-                        # Find datetime type in the Union for Optional[datetime]
-                        datetime_type = next(
-                            (arg for arg in args if arg is datetime), None)
-                        if datetime_type and isinstance(v, str):
-                            try:
-                                clean_data[k] = isoparse(v)
-                            except (ValueError, TypeError):
-                                # If the string value can't be parsed as datetime, leave as is
-                                pass
-                    # Handle direct enum types
-                    elif isinstance(expected_type, type) and issubclass(expected_type, Enum) and isinstance(v, str):
-                        try:
-                            clean_data[k] = expected_type(v)
-                        except ValueError:
-                            # If the string value doesn't match any enum value, leave as is
-                            pass
-                    # Handle direct datetime types
-                    elif expected_type is datetime and isinstance(v, str):
-                        try:
-                            clean_data[k] = isoparse(v)
-                        except (ValueError, TypeError):
-                            # If the string value can't be parsed as datetime, leave as is
-                            pass
+                    clean_data[k] = cls._convert_enum_or_datetime(v, expected_type)
 
-                # Handle dataclass conversion from dict values
                 f = next((f for f in fields(cls) if f.name == k), None)
                 if f and f.metadata.get('model') and isinstance(v, (dict, list)):
-                    model_class = f.metadata['model']
-                    if isinstance(v, list):
-                        # Handle list of dict objects -> list of dataclass objects
-                        clean_data[k] = [
-                            model_class(**item) if isinstance(item,
-                                                              dict) else item
-                            for item in v
-                        ]
-                    elif isinstance(v, dict):
-                        # Handle single dict object -> dataclass object
-                        clean_data[k] = model_class(**v)
+                    clean_data[k] = cls._convert_model_from_dict(v, f.metadata['model'])
 
-        # Handle extra fields if the model allows them
-        extra_data = {}
-        if getattr(cls, 'allow_extra', False):
-            # Collect fields that are not in the model definition
-            model_fields = cls.fields()
-            for k, v in data.items():
-                if k not in model_fields and k != 'extra':  # Don't include 'extra' itself
-                    extra_data[k] = v
-
-            # Also handle explicit 'extra' field from data
-            if 'extra' in data and isinstance(data['extra'], dict):
-                extra_data.update(data['extra'])
-
-        # Create the instance
         instance = cls(**clean_data)
 
-        # Set extra fields directly (not nested), but skip calculated properties
-        if extra_data:
-            filtered_extra_data = {}
-            for k, v in extra_data.items():
-                # Check if this is a calculated property (property without setter)
-                attr = getattr(cls, k, None)
-                if isinstance(attr, property) and attr.fset is None:
-                    # This is a calculated property (read-only), skip setting it
-                    continue
-                filtered_extra_data[k] = v
-
-            # Replace the entire extra dict to avoid nesting
-            instance.extra = filtered_extra_data
+        if getattr(cls, 'allow_extra', False):
+            extra_data = cls._collect_extra_data(data)
+            if extra_data:
+                instance.extra = cls._filter_extra_data(extra_data)
 
         return instance
+
+    def _run_field_validator(self, name: str, errors: list):
+        """Run custom field validator if defined."""
+        validator = getattr(self, f"validate_{name}", None)
+        if callable(validator):
+            error = validator()
+            if error:
+                errors.append(error)
+
+    def _validate_union_type(self, name: str, value, args, castable: set, errors: list):
+        """Validate a field with Union type."""
+        if value is None and type(None) in args:
+            return
+        for arg in sorted(args, key=lambda x: 0 if x in castable else 1):
+            if self._try_cast_value(name, value, arg, castable):
+                return
+        errors.append(f"Invalid type for '{name}': expected {args}, got {type(value).__name__}")
+
+    def _try_cast_value(self, name: str, value, arg, castable: set) -> bool:
+        """Try to cast a value to the specified type."""
+        try:
+            if isinstance(value, arg):
+                return True
+            if arg in castable or (isinstance(arg, type) and issubclass(arg, Enum)):
+                setattr(self, name, arg(value))
+                return True
+        except Exception:
+            pass
+        return False
+
+    def _validate_simple_type(self, name: str, value, expected, castable: set, errors: list):
+        """Validate a field with a simple (non-Union) type."""
+        if value is None:
+            errors.append(f"Invalid type for '{name}': expected {expected.__name__}, got NoneType")
+            return
+        if isinstance(value, expected):
+            return
+        if self._try_convert_simple_type(name, value, expected, castable):
+            return
+        errors.append(f"Invalid type for '{name}': expected {expected.__name__}, got {type(value).__name__}")
+
+    def _try_convert_simple_type(self, name: str, value, expected, castable: set) -> bool:
+        """Try to convert a value to the expected simple type."""
+        try:
+            if expected in castable or issubclass(expected, Enum):
+                setattr(self, name, expected(value))
+                return True
+            if isinstance(value, UUID) and expected is str:
+                setattr(self, name, value.hex)
+                return True
+        except Exception:
+            pass
+        return False
 
     def validate(self):
         """
@@ -579,47 +654,16 @@ class VersionedModel:
         for name in self.fields():
             value = getattr(self, name)
             expected = hints.get(name)
-            validator = getattr(self, f"validate_{name}", None)
-            if callable(validator):
-                error = validator()
-                if error:
-                    errors.append(error)
+            self._run_field_validator(name, errors)
 
             if not getattr(type(self), 'use_type_checking', False):
                 continue
 
             origin = get_origin(expected)
-            args = get_args(expected)
-
             if origin is Union:
-                if value is None and type(None) in args:
-                    continue
-                for arg in sorted(args, key=lambda x: 0 if x in castable else 1):
-                    try:
-                        if isinstance(value, arg):
-                            break
-                        if arg in castable or issubclass(arg, Enum):
-                            setattr(self, name, arg(value))
-                            break
-                    except Exception:
-                        continue
-                else:
-                    errors.append(
-                        f"Invalid type for '{name}': expected {args}, got {type(value).__name__}")
-            elif value is None:
-                errors.append(
-                    f"Invalid type for '{name}': expected {expected.__name__}, got NoneType")
-            elif not isinstance(value, expected):
-                try:
-                    if expected in castable or issubclass(expected, Enum):
-                        setattr(self, name, expected(value))
-                    elif isinstance(value, UUID) and expected is str:
-                        setattr(self, name, value.hex)
-                    else:
-                        raise TypeError
-                except Exception:
-                    errors.append(
-                        f"Invalid type for '{name}': expected {expected.__name__}, got {type(value).__name__}")
+                self._validate_union_type(name, value, get_args(expected), castable, errors)
+            else:
+                self._validate_simple_type(name, value, expected, castable, errors)
 
         if errors:
             raise ModelValidationError(errors)

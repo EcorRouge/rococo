@@ -31,6 +31,28 @@ class NonVersionedModel:
         # Show entity_id and class name
         return f"{type(self).__name__}(entity_id={self.entity_id})"
 
+    def _convert_value(self, value, convert_datetime_to_iso_string: bool,
+                        convert_uuids: bool):
+        """Helper to convert a single value for as_dict."""
+        if is_dataclass(value):
+            return value.as_dict(convert_datetime_to_iso_string, convert_uuids)
+        if isinstance(value, UUID):
+            return str(value) if convert_uuids else value
+        if isinstance(value, datetime) and convert_datetime_to_iso_string:
+            return value.isoformat()
+        return value
+
+    def _convert_list_value(self, value, convert_datetime_to_iso_string: bool,
+                            convert_uuids: bool):
+        """Helper to convert list values for as_dict."""
+        if not value:
+            return value
+        if all(isinstance(i, UUID) for i in value):
+            return [str(i) if convert_uuids else i for i in value]
+        if all(is_dataclass(i) for i in value):
+            return [i.as_dict(convert_datetime_to_iso_string, convert_uuids) for i in value]
+        return value
+
     def as_dict(self, convert_datetime_to_iso_string: bool = False,
                 convert_uuids: bool = True) -> Dict[str, Any]:
         """
@@ -40,26 +62,12 @@ class NonVersionedModel:
         for f in fields(self):
             name = f.name
             value = getattr(self, name)
-            # If it’s a nested dataclass, call its as_dict()
-            if is_dataclass(value):
-                result[name] = value.as_dict(
-                    convert_datetime_to_iso_string, convert_uuids)
-            elif isinstance(value, list):
-                # If list of dataclasses or UUIDs, convert accordingly
-                if value and all(isinstance(i, UUID) for i in value):
-                    result[name] = [
-                        str(i) if convert_uuids else i for i in value]
-                elif value and all(is_dataclass(i) for i in value):
-                    result[name] = [
-                        i.as_dict(convert_datetime_to_iso_string, convert_uuids) for i in value]
-                else:
-                    result[name] = value
-            elif isinstance(value, UUID):
-                result[name] = str(value) if convert_uuids else value
-            elif isinstance(value, datetime) and convert_datetime_to_iso_string:
-                result[name] = value.isoformat()
+            if isinstance(value, list):
+                result[name] = self._convert_list_value(
+                    value, convert_datetime_to_iso_string, convert_uuids)
             else:
-                result[name] = value
+                result[name] = self._convert_value(
+                    value, convert_datetime_to_iso_string, convert_uuids)
         return result
 
     def get_for_db(self) -> Dict[str, Any]:
@@ -80,10 +88,11 @@ class NonVersionedModel:
         """
         No-op for non-versioned—override in subclass if needed.
         """
-        return
+        # No validation required for base non-versioned model
 
-    def prepare_for_save(self, changed_by_id: UUID = None):
+    def prepare_for_save(self):
         """
         No version fields to bump; simply call validate if you want.
+        Note: Non-versioned models do not track changed_by_id.
         """
         self.validate()

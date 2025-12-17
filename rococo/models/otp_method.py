@@ -3,6 +3,7 @@ OtpMethod model
 """
 
 from dataclasses import dataclass, field
+from typing import Optional
 
 from . import VersionedModel
 
@@ -11,7 +12,7 @@ from . import VersionedModel
 class OtpMethod(VersionedModel):
     """An OTP method model."""
 
-    person_id: str = None
-    secret: str = None
-    name: str = None
+    person_id: Optional[str] = None
+    secret: Optional[str] = None
+    name: Optional[str] = None
     enabled: bool = False

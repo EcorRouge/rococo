@@ -1,28 +1,29 @@
 # Models
 from dataclasses import field, dataclass
+from typing import Optional
 from lib_rococo.rococo.repositories.postgresql import PostgreSQLRepository
 from lib_rococo.rococo.models import VersionedModel
 from lib_rococo.rococo.data import PostgreSQLAdapter
 
 @dataclass
 class Email(VersionedModel):
-    email_address: str = None
+    email_address: Optional[str] = None
 
 @dataclass
 class LoginMethod(VersionedModel):
-    email_id: str = None  # Stores the entity_id of an object of Email class.
-    method_type: str = None
+    email_id: Optional[str] = None  # Stores the entity_id of an object of Email class.
+    method_type: Optional[str] = None
 
 @dataclass
 class Person(VersionedModel):
-    login_method_id: str = None  # Stores the entity_id of an object of LoginMethod class.
-    name: str = None
+    login_method_id: Optional[str] = None  # Stores the entity_id of an object of LoginMethod class.
+    name: Optional[str] = None
     
 
 @dataclass
 class Organization(VersionedModel):
-    person_id: str = None  # Stores the entity_id of an object of Person class.
-    name: str = None
+    person_id: Optional[str] = None  # Stores the entity_id of an object of Person class.
+    name: Optional[str] = None
 
 
 def get_db_connection():

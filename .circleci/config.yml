@@ -88,6 +88,10 @@ workflows:
       - test-python:
           context:
             - sonarqube
+          filters:
+            branches:
+              only:
+                - ilyaskarim-roc-93
       - build-package:
           requires:
             - test-python

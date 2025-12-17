@@ -88,10 +88,6 @@ workflows:
       - test-python:
           context:
             - sonarqube
-          filters:
-            branches:
-              only:
-                - ilyaskarim-roc-93-fix-data-init
       - build-package:
           requires:
             - test-python

@@ -9,27 +9,28 @@ from typing import Any, Dict, List, Type, Union
 from rococo.data import MySqlAdapter
 from rococo.messaging import MessageAdapter
 from rococo.models import VersionedModel
-from rococo.models.versioned_model import BaseModel
 from rococo.repositories import BaseRepository
 
 
 class MySqlRepository(BaseRepository):
     """MySqlRepository class"""
 
+    CAMEL_TO_SNAKE_PATTERN = r'(?<!^)(?=[A-Z])'
+
     def __init__(
             self,
             db_adapter: MySqlAdapter,
-            model: Type[BaseModel],
+            model: Type[VersionedModel],
             message_adapter: MessageAdapter,
             queue_name: str,
             user_id: UUID = None
     ):
         super().__init__(db_adapter, model, message_adapter, queue_name, user_id=user_id)
         self.table_name = re.sub(
-            r'(?<!^)(?=[A-Z])', '_', model.__name__).lower()
+            self.CAMEL_TO_SNAKE_PATTERN, '_', model.__name__).lower()
         self.model()
 
-    def _process_data_before_save(self, instance: BaseModel):
+    def _process_data_before_save(self, instance: VersionedModel):
         # Step 1: Call prepare_for_save on the instance.
         # This updates version, changed_on, previous_version, changed_by_id on the instance.
         instance.prepare_for_save(changed_by_id=self.user_id)
@@ -76,71 +77,73 @@ class MySqlRepository(BaseRepository):
 
         return formatted_data_for_adapter
 
+    def _handle_nested_str_field(self, data, field, field_model_class, field_table_name, field_value):
+        if field.name == 'entity_id':
+            data[field.name] = UUID(field_value).hex
+        else:
+            field_data = {'entity_id': field_value}
+            for _field in fields(field_model_class):
+                joined_key = f'joined_{field.name}_{field_table_name}_{_field.name}'
+                if joined_key in data:
+                    field_data[_field.name] = data[joined_key]
+            for data_field, data_value in data.items():
+                if data_field.startswith('joined_'):
+                    field_data[data_field] = data_value
+
+            data[field.name] = self._process_record_recursive(
+                field_data, field_model_class)
+
+    def _handle_entity_id_field(self, data, field, model):
+        field_model_class = field.metadata.get(
+            'relationship', {}).get('model') or model
+        field_table_name = re.sub(
+            self.CAMEL_TO_SNAKE_PATTERN, '_', field_model_class.__name__).lower()
+
+        field_value = data[field.name]
+
+        if isinstance(field_value, list):
+            data[field.name] = [self._process_record_recursive(
+                obj, field_model_class) for obj in field_value]
+        elif isinstance(field_value, dict):
+            data[field.name] = self._process_record_recursive(
+                field_value, field_model_class)
+        elif isinstance(field_value, str):
+            self._handle_nested_str_field(data, field, field_model_class, field_table_name, field_value)
+        elif isinstance(field_value, UUID):
+            # Already a UUID object, no action needed
+            pass
+        else:
+            raise NotImplementedError
+
+    def _process_record_recursive(self, data: dict, model):
+        """Helper method to process a record recursively."""
+        model()
+        is_partial = not all(
+            _field.name in data for _field in fields(model))
+        for field in fields(model):
+            if data.get(field.name) is None:
+                continue
+
+            if field.metadata.get('field_type') == 'entity_id':
+                self._handle_entity_id_field(data, field, model)
+        record = model.from_dict(data)
+        record._is_partial = is_partial
+        return record
+
     def _process_data_from_db(self, data):
         """Method to convert data dictionary fetched from MySQL to a VersionedModel instance."""
-
-        def _process_record(data: dict, model):
-            model()
-            is_partial = not all(
-                _field.name in data for _field in fields(model))
-            for field in fields(model):
-                if data.get(field.name) is None:
-                    continue
-
-                if field.metadata.get('field_type') == 'entity_id':
-                    field_model_class = field.metadata.get(
-                        'relationship', {}).get('model') or model
-                    field_table_name = re.sub(
-                        r'(?<!^)(?=[A-Z])', '_', field_model_class.__name__).lower()
-
-                    field_value = data[field.name]
-
-                    if isinstance(field_value, list):
-                        data[field.name] = [_process_record(
-                            obj, field_model_class) for obj in field_value]
-                    elif isinstance(field_value, dict):
-                        data[field.name] = _process_record(
-                            field_value, field_model_class)
-                    elif isinstance(field_value, str):
-                        if field.name == 'entity_id':
-                            data[field.name] = UUID(field_value).hex
-                        else:
-                            field_data = {'entity_id': field_value}
-                            for _field in fields(field_model_class):
-                                if f'joined_{field.name}_{field_table_name}_{_field.name}' in data:
-                                    field_data[_field.name] = data[
-                                        f'joined_{field.name}_{field_table_name}_{_field.name}']
-                            for data_field, data_value in data.items():
-                                if data_field.startswith('joined_'):
-                                    field_data[data_field] = data_value
-
-                            data[field.name] = _process_record(
-                                field_data, field_model_class)
-                    elif isinstance(field_value, UUID):
-                        pass
-                    else:
-                        raise NotImplementedError
-            record = model.from_dict(data)
-            record._is_partial = is_partial
-            return record
-
         if data is None:
             return None
         elif isinstance(data, list):
             for record in data:
-                _process_record(record, self.model)
+                self._process_record_recursive(record, self.model)
         elif isinstance(data, dict):
-            _process_record(data, self.model)
+            self._process_record_recursive(data, self.model)
         else:
             raise NotImplementedError
 
-    def get_one(self, conditions: Dict[str, Any] = None, join_fields: List[str] = None,
-                additional_fields: List[str] = None) -> Union[BaseModel, None]:
-        """get one"""
-
-        if additional_fields is None:
-            additional_fields = []
-
+    def _build_join_statements(self, join_fields: List[str], additional_fields: List[str]) -> List[str]:
+        """Helper method to build join statements."""
         join_stmt_list = []
         if join_fields:
             joined_fields = {}
@@ -148,67 +151,84 @@ class MySqlRepository(BaseRepository):
                 if '.' in field_name:
                     parent_field, child_field = field_name.rsplit('.', 1)
                     if parent_field not in joined_fields:
-                        raise Exception(
-                            f"Parent field {parent_field} needs to be joined before joining {child_field} field. Raised while joining {field_name} for model {self.model.__name__}.")
+                        raise ValueError(
+                            f"Parent field {parent_field} needs to be joined before joining {child_field} field. "
+                            f"Raised while joining {field_name} for model {self.model.__name__}.")
                     parent_model = joined_fields[parent_field]
                 else:
                     parent_model = self.model
                     child_field = field_name
+                
                 parent_table_name = re.sub(
-                    r'(?<!^)(?=[A-Z])', '_', parent_model.__name__).lower()
+                    self.CAMEL_TO_SNAKE_PATTERN, '_', parent_model.__name__).lower()
+                
                 join_field = next((field for field in fields(
                     parent_model) if field.name == child_field), None)
+                
                 if join_field is None or join_field.metadata.get('field_type') != 'entity_id':
-                    raise Exception(
+                    raise ValueError(
                         f"Invalid join field {child_field} specified for model {parent_model.__name__}.")
+                
                 join_model = join_field.metadata.get(
                     'relationship').get('model')
                 join_table_name = re.sub(
-                    r'(?<!^)(?=[A-Z])', '_', join_model.__name__).lower()
-                join_condition = f'INNER JOIN {join_table_name} ON {parent_table_name}.{child_field}={join_table_name}.entity_id'
-                if issubclass(join_model, VersionedModel):
-                    join_condition += f' AND {join_table_name}.active=true'
-                join_stmt_list.append(join_condition)
+                    self.CAMEL_TO_SNAKE_PATTERN, '_', join_model.__name__).lower()
+                
+                join_stmt_list.append(
+                    f'INNER JOIN {join_table_name} ON {parent_table_name}.{child_field}={join_table_name}.entity_id '
+                    f'AND {join_table_name}.active=true')
+                
                 join_field_list = [
                     f'{join_table_name}.{_field.name} AS joined_{child_field}_{join_table_name}_{_field.name}' for
                     _field in fields(join_model)]
-                additional_fields += join_field_list
+                additional_fields.extend(join_field_list)
                 joined_fields[field_name] = join_model
+        return join_stmt_list
 
+    def _format_single_condition_value(self, v):
+        """Helper method to separate format logic"""
+        if isinstance(v, VersionedModel):
+            return str(v.entity_id).replace('-', '')
+        elif isinstance(v, (str, UUID)):
+            return str(v).replace('-', '')
+        else:
+            raise NotImplementedError
+
+    def _format_condition_value(self, value):
+        """Helper method to format condition values."""
+        if isinstance(value, list):
+            if len(value) == 0:
+                raise NotImplementedError(
+                    "Filtering an attribute with an empty list is not supported.")
+            return [self._format_single_condition_value(v) for v in value]
+        elif value is None:
+            return None
+        else:
+            return self._format_single_condition_value(value)
+
+    def _process_conditions(self, conditions: Dict[str, Any]):
+        """Helper method to process query conditions."""
         if conditions:
             for condition_name, value in conditions.copy().items():
                 condition_field = next((field for field in fields(
                     self.model) if field.name == condition_name), None)
+                
                 if condition_field and condition_field.metadata.get('field_type') == 'entity_id':
-                    if isinstance(value, BaseModel):
-                        conditions[condition_name] = str(
-                            value.entity_id).replace('-', '')
-                    elif isinstance(value, (str, UUID)):
-                        conditions[condition_name] = str(
-                            value).replace('-', '')
-                    elif isinstance(value, list):
-                        # Handle list
-                        if len(value) == 0:
-                            raise NotImplementedError(
-                                "Filtering an attribute with an empty list is not supported.")
-                        conditions[condition_name] = []
-                        for v in value:
-                            if isinstance(v, BaseModel):
-                                conditions[condition_name].append(
-                                    str(v.entity_id).replace('-', ''))
-                            elif isinstance(v, (str, UUID)):
-                                conditions[condition_name].append(
-                                    str(v).replace('-', ''))
-                            else:
-                                raise NotImplementedError
-                    elif value is None:
-                        conditions[condition_name] = None
-                    else:
-                        raise NotImplementedError
+                    conditions[condition_name] = self._format_condition_value(value)
+
+    def get_one(self, conditions: Dict[str, Any] = None, join_fields: List[str] = None,
+                additional_fields: List[str] = None) -> Union[VersionedModel, None]:
+        """get one"""
+
+        if additional_fields is None:
+            additional_fields = []
+
+        join_stmt_list = self._build_join_statements(join_fields, additional_fields)
+        self._process_conditions(conditions)
 
         data = self._execute_within_context(
             self.adapter.get_one, self.table_name, conditions, join_statements=join_stmt_list,
-            additional_fields=additional_fields, is_versioned=self._is_versioned_model()
+            additional_fields=additional_fields
         )
 
         # Calls __post_init__ of model to import related models and update fields.
@@ -228,79 +248,16 @@ class MySqlRepository(BaseRepository):
             sort: List[tuple] = None,
             limit: int = None,
             offset: int = None
-    ) -> List[BaseModel]:
+    ) -> List[VersionedModel]:
         """get many"""
         if additional_fields is None:
             additional_fields = []
 
-        join_stmt_list = []
-        if join_fields:
-            joined_fields = {}
-            for field_name in join_fields:
-                if '.' in field_name:
-                    parent_field, child_field = field_name.rsplit('.', 1)
-                    if parent_field not in joined_fields:
-                        raise Exception(
-                            f"Parent field {parent_field} needs to be joined before joining {child_field} field. Raised while joining {field_name} for model {self.model.__name__}.")
-                    parent_model = joined_fields[parent_field]
-                else:
-                    parent_model = self.model
-                    child_field = field_name
-                parent_table_name = re.sub(
-                    r'(?<!^)(?=[A-Z])', '_', parent_model.__name__).lower()
-                join_field = next((field for field in fields(
-                    parent_model) if field.name == child_field), None)
-                if join_field is None or join_field.metadata.get('field_type') != 'entity_id':
-                    raise Exception(
-                        f"Invalid join field {child_field} specified for model {parent_model.__name__}.")
-                join_model = join_field.metadata.get(
-                    'relationship').get('model')
-                join_table_name = re.sub(
-                    r'(?<!^)(?=[A-Z])', '_', join_model.__name__).lower()
-                join_condition = f'INNER JOIN {join_table_name} ON {parent_table_name}.{child_field}={join_table_name}.entity_id'
-                if issubclass(join_model, VersionedModel):
-                    join_condition += f' AND {join_table_name}.active=true'
-                join_stmt_list.append(join_condition)
-                join_field_list = [
-                    f'{join_table_name}.{_field.name} AS joined_{child_field}_{join_table_name}_{_field.name}' for
-                    _field in fields(join_model)]
-                additional_fields += join_field_list
-                joined_fields[field_name] = join_model
-
-        if conditions:
-            for condition_name, value in conditions.copy().items():
-                condition_field = next((field for field in fields(
-                    self.model) if field.name == condition_name), None)
-                if condition_field and condition_field.metadata.get('field_type') == 'entity_id':
-                    if isinstance(value, BaseModel):
-                        conditions[condition_name] = str(
-                            value.entity_id).replace('-', '')
-                    elif isinstance(value, (str, UUID)):
-                        conditions[condition_name] = str(
-                            value).replace('-', '')
-                    elif isinstance(value, list):
-                        # Handle list
-                        if len(value) == 0:
-                            raise NotImplementedError(
-                                "Filtering an attribute with an empty list is not supported.")
-                        conditions[condition_name] = []
-                        for v in value:
-                            if isinstance(v, BaseModel):
-                                conditions[condition_name].append(
-                                    str(v.entity_id).replace('-', ''))
-                            elif isinstance(v, (str, UUID)):
-                                conditions[condition_name].append(
-                                    str(v).replace('-', ''))
-                            else:
-                                raise NotImplementedError
-                    elif value is None:
-                        conditions[condition_name] = None
-                    else:
-                        raise NotImplementedError
+        join_stmt_list = self._build_join_statements(join_fields, additional_fields)
+        self._process_conditions(conditions)
 
         records = self._execute_within_context(
-            self.adapter.get_many, self.table_name, conditions, sort, limit, offset,
-            active=self._is_versioned_model(), join_statements=join_stmt_list,
+            self.adapter.get_many, self.table_name, conditions, sort, limit, offset, join_statements=join_stmt_list,
             additional_fields=additional_fields
         )
 

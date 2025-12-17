@@ -39,6 +39,9 @@ class SqsConnection(MessageAdapter):
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
+        """
+        Closes the connection to the SQS queue.
+        """
         pass
 
     def _read_consume_config(self):

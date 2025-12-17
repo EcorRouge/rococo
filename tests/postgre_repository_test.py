@@ -590,15 +590,895 @@ def test_get_many_with_fetch_related(mock_fetch_related, repository, mock_adapte
 def test_get_count_no_query_no_index(repository, mock_adapter):
     # Default conditions
     expected_db_conditions = {'latest': True, 'active': True}
-    
+
     mock_adapter.get_count.return_value = 10
-    
+
     # Call without args
     count = repository.get_count()
-    
+
     assert count == 10
     mock_adapter.get_count.assert_called_once_with(
         repository.table_name,
         expected_db_conditions,
         options=None
     )
+
+
+# High Priority Tests: fetch_related_entities_for_field()
+
+
+def test_fetch_related_one_to_many_relationship(repository, mock_adapter, model_instance):
+    """Test fetch_related with one_to_many relationship type"""
+    # Setup: Create mock field metadata with one_to_many relationship
+    related_id = uuid4()
+    model_instance.related_item_id = related_id
+
+    # Mock related model
+    class RelatedModel(VersionedModel):
+        pass
+
+    # Mock the adapter to return multiple related records
+    related_record_1 = {'entity_id': str(uuid4()), 'name': 'Related 1'}
+    related_record_2 = {'entity_id': str(uuid4()), 'name': 'Related 2'}
+    mock_adapter.get_many.return_value = [related_record_1, related_record_2]
+
+    # Mock the metadata for the field
+    with patch('rococo.repositories.postgresql.postgresql_repository.fields') as mock_fields_func:
+        from dataclasses import Field
+        mock_field = Field(default=None, default_factory=None, init=True, repr=True,
+                          hash=None, compare=True, metadata={
+                              'field_type': 'entity_id',
+                              'relationship': {
+                                  'model': RelatedModel,
+                                  'relation_type': 'one_to_many'
+                              }
+                          }, kw_only=False)
+        mock_field.name = 'related_item_id'
+        mock_fields_func.return_value = [mock_field]
+
+        # Call fetch_related_entities_for_field
+        result = repository.fetch_related_entities_for_field(
+            model_instance, 'related_item_id'
+        )
+
+    # Verify result is a list of related models
+    assert isinstance(result, list)
+    assert len(result) == 2
+
+    # Verify adapter was called with correct conditions
+    mock_adapter.get_many.assert_called_once()
+    call_args = mock_adapter.get_many.call_args
+    assert call_args[0][0] == 'related_model'  # Table name
+    # Note: _adjust_conditions only converts UUID lists, not single UUIDs
+    assert call_args[0][1] == {'entity_id': related_id}  # Single UUID not converted
+
+
+def test_fetch_related_many_to_many_relationship(repository, mock_adapter, model_instance):
+    """Test fetch_related with many_to_many relationship type"""
+    # Setup: Create list of related IDs
+    related_ids = [uuid4(), uuid4()]
+    model_instance.related_items_ids = related_ids
+
+    # Mock related model
+    class RelatedItemModel(VersionedModel):
+        pass
+
+    # Mock adapter to return multiple records
+    related_records = [
+        {'entity_id': str(related_ids[0]), 'name': 'Item 1'},
+        {'entity_id': str(related_ids[1]), 'name': 'Item 2'}
+    ]
+    mock_adapter.get_many.return_value = related_records
+
+    # Mock field metadata
+    with patch('rococo.repositories.postgresql.postgresql_repository.fields') as mock_fields_func:
+        from dataclasses import Field
+        mock_field = Field(default=None, default_factory=None, init=True, repr=True,
+                          hash=None, compare=True, metadata={
+                              'field_type': 'entity_id',
+                              'relationship': {
+                                  'model': RelatedItemModel,
+                                  'relation_type': 'many_to_many'
+                              }
+                          }, kw_only=False)
+        mock_field.name = 'related_items_ids'
+        mock_fields_func.return_value = [mock_field]
+
+        result = repository.fetch_related_entities_for_field(
+            model_instance, 'related_items_ids'
+        )
+
+    # Verify result
+    assert isinstance(result, list)
+    assert len(result) == 2
+
+    # Verify adapter called with adjusted conditions (UUIDs converted to strings)
+    mock_adapter.get_many.assert_called_once()
+    call_args = mock_adapter.get_many.call_args
+    assert call_args[0][1] == {'entity_id': [str(related_ids[0]), str(related_ids[1])]}
+
+
+def test_fetch_related_single_relationship(repository, mock_adapter, model_instance):
+    """Test fetch_related with single (default) relationship type"""
+    related_id = uuid4()
+    model_instance.related_item_id = related_id
+
+    class RelatedModel(VersionedModel):
+        pass
+
+    # Mock adapter to return single record
+    related_record = {'entity_id': str(related_id), 'name': 'Single Related'}
+    mock_adapter.get_one.return_value = related_record
+
+    # Mock field metadata without relation_type (defaults to single)
+    with patch('rococo.repositories.postgresql.postgresql_repository.fields') as mock_fields_func:
+        from dataclasses import Field
+        mock_field = Field(default=None, default_factory=None, init=True, repr=True,
+                          hash=None, compare=True, metadata={
+                              'field_type': 'entity_id',
+                              'relationship': {
+                                  'model': RelatedModel
+                                  # No relation_type, should default to single
+                              }
+                          }, kw_only=False)
+        mock_field.name = 'related_item_id'
+        mock_fields_func.return_value = [mock_field]
+
+        result = repository.fetch_related_entities_for_field(
+            model_instance, 'related_item_id'
+        )
+
+    # Verify result is a single model instance (not a list)
+    assert isinstance(result, RelatedModel)
+
+    # Verify adapter.get_one was called
+    mock_adapter.get_one.assert_called_once()
+
+
+def test_fetch_related_none_value_returns_none(repository, mock_adapter, model_instance):
+    """Test fetch_related returns None when field value is None"""
+    # Set the related field to None
+    model_instance.related_item_id = None
+
+    result = repository.fetch_related_entities_for_field(
+        model_instance, 'related_item_id'
+    )
+
+    # Should return None without calling adapter
+    assert result is None
+    mock_adapter.get_one.assert_not_called()
+    mock_adapter.get_many.assert_not_called()
+
+
+def test_fetch_related_empty_list_returns_none(repository, mock_adapter, model_instance):
+    """Test fetch_related returns None when field value is empty list"""
+    # Set the related field to empty list
+    model_instance.related_items_ids = []
+
+    result = repository.fetch_related_entities_for_field(
+        model_instance, 'related_items_ids'
+    )
+
+    # Should return None without calling adapter
+    assert result is None
+    mock_adapter.get_one.assert_not_called()
+    mock_adapter.get_many.assert_not_called()
+
+
+def test_fetch_related_missing_field_metadata(repository, mock_adapter, model_instance):
+    """Test fetch_related returns None when field has no metadata"""
+    model_instance.related_item_id = uuid4()
+
+    # Mock fields to return field without any metadata
+    with patch('rococo.repositories.postgresql.postgresql_repository.fields') as mock_fields_func:
+        from dataclasses import Field
+        mock_field = Field(default=None, default_factory=None, init=True, repr=True,
+                          hash=None, compare=True, metadata={},  # Empty metadata
+                          kw_only=False)
+        mock_field.name = 'related_item_id'
+        mock_fields_func.return_value = [mock_field]
+
+        result = repository.fetch_related_entities_for_field(
+            model_instance, 'related_item_id'
+        )
+
+    # Should return None since no metadata exists
+    assert result is None
+    mock_adapter.get_one.assert_not_called()
+    mock_adapter.get_many.assert_not_called()
+
+
+def test_fetch_related_no_relationship_key(repository, mock_adapter, model_instance):
+    """Test fetch_related returns None when metadata has no 'relationship' key"""
+    model_instance.related_item_id = uuid4()
+
+    # Mock fields with metadata but no 'relationship' key
+    with patch('rococo.repositories.postgresql.postgresql_repository.fields') as mock_fields_func:
+        from dataclasses import Field
+        mock_field = Field(default=None, default_factory=None, init=True, repr=True,
+                          hash=None, compare=True, metadata={
+                              'field_type': 'entity_id'
+                              # No 'relationship' key
+                          }, kw_only=False)
+        mock_field.name = 'related_item_id'
+        mock_fields_func.return_value = [mock_field]
+
+        result = repository.fetch_related_entities_for_field(
+            model_instance, 'related_item_id'
+        )
+
+    # Should return None since no relationship metadata
+    assert result is None
+    mock_adapter.get_one.assert_not_called()
+    mock_adapter.get_many.assert_not_called()
+
+
+def test_fetch_related_none_records_from_get_many(repository, mock_adapter, model_instance):
+    """Test fetch_related returns None when adapter.get_many returns None"""
+    related_id = uuid4()
+    model_instance.related_item_id = related_id
+
+    class RelatedModel(VersionedModel):
+        pass
+
+    # Mock adapter to return None
+    mock_adapter.get_many.return_value = None
+
+    # Mock field metadata with one_to_many
+    with patch('rococo.repositories.postgresql.postgresql_repository.fields') as mock_fields_func:
+        from dataclasses import Field
+        mock_field = Field(default=None, default_factory=None, init=True, repr=True,
+                          hash=None, compare=True, metadata={
+                              'field_type': 'entity_id',
+                              'relationship': {
+                                  'model': RelatedModel,
+                                  'relation_type': 'one_to_many'
+                              }
+                          }, kw_only=False)
+        mock_field.name = 'related_item_id'
+        mock_fields_func.return_value = [mock_field]
+
+        result = repository.fetch_related_entities_for_field(
+            model_instance, 'related_item_id'
+        )
+
+    # Should return None when adapter returns None
+    assert result is None
+    mock_adapter.get_many.assert_called_once()
+
+
+# High Priority Tests: _process_data_before_save()
+
+
+def test_process_data_versioned_model_field(repository, test_user_id):
+    """Test _process_data_before_save with VersionedModel as field value"""
+    # Create a nested VersionedModel instance
+    nested_model = TestVersionedModel(
+        entity_id=UUID(int=999),
+        name="Nested Model"
+    )
+
+    # Create main instance with VersionedModel as field value
+    main_instance = TestVersionedModel(
+        entity_id=UUID(int=1),
+        name="Main Model",
+        changed_by_id=test_user_id
+    )
+
+    # Mock as_dict to return nested model
+    with patch.object(TestVersionedModel, 'as_dict') as mock_as_dict:
+        mock_as_dict.return_value = {
+            'entity_id': main_instance.entity_id,
+            'name': main_instance.name,
+            'related_item_id': nested_model,  # VersionedModel instance
+            'active': True,
+            'version': main_instance.version,
+            'changed_by_id': test_user_id,
+            'changed_on': datetime.datetime.now(datetime.timezone.utc),
+            'previous_version': None
+        }
+
+        # Mock fields to include metadata
+        with patch('rococo.repositories.postgresql.postgresql_repository.fields') as mock_fields_func:
+            from dataclasses import Field
+            related_field = Field(default=None, default_factory=None, init=True, repr=True,
+                                hash=None, compare=True, metadata={'field_type': 'entity_id'},
+                                kw_only=False)
+            related_field.name = 'related_item_id'
+            mock_fields_func.return_value = [related_field]
+
+            result = repository._process_data_before_save(main_instance)
+
+    # Verify VersionedModel's entity_id was extracted and hyphens removed
+    assert 'related_item_id' in result
+    assert result['related_item_id'] == str(nested_model.entity_id).replace('-', '')
+
+
+def test_process_data_dict_with_entity_id(repository, test_user_id):
+    """Test _process_data_before_save with dict containing entity_id"""
+    entity_uuid = UUID(int=999)
+    main_instance = TestVersionedModel(
+        entity_id=UUID(int=1),
+        name="Main Model",
+        changed_by_id=test_user_id
+    )
+
+    # Mock as_dict to return dict with entity_id key
+    with patch.object(TestVersionedModel, 'as_dict') as mock_as_dict:
+        mock_as_dict.return_value = {
+            'entity_id': main_instance.entity_id,
+            'name': main_instance.name,
+            'related_item_id': {'entity_id': entity_uuid, 'name': 'Related'},  # Dict with entity_id
+            'active': True,
+            'version': main_instance.version,
+            'changed_by_id': test_user_id,
+            'changed_on': datetime.datetime.now(datetime.timezone.utc),
+            'previous_version': None
+        }
+
+        # Mock fields with metadata
+        with patch('rococo.repositories.postgresql.postgresql_repository.fields') as mock_fields_func:
+            from dataclasses import Field
+            related_field = Field(default=None, default_factory=None, init=True, repr=True,
+                                hash=None, compare=True, metadata={'field_type': 'entity_id'},
+                                kw_only=False)
+            related_field.name = 'related_item_id'
+            mock_fields_func.return_value = [related_field]
+
+            result = repository._process_data_before_save(main_instance)
+
+    # Verify entity_id was extracted from dict and hyphens removed
+    assert result['related_item_id'] == str(entity_uuid).replace('-', '')
+
+
+def test_process_data_none_fields_skipped(repository, test_user_id):
+    """Test _process_data_before_save skips None field values"""
+    main_instance = TestVersionedModel(
+        entity_id=UUID(int=1),
+        name=None,  # None value
+        changed_by_id=test_user_id
+    )
+
+    with patch.object(TestVersionedModel, 'as_dict') as mock_as_dict:
+        mock_as_dict.return_value = {
+            'entity_id': main_instance.entity_id,
+            'name': None,  # None value should be skipped
+            'related_item_id': None,  # None value
+            'active': True,
+            'version': main_instance.version,
+            'changed_by_id': test_user_id,
+            'changed_on': datetime.datetime.now(datetime.timezone.utc),
+            'previous_version': None
+        }
+
+        with patch('rococo.repositories.postgresql.postgresql_repository.fields') as mock_fields_func:
+            from dataclasses import Field
+            name_field = Field(default=None, default_factory=None, init=True, repr=True,
+                             hash=None, compare=True, metadata={},
+                             kw_only=False)
+            name_field.name = 'name'
+            related_field = Field(default=None, default_factory=None, init=True, repr=True,
+                                hash=None, compare=True, metadata={'field_type': 'entity_id'},
+                                kw_only=False)
+            related_field.name = 'related_item_id'
+            mock_fields_func.return_value = [name_field, related_field]
+
+            result = repository._process_data_before_save(main_instance)
+
+    # Verify None values remain None (not processed)
+    assert result['name'] is None
+    assert result['related_item_id'] is None
+
+
+def test_process_data_uuid_hyphen_removal(repository, test_user_id):
+    """Test _process_data_before_save removes hyphens from UUIDs"""
+    test_uuid = UUID("12345678-1234-5678-1234-567812345678")
+    main_instance = TestVersionedModel(
+        entity_id=test_uuid,
+        changed_by_id=test_user_id
+    )
+
+    with patch.object(TestVersionedModel, 'as_dict') as mock_as_dict:
+        mock_as_dict.return_value = {
+            'entity_id': test_uuid,  # UUID object
+            'version': UUID(int=0),
+            'active': True,
+            'changed_by_id': test_user_id,
+            'changed_on': datetime.datetime.now(datetime.timezone.utc),
+            'previous_version': None
+        }
+
+        with patch('rococo.repositories.postgresql.postgresql_repository.fields') as mock_fields_func:
+            from dataclasses import Field
+            entity_field = Field(default=None, default_factory=None, init=True, repr=True,
+                               hash=None, compare=True, metadata={},
+                               kw_only=False)
+            entity_field.name = 'entity_id'
+            version_field = Field(default=None, default_factory=None, init=True, repr=True,
+                                hash=None, compare=True, metadata={},
+                                kw_only=False)
+            version_field.name = 'version'
+            mock_fields_func.return_value = [entity_field, version_field]
+
+            result = repository._process_data_before_save(main_instance)
+
+    # Verify UUIDs have hyphens removed
+    assert result['entity_id'] == str(test_uuid).replace('-', '')
+    assert result['version'] == str(UUID(int=0)).replace('-', '')
+    assert '-' not in result['entity_id']
+    assert '-' not in result['version']
+
+
+def test_process_data_datetime_formatting(repository, test_user_id):
+    """Test _process_data_before_save formats datetime objects correctly"""
+    test_datetime = datetime.datetime(2023, 5, 15, 14, 30, 45, tzinfo=datetime.timezone.utc)
+    main_instance = TestVersionedModel(
+        entity_id=UUID(int=1),
+        changed_by_id=test_user_id,
+        changed_on=test_datetime
+    )
+
+    with patch.object(TestVersionedModel, 'as_dict') as mock_as_dict:
+        mock_as_dict.return_value = {
+            'entity_id': main_instance.entity_id,
+            'changed_on': test_datetime,  # datetime object
+            'active': True,
+            'version': UUID(int=0),
+            'changed_by_id': test_user_id,
+            'previous_version': None
+        }
+
+        with patch('rococo.repositories.postgresql.postgresql_repository.fields') as mock_fields_func:
+            from dataclasses import Field
+            changed_on_field = Field(default=None, default_factory=None, init=True, repr=True,
+                                   hash=None, compare=True, metadata={},
+                                   kw_only=False)
+            changed_on_field.name = 'changed_on'
+            mock_fields_func.return_value = [changed_on_field]
+
+            result = repository._process_data_before_save(main_instance)
+
+    # Verify datetime is formatted as '%Y-%m-%d %H:%M:%S'
+    expected_format = '2023-05-15 14:30:45'
+    assert result['changed_on'] == expected_format
+
+
+def test_process_data_mixed_field_types(repository, test_user_id):
+    """Test _process_data_before_save with multiple field types combined"""
+    test_uuid = UUID("abcdef01-1234-5678-9abc-def012345678")
+    test_datetime = datetime.datetime(2023, 6, 20, 10, 15, 30, tzinfo=datetime.timezone.utc)
+    nested_model = TestVersionedModel(entity_id=UUID(int=888), name="Nested")
+
+    main_instance = TestVersionedModel(
+        entity_id=test_uuid,
+        name="Mixed Test",
+        changed_by_id=test_user_id,
+        changed_on=test_datetime
+    )
+
+    with patch.object(TestVersionedModel, 'as_dict') as mock_as_dict:
+        mock_as_dict.return_value = {
+            'entity_id': test_uuid,  # UUID
+            'name': "Mixed Test",  # String
+            'related_item_id': nested_model,  # VersionedModel
+            'changed_on': test_datetime,  # datetime
+            'active': True,  # bool
+            'version': UUID(int=5),  # UUID
+            'changed_by_id': test_user_id,  # UUID
+            'previous_version': None
+        }
+
+        with patch('rococo.repositories.postgresql.postgresql_repository.fields') as mock_fields_func:
+            from dataclasses import Field
+
+            entity_field = Field(default=None, default_factory=None, init=True, repr=True,
+                               hash=None, compare=True, metadata={},
+                               kw_only=False)
+            entity_field.name = 'entity_id'
+
+            related_field = Field(default=None, default_factory=None, init=True, repr=True,
+                                hash=None, compare=True, metadata={'field_type': 'entity_id'},
+                                kw_only=False)
+            related_field.name = 'related_item_id'
+
+            changed_on_field = Field(default=None, default_factory=None, init=True, repr=True,
+                                   hash=None, compare=True, metadata={},
+                                   kw_only=False)
+            changed_on_field.name = 'changed_on'
+
+            version_field = Field(default=None, default_factory=None, init=True, repr=True,
+                                hash=None, compare=True, metadata={},
+                                kw_only=False)
+            version_field.name = 'version'
+
+            changed_by_field = Field(default=None, default_factory=None, init=True, repr=True,
+                                   hash=None, compare=True, metadata={},
+                                   kw_only=False)
+            changed_by_field.name = 'changed_by_id'
+
+            mock_fields_func.return_value = [
+                entity_field, related_field, changed_on_field, version_field, changed_by_field
+            ]
+
+            result = repository._process_data_before_save(main_instance)
+
+    # Verify all transformations applied correctly
+    assert result['entity_id'] == str(test_uuid).replace('-', '')
+    assert result['related_item_id'] == str(nested_model.entity_id).replace('-', '')
+    assert result['changed_on'] == '2023-06-20 10:15:30'
+    assert result['version'] == str(UUID(int=5)).replace('-', '')
+    assert result['changed_by_id'] == str(test_user_id).replace('-', '')
+    assert result['name'] == "Mixed Test"  # String unchanged
+    assert result['active'] is True  # bool unchanged
+
+
+# High Priority Tests: _fetch_related_for_instances()
+
+
+def test_fetch_related_for_instances_empty_fetch_list(repository, model_instance):
+    """Test _fetch_related_for_instances with empty fetch_related list"""
+    instances = [model_instance]
+
+    # Mock fetch_related_entities_for_field to track if it's called
+    with patch.object(repository, 'fetch_related_entities_for_field') as mock_fetch:
+        # Call with empty list
+        repository._fetch_related_for_instances(instances, [])
+
+        # Verify fetch_related_entities_for_field was not called
+        mock_fetch.assert_not_called()
+
+    # Instance should remain unchanged
+    assert instances[0] == model_instance
+
+
+def test_fetch_related_for_instances_multiple_fields(repository, test_user_id):
+    """Test _fetch_related_for_instances with multiple related fields"""
+    # Create instances with multiple related fields
+    instance1 = TestVersionedModel(
+        entity_id=UUID(int=1),
+        name="Instance 1",
+        changed_by_id=test_user_id,
+        related_item_id=UUID(int=100),
+        related_items_ids=[UUID(int=200), UUID(int=201)]
+    )
+
+    # Mock related entities
+    related_single = TestVersionedModel(entity_id=UUID(int=100), name="Single Related")
+    related_multiple = [
+        TestVersionedModel(entity_id=UUID(int=200), name="Multi 1"),
+        TestVersionedModel(entity_id=UUID(int=201), name="Multi 2")
+    ]
+
+    with patch.object(repository, 'fetch_related_entities_for_field') as mock_fetch:
+        # Configure mock to return different values for different fields
+        def side_effect(instance, field_name):
+            if field_name == 'related_item_id':
+                return related_single
+            elif field_name == 'related_items_ids':
+                return related_multiple
+            return None
+
+        mock_fetch.side_effect = side_effect
+
+        # Call with multiple fields
+        repository._fetch_related_for_instances(
+            [instance1],
+            ['related_item_id', 'related_items_ids']
+        )
+
+        # Verify fetch was called for each field
+        assert mock_fetch.call_count == 2
+        mock_fetch.assert_any_call(instance1, 'related_item_id')
+        mock_fetch.assert_any_call(instance1, 'related_items_ids')
+
+    # Verify fields were updated
+    assert instance1.related_item_id == related_single
+    assert instance1.related_items_ids == related_multiple
+
+
+def test_fetch_related_for_instances_missing_attr(repository, test_user_id):
+    """Test _fetch_related_for_instances when instance is missing the attribute"""
+    # Create a mock instance that doesn't have the related_item_id attribute
+    from unittest.mock import MagicMock
+
+    mock_instance = MagicMock(spec=['entity_id', 'name', 'changed_by_id'])
+    mock_instance.entity_id = UUID(int=1)
+    mock_instance.name = "Instance without attr"
+    mock_instance.changed_by_id = test_user_id
+
+    with patch.object(repository, 'fetch_related_entities_for_field') as mock_fetch:
+        # Call with field that doesn't exist on mock instance
+        repository._fetch_related_for_instances(
+            [mock_instance],
+            ['related_item_id']  # This field doesn't exist in spec
+        )
+
+        # Verify fetch_related_entities_for_field was not called
+        # because hasattr check fails
+        mock_fetch.assert_not_called()
+
+
+def test_fetch_related_for_instances_multiple_items(repository, test_user_id):
+    """Test _fetch_related_for_instances with multiple instances"""
+    # Create multiple instances
+    instance1 = TestVersionedModel(
+        entity_id=UUID(int=1),
+        name="Instance 1",
+        changed_by_id=test_user_id,
+        related_item_id=UUID(int=100)
+    )
+
+    instance2 = TestVersionedModel(
+        entity_id=UUID(int=2),
+        name="Instance 2",
+        changed_by_id=test_user_id,
+        related_item_id=UUID(int=200)
+    )
+
+    instance3 = TestVersionedModel(
+        entity_id=UUID(int=3),
+        name="Instance 3",
+        changed_by_id=test_user_id,
+        related_item_id=UUID(int=300)
+    )
+
+    # Mock related entities for each
+    related_1 = TestVersionedModel(entity_id=UUID(int=100), name="Related 1")
+    related_2 = TestVersionedModel(entity_id=UUID(int=200), name="Related 2")
+    related_3 = TestVersionedModel(entity_id=UUID(int=300), name="Related 3")
+
+    with patch.object(repository, 'fetch_related_entities_for_field') as mock_fetch:
+        # Configure mock to return different values based on instance
+        call_count = 0
+
+        def side_effect(instance, field_name):
+            if instance.entity_id == UUID(int=1):
+                return related_1
+            elif instance.entity_id == UUID(int=2):
+                return related_2
+            elif instance.entity_id == UUID(int=3):
+                return related_3
+            return None
+
+        mock_fetch.side_effect = side_effect
+
+        # Call with multiple instances
+        repository._fetch_related_for_instances(
+            [instance1, instance2, instance3],
+            ['related_item_id']
+        )
+
+        # Verify fetch was called for each instance
+        assert mock_fetch.call_count == 3
+        mock_fetch.assert_any_call(instance1, 'related_item_id')
+        mock_fetch.assert_any_call(instance2, 'related_item_id')
+        mock_fetch.assert_any_call(instance3, 'related_item_id')
+
+    # Verify each instance was updated with its related entity
+    assert instance1.related_item_id == related_1
+    assert instance2.related_item_id == related_2
+    assert instance3.related_item_id == related_3
+
+
+# Medium Priority Tests: get_many() edge cases
+
+
+def test_get_many_empty_results(repository, mock_adapter):
+    """Test get_many returns empty list when adapter returns empty list"""
+    # Mock adapter to return empty list
+    mock_adapter.get_many.return_value = []
+
+    result = repository.get_many(conditions={'active': True})
+
+    # Should return empty list
+    assert isinstance(result, list)
+    assert len(result) == 0
+
+    # Verify adapter was called
+    mock_adapter.get_many.assert_called_once()
+
+
+def test_get_many_single_dict_to_list_conversion(repository, mock_adapter, test_user_id):
+    """Test get_many converts single dict to list (line 137-138)"""
+    # Mock adapter to return a single dict instead of a list
+    single_record = {
+        'entity_id': str(UUID(int=1)),
+        'name': 'Single Item',
+        'active': True,
+        'version': str(UUID(int=0)),
+        'changed_by_id': str(test_user_id),
+        'changed_on': datetime.datetime.now(datetime.timezone.utc),
+        'previous_version': None
+    }
+    mock_adapter.get_many.return_value = single_record  # dict, not list
+
+    result = repository.get_many(conditions={'active': True})
+
+    # Should convert dict to list and return list of instances
+    assert isinstance(result, list)
+    assert len(result) == 1
+    assert isinstance(result[0], TestVersionedModel)
+    assert result[0].name == 'Single Item'
+
+
+def test_get_many_none_conditions(repository, mock_adapter, test_user_id):
+    """Test get_many with None conditions"""
+    # Mock adapter response
+    record = {
+        'entity_id': str(UUID(int=1)),
+        'name': 'Item',
+        'active': True,
+        'version': str(UUID(int=0)),
+        'changed_by_id': str(test_user_id),
+        'changed_on': datetime.datetime.now(datetime.timezone.utc),
+        'previous_version': None
+    }
+    mock_adapter.get_many.return_value = [record]
+
+    # Call with None conditions
+    result = repository.get_many(conditions=None)
+
+    # Should work without errors
+    assert isinstance(result, list)
+    assert len(result) == 1
+
+    # Verify adapter was called with None (not adjusted)
+    call_args = mock_adapter.get_many.call_args
+    assert call_args[0][1] is None  # conditions should be None
+
+
+def test_get_many_none_sort_uses_default(repository, mock_adapter, test_user_id):
+    """Test get_many with None sort parameter"""
+    record = {
+        'entity_id': str(UUID(int=1)),
+        'name': 'Item',
+        'active': True,
+        'version': str(UUID(int=0)),
+        'changed_by_id': str(test_user_id),
+        'changed_on': datetime.datetime.now(datetime.timezone.utc),
+        'previous_version': None
+    }
+    mock_adapter.get_many.return_value = [record]
+
+    # Call with None sort (should use default)
+    result = repository.get_many(conditions={'active': True}, sort=None)
+
+    assert isinstance(result, list)
+    assert len(result) == 1
+
+    # Verify adapter was called with None sort
+    call_args = mock_adapter.get_many.call_args
+    assert call_args[0][2] is None  # sort parameter
+
+
+def test_get_many_limit_zero(repository, mock_adapter):
+    """Test get_many with limit=0 edge case"""
+    # Mock adapter to return empty (since limit is 0)
+    mock_adapter.get_many.return_value = []
+
+    result = repository.get_many(conditions={'active': True}, limit=0)
+
+    # Should return empty list
+    assert isinstance(result, list)
+    assert len(result) == 0
+
+    # Verify adapter was called with limit=0
+    call_args = mock_adapter.get_many.call_args
+    assert call_args[0][3] == 0  # limit parameter
+
+
+# Medium Priority Tests: error conditions
+
+
+def test_get_one_adapter_raises_exception(repository, mock_adapter):
+    """Test get_one when adapter raises an exception"""
+    # Mock adapter.get_one to raise an exception when called
+    def raise_exception(*args, **kwargs):
+        raise Exception("Database connection failed")
+
+    mock_adapter.get_one = raise_exception
+
+    # Ensure __exit__ returns None to not suppress exceptions
+    mock_adapter.__exit__.return_value = None
+
+    # Should propagate the exception
+    with pytest.raises(Exception) as exc_info:
+        repository.get_one(conditions={'entity_id': UUID(int=1)})
+
+    assert "Database connection failed" in str(exc_info.value)
+
+
+def test_get_count_with_uuid_list_adjustment(repository, mock_adapter):
+    """Test get_count properly adjusts UUID lists in query"""
+    uuid1 = uuid4()
+    uuid2 = uuid4()
+
+    # Query with UUID list that needs adjustment
+    query_with_uuids = {
+        'tags': [uuid1, uuid2],  # List of UUIDs
+        'active': True
+    }
+
+    mock_adapter.get_count.return_value = 5
+
+    count = repository.get_count(query=query_with_uuids)
+
+    assert count == 5
+
+    # Verify adapter was called with adjusted conditions (UUIDs converted to strings)
+    call_args = mock_adapter.get_count.call_args
+    conditions = call_args[0][1]
+
+    # The conditions should have UUIDs converted to strings
+    assert conditions['tags'] == [str(uuid1), str(uuid2)]
+    assert conditions['active'] is True
+    assert conditions['latest'] is True  # Default condition added
+
+
+def test_fetch_related_none_return_not_updated(repository, test_user_id):
+    """Test that when fetch_related_entities_for_field returns None, field is not updated"""
+    instance = TestVersionedModel(
+        entity_id=UUID(int=1),
+        name="Test",
+        changed_by_id=test_user_id,
+        related_item_id=UUID(int=100)  # Has a value
+    )
+
+    original_value = instance.related_item_id
+
+    # Mock fetch_related_entities_for_field to return None
+    with patch.object(repository, 'fetch_related_entities_for_field') as mock_fetch:
+        mock_fetch.return_value = None  # Returns None
+
+        repository._fetch_related_for_instances([instance], ['related_item_id'])
+
+        # Verify fetch was called
+        mock_fetch.assert_called_once_with(instance, 'related_item_id')
+
+    # Field should NOT be updated when fetch returns None (line 86-87 in implementation)
+    # The original value should remain
+    assert instance.related_item_id == original_value
+
+
+# Medium Priority Tests: __init__() table name conversion
+
+
+def test_init_table_name_camelcase_to_snakecase(mock_adapter, mock_message_adapter, test_user_id):
+    """Test __init__ converts CamelCase model name to snake_case table name"""
+    # Create a model with CamelCase name
+    @dataclass(kw_only=True)
+    class MyTestModel(VersionedModel):
+        name: Optional[str] = None
+
+    # Create repository with CamelCase model
+    repo = PostgreSQLRepository(
+        db_adapter=mock_adapter,
+        model=MyTestModel,
+        message_adapter=mock_message_adapter,
+        queue_name="test_queue",
+        user_id=test_user_id
+    )
+
+    # Verify table name is converted to snake_case
+    assert repo.table_name == "my_test_model"
+
+
+def test_init_with_all_parameters(mock_adapter, mock_message_adapter, test_user_id):
+    """Test __init__ sets all attributes correctly"""
+    queue_name = "test_postgres_queue"
+
+    repo = PostgreSQLRepository(
+        db_adapter=mock_adapter,
+        model=TestVersionedModel,
+        message_adapter=mock_message_adapter,
+        queue_name=queue_name,
+        user_id=test_user_id
+    )
+
+    # Verify all attributes are set
+    assert repo.adapter == mock_adapter
+    assert repo.model == TestVersionedModel  # BaseRepository uses 'model' not 'model_class'
+    assert repo.message_adapter == mock_message_adapter
+    assert repo.queue_name == queue_name
+    assert repo.user_id == test_user_id
+    assert repo.table_name == "test_versioned_model"  # CamelCase -> snake_case

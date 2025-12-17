@@ -45,91 +45,106 @@ class SurrealDbRepository(BaseRepository):
         )
 
         # Map entity_id -> id (plain), other record_id fields with backticks
+        # Map entity_id -> id (plain), other record_id fields with backticks
         for field in fields(instance):
-            if data.get(field.name) is None:
-                continue
-            if field.metadata.get('field_type') == 'record_id':
-                rel = field.metadata.get('relationship', {})
-                field_model = rel.get('model') or self.model
-                tbl = field_model.__name__.lower()
-                val = data[field.name]
-                key = 'id' if field.name == 'entity_id' else field.name
-                if isinstance(val, SurrealVersionedModel):
-                    val = val.entity_id
-                elif isinstance(val, dict):
-                    val = val.get('entity_id')
-                elif isinstance(val, UUID):
-                    val = str(val)
-
-                if field.name == 'entity_id':
-                    # top-level document id must be plain (no backticks)
-                    data['id'] = f"{tbl}:{val}" if val else None
-                else:
-                    # include backticks for foreign record references
-                    data[key] = f"{tbl}:`{val}`" if val else None
+            if data.get(field.name) is not None:
+                self._process_field_before_save(field, data)
 
         # Remove entity_id since we've moved it to id
         data.pop('entity_id', None)
         return data
+
+    def _process_field_before_save(self, field, data):
+        if field.metadata.get('field_type') != 'record_id':
+            return
+
+        rel = field.metadata.get('relationship', {})
+        field_model = rel.get('model') or self.model
+        tbl = field_model.__name__.lower()
+        val = self._extract_val_for_save(data[field.name])
+        key = 'id' if field.name == 'entity_id' else field.name
+
+        if field.name == 'entity_id':
+            # top-level document id must be plain (no backticks)
+            data['id'] = f"{tbl}:{val}" if val else None
+        else:
+            # include backticks for foreign record references
+            data[key] = f"{tbl}:`{val}`" if val else None
+
+    def _extract_val_for_save(self, val):
+        if isinstance(val, SurrealVersionedModel):
+            return val.entity_id
+        if isinstance(val, dict):
+            return val.get('entity_id')
+        if isinstance(val, UUID):
+            return str(val)
+        return val
 
     def _process_data_from_db(
         self,
         data: Union[Dict[str, Any], List[Dict[str, Any]]]
     ) -> Union[SurrealVersionedModel, List[SurrealVersionedModel], None]:
         """Method to convert raw SurrealDB data into SurrealVersionedModel instance(s)."""
-        def _process_record(rec: Dict[str, Any], model_cls: Type[SurrealVersionedModel]) -> SurrealVersionedModel:
-            # unwrap the SurrealDB record id into entity_id
-            rec['entity_id'] = rec.pop('id')
-            # initialize model context for nested processing
-            model_cls()
-            # recursively process fields
-            for field_def in fields(model_cls):
-                val = rec.get(field_def.name)
-                if val is None:
-                    continue
-                fmeta = field_def.metadata
-                ftype = fmeta.get('field_type')
-                rel = fmeta.get('relationship', {})
-
-                if ftype == 'm2m_list':
-                    child_cls = rel.get('model') or model_cls
-                    if isinstance(val, list):
-                        rec[field_def.name] = [_process_record(
-                            item, child_cls) for item in val]
-                    else:
-                        raise NotImplementedError(
-                            f"Expected list for m2m_list field '{field_def.name}'")
-
-                elif ftype == 'record_id':
-                    child_cls = rel.get('model') or model_cls
-                    child_table = child_cls.__name__.lower()
-                    if isinstance(val, dict):
-                        # nested object
-                        rec[field_def.name] = _process_record(val, child_cls)
-                    elif isinstance(val, str):
-                        # simple reference "table:uuid" or with backticks
-                        uuid = self._extract_uuid_from_surreal_id(
-                            val, child_table)
-                        if field_def.name == 'entity_id':
-                            rec[field_def.name] = uuid
-                        else:
-                            # create a partial instance for the relation
-                            rec[field_def.name] = child_cls(
-                                entity_id=uuid, _is_partial=True)
-                    else:
-                        raise NotImplementedError(
-                            f"Unsupported type for record_id field '{field_def.name}'")
-
-            # finally, build the model instance
-            return model_cls.from_dict(rec)
-
         if data is None:
             return None
         if isinstance(data, list):
-            return [_process_record(item, self.model) for item in data]
+            return [self._process_record(item, self.model) for item in data]
         if isinstance(data, dict):
-            return _process_record(data, self.model)
+            return self._process_record(data, self.model)
         raise NotImplementedError(f"Unsupported data type: {type(data)}")
+
+    def _process_record(self, rec: Dict[str, Any], model_cls: Type[SurrealVersionedModel]) -> SurrealVersionedModel:
+        # unwrap the SurrealDB record id into entity_id
+        if 'id' in rec:
+            rec['entity_id'] = rec.pop('id')
+        # initialize model context for nested processing
+        model_cls()
+        # recursively process fields
+        for field_def in fields(model_cls):
+            val = rec.get(field_def.name)
+            if val is None:
+                continue
+            fmeta = field_def.metadata
+            ftype = fmeta.get('field_type')
+            rel = fmeta.get('relationship', {})
+
+            if ftype == 'm2m_list':
+                child_cls = rel.get('model') or model_cls
+                self._process_m2m_list(rec, field_def, val, child_cls)
+
+            elif ftype == 'record_id':
+                child_cls = rel.get('model') or model_cls
+                self._process_record_id(rec, field_def, val, child_cls)
+
+        # finally, build the model instance
+        return model_cls.from_dict(rec)
+
+    def _process_m2m_list(self, rec, field_def, val, child_cls):
+        if isinstance(val, list):
+            rec[field_def.name] = [self._process_record(
+                item, child_cls) for item in val]
+        else:
+            raise NotImplementedError(
+                f"Expected list for m2m_list field '{field_def.name}'")
+
+    def _process_record_id(self, rec, field_def, val, child_cls):
+        child_table = child_cls.__name__.lower()
+        if isinstance(val, dict):
+            # nested object
+            rec[field_def.name] = self._process_record(val, child_cls)
+        elif isinstance(val, str):
+            # simple reference "table:uuid" or with backticks
+            uuid = self._extract_uuid_from_surreal_id(
+                val, child_table)
+            if field_def.name == 'entity_id':
+                rec[field_def.name] = uuid
+            else:
+                # create a partial instance for the relation
+                rec[field_def.name] = child_cls(
+                    entity_id=uuid, _is_partial=True)
+        else:
+            raise NotImplementedError(
+                f"Unsupported type for record_id field '{field_def.name}'")
 
     def get_one(
         self,
@@ -141,43 +156,11 @@ class SurrealDbRepository(BaseRepository):
 
         # handle fetch_related edges
         if fetch_related:
-            for field in fields(self.model):
-                rel = field.metadata.get('relationship', {})
-                if rel.get('type') == 'associative' and field.name in fetch_related:
-                    name = rel.get('name')
-                    edge = '<-' if rel.get('direction') == 'in' else '->'
-                    model_ref = rel.get('model')
-                    if not isinstance(model_ref, str):
-                        model_ref = model_ref.__name__
-                    additional_fields.append(
-                        f"(SELECT * FROM {edge}{name}{edge}{model_ref.lower()}) AS {field.name}"
-                    )
-                    fetch_related.remove(field.name)
+            self._handle_fetch_related_edges(fetch_related, additional_fields)
 
         # format record_id conditions
         if conditions:
-            for name, val in list(conditions.items()):
-                field_def = next(
-                    (f for f in fields(self.model) if f.name == name),
-                    None
-                )
-                if field_def and field_def.metadata.get('field_type') == 'record_id':
-                    if name == 'entity_id':
-                        conditions['id'] = conditions.pop('entity_id')
-                        name = 'id'
-                    prefix = field_def.metadata.get(
-                        'relationship', {}).get('model', self.model)
-                    prefix = (
-                        prefix.__name__.lower()
-                        if isinstance(prefix, type)
-                        else prefix
-                    )
-                    if isinstance(val, SurrealVersionedModel):
-                        conditions[name] = f"{prefix}:`{val.entity_id}`"
-                    elif isinstance(val, (str, UUID)):
-                        conditions[name] = f"{prefix}:`{val}`"
-                    else:
-                        raise NotImplementedError
+            self._format_conditions(conditions)
 
         # fetch raw data
         raw = self._execute_within_context(
@@ -213,43 +196,11 @@ class SurrealDbRepository(BaseRepository):
 
         # handle fetch_related edges
         if fetch_related:
-            for field in fields(self.model):
-                rel = field.metadata.get('relationship', {})
-                if rel.get('type') == 'associative' and field.name in fetch_related:
-                    name = rel.get('name')
-                    edge = '<-' if rel.get('direction') == 'in' else '->'
-                    model_ref = rel.get('model')
-                    if not isinstance(model_ref, str):
-                        model_ref = model_ref.__name__
-                    additional_fields.append(
-                        f"(SELECT * FROM {edge}{name}{edge}{model_ref.lower()}) AS {field.name}"
-                    )
-                    fetch_related.remove(field.name)
+            self._handle_fetch_related_edges(fetch_related, additional_fields)
 
         # format record_id conditions
         if conditions:
-            for name, val in list(conditions.items()):
-                field_def = next(
-                    (f for f in fields(self.model) if f.name == name),
-                    None
-                )
-                if field_def and field_def.metadata.get('field_type') == 'record_id':
-                    if name == 'entity_id':
-                        conditions['id'] = conditions.pop('entity_id')
-                        name = 'id'
-                    prefix = field_def.metadata.get(
-                        'relationship', {}).get('model', self.model)
-                    prefix = (
-                        prefix.__name__.lower()
-                        if isinstance(prefix, type)
-                        else prefix
-                    )
-                    if isinstance(val, SurrealVersionedModel):
-                        conditions[name] = f"{prefix}:`{val.entity_id}`"
-                    elif isinstance(val, (str, UUID)):
-                        conditions[name] = f"{prefix}:`{val}`"
-                    else:
-                        raise NotImplementedError
+            self._format_conditions(conditions)
 
         raw = self._execute_within_context(
             self.adapter.get_many,
@@ -266,6 +217,55 @@ class SurrealDbRepository(BaseRepository):
         self.model()
         proc = self._process_data_from_db(raw)
         return [self.model.from_dict(r) for r in proc]
+
+    def _handle_fetch_related_edges(self, fetch_related: List[str], additional_fields: List[str]):
+        for field in fields(self.model):
+            rel = field.metadata.get('relationship', {})
+            if rel.get('type') == 'associative' and field.name in fetch_related:
+                name = rel.get('name')
+                edge = '<-' if rel.get('direction') == 'in' else '->'
+                model_ref = rel.get('model')
+                if not isinstance(model_ref, str):
+                    model_ref = model_ref.__name__
+                additional_fields.append(
+                    f"(SELECT * FROM {edge}{name}{edge}{model_ref.lower()}) AS {field.name}"
+                )
+                fetch_related.remove(field.name)
+
+    def _format_conditions(self, conditions: Dict[str, Any]):
+        updates = {}
+        deletions = []
+        for name, val in conditions.items():
+            field_def = next(
+                (f for f in fields(self.model) if f.name == name),
+                None
+            )
+            if not (field_def and field_def.metadata.get('field_type') == 'record_id'):
+                continue
+
+            current_name = name
+            if name == 'entity_id':
+                deletions.append('entity_id')
+                current_name = 'id'
+
+            prefix = field_def.metadata.get(
+                'relationship', {}).get('model', self.model)
+            prefix = (
+                prefix.__name__.lower()
+                if isinstance(prefix, type)
+                else prefix
+            )
+
+            if isinstance(val, SurrealVersionedModel):
+                updates[current_name] = f"{prefix}:`{val.entity_id}`"
+            elif isinstance(val, (str, UUID)):
+                updates[current_name] = f"{prefix}:`{val}`"
+            else:
+                raise NotImplementedError
+
+        for k in deletions:
+            conditions.pop(k, None)
+        conditions.update(updates)
 
     def relate(
         self,

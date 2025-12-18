@@ -491,6 +491,7 @@ class TestLoadEnv:
              patch.object(cli, '_load_from_secrets', return_value=expected_env):
 
             result = cli.load_env(args)
+            assert result is not None
 
             # Verify all required vars are mentioned as missing
             print_call_str = str(mock_print.call_args)

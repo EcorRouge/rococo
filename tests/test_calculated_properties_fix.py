@@ -4,6 +4,7 @@ Test cases for calculated properties fix in VersionedModel
 
 import unittest
 from dataclasses import dataclass
+from typing import Optional
 from rococo.models.versioned_model import VersionedModel
 
 
@@ -12,7 +13,7 @@ class TestModelWithCalculatedProperty(VersionedModel):
     """Test model with a calculated property similar to OrganizationImport.error_count"""
 
     count: int = 0
-    errors: list = None
+    errors: Optional[list] = None
 
     def __post_init__(self, _is_partial):
         if self.errors is None:

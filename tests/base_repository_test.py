@@ -70,6 +70,39 @@ class TestVersionedModel(VersionedModel):
             self.changed_by_id = changed_by_id
 
     @classmethod
+    def _convert_uuid_field(cls, field_name: str, value, optional_fields: tuple) -> uuid.UUID:
+        """Convert a single UUID field value to UUID type."""
+        if isinstance(value, uuid.UUID) or value is None:
+            return value
+
+        if not isinstance(value, str):
+            raise TypeError(
+                f"Field {field_name} expects a UUID or string UUID, got {type(value)}")
+
+        if not value:  # Empty string
+            if field_name in optional_fields:
+                return None
+            return value  # Let it fail downstream for required fields
+
+        try:
+            return uuid.UUID(value)
+        except ValueError:
+            raise ValueError(f"Invalid UUID string for field {field_name}: {value}")
+
+    @classmethod
+    def _convert_datetime_field(cls, field_name: str, value) -> datetime:
+        """Convert a single datetime field value from ISO string to datetime."""
+        if not isinstance(value, str):
+            return value
+
+        try:
+            if value.endswith('Z'):
+                value = value[:-1] + '+00:00'
+            return datetime.fromisoformat(value)
+        except ValueError:
+            raise ValueError(f"Invalid ISO datetime string for field {field_name}: {value}")
+
+    @classmethod
     def from_dict(cls, data: dict) -> 'TestVersionedModel':
         """
         Load TestVersionedModel from dict.
@@ -87,52 +120,21 @@ class TestVersionedModel(VersionedModel):
             return None
 
         processed_data = data.copy()
-        uuid_fields_to_convert = [
-            'entity_id', 'version', 'previous_version', 'changed_by_id']
+        uuid_fields = ['entity_id', 'version', 'previous_version', 'changed_by_id']
+        optional_uuid_fields = ('changed_by_id', 'previous_version')
+        datetime_fields = ['created_at', 'updated_at']
 
-        for field_name in uuid_fields_to_convert:
+        for field_name in uuid_fields:
             if field_name in processed_data:
-                value = processed_data[field_name]
-                if isinstance(value, str):
-                    if value:  # Ensure the string is not empty
-                        try:
-                            processed_data[field_name] = uuid.UUID(value)
-                        except ValueError:
-                            # Handle cases where a string is provided but it's not a valid UUID
-                            # For critical fields like entity_id, you might want to raise an error
-                            # For optional fields, you might set to None or raise, depending on model rules
-                            # For this test's purpose, we'll assume valid UUID strings if they are present for these fields
-                            raise ValueError(
-                                f"Invalid UUID string for field {field_name}: {value}")
-                    else:
-                        # If an empty string is provided for an optional UUID field, set it to None
-                        # Example optional UUID fields
-                        if field_name in ['changed_by_id', 'previous_version']:
-                            processed_data[field_name] = None
-                        # For non-optional UUIDs like entity_id/version, an empty string is an issue
-                        # but UUID(None) or UUID('') would fail anyway if not handled above
-                elif value is not None and not isinstance(value, uuid.UUID):
-                    # If it's not a string, not None, and not already a UUID, it's an unexpected type
-                    raise TypeError(
-                        f"Field {field_name} expects a UUID or string UUID, got {type(value)}")
+                processed_data[field_name] = cls._convert_uuid_field(
+                    field_name, processed_data[field_name], optional_uuid_fields
+                )
 
-        # Handle datetime fields if they might come as ISO strings
-        # (as_dict can produce them if convert_datetime_to_iso_string=True)
-        # For the current failing test, this is not the issue as convert_datetime_to_iso_string is False by default in the call.
-        datetime_fields_to_convert = ['created_at', 'updated_at']
-        for field_name in datetime_fields_to_convert:
+        for field_name in datetime_fields:
             if field_name in processed_data:
-                value = processed_data[field_name]
-                if isinstance(value, str):
-                    try:
-                        # Attempt to parse ISO format, handle 'Z' for UTC
-                        if value.endswith('Z'):
-                            value = value[:-1] + '+00:00'
-                        processed_data[field_name] = datetime.fromisoformat(
-                            value)
-                    except ValueError:
-                        raise ValueError(
-                            f"Invalid ISO datetime string for field {field_name}: {value}")
+                processed_data[field_name] = cls._convert_datetime_field(
+                    field_name, processed_data[field_name]
+                )
 
         return cls(**processed_data)
 

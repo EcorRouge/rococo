@@ -6,9 +6,18 @@ import json
 import uuid
 import unittest
 from datetime import datetime, timezone, timedelta
+from typing import Dict, Any, Optional, cast
 from unittest.mock import MagicMock
 from rococo.repositories.mongodb.mongodb_repository import MongoDbRepository
 from rococo.models import VersionedModel
+
+# Constant for UTC timezone offset string used in ISO datetime parsing
+UTC_TIMEZONE_OFFSET = '+00:00'
+
+# Constants for test datetime strings
+TEST_DATETIME_CHANGED_ON = '2024-01-15T10:30:00+00:00'
+TEST_DATETIME_CREATED_AT = '2024-01-15T09:00:00+00:00'
+TEST_DATETIME_UPDATED_AT = '2024-01-15T11:00:00+00:00'
 
 
 class TestVersionedModel(VersionedModel):
@@ -135,7 +144,7 @@ class MongoDbRepositoryTestCase(unittest.TestCase):
         """
         self.repository._execute_within_context = MagicMock()
         instances = [TestVersionedModel(
-            entity_id=uuid.uuid4().hex) for i in range(3)]
+            entity_id=uuid.uuid4().hex) for _ in range(3)]
 
         # stub insert_many to return a list of dummy docs
         self.db_adapter_mock.insert_many.return_value = [
@@ -327,7 +336,7 @@ class MongoDbRepositoryTestCase(unittest.TestCase):
         self.db_adapter_mock.move_entity_to_audit_table.return_value = None
 
         # Capture the data passed to adapter.save to verify TTL field is added
-        saved_data = None
+        saved_data: Optional[Dict[str, Any]] = None
 
         def capture_save_data(collection_name, data):
             nonlocal saved_data
@@ -343,7 +352,7 @@ class MongoDbRepositoryTestCase(unittest.TestCase):
         result = self.repository.delete(test_instance, "test_collection")
 
         # Record the time after calling delete
-        after_delete_time = datetime.now(timezone.utc)
+        _ = datetime.now(timezone.utc)
 
         # Verify that the instance is marked as inactive
         self.assertFalse(result.active)
@@ -354,6 +363,8 @@ class MongoDbRepositoryTestCase(unittest.TestCase):
         # Verify that the TTL field was added to the saved data
         self.assertIsNotNone(saved_data)
         self.assertIn("expires_at", saved_data)
+        # Type assertion: saved_data is guaranteed to be a dict after assertIsNotNone
+        saved_data = cast(Dict[str, Any], saved_data)
 
         # Verify that the TTL timestamp is correctly calculated
         # It should be approximately 30 minutes from the current time
@@ -363,7 +374,7 @@ class MongoDbRepositoryTestCase(unittest.TestCase):
         # Convert string back to datetime if it was serialized
         if isinstance(actual_ttl_time, str):
             actual_ttl_time = datetime.fromisoformat(
-                actual_ttl_time.replace('Z', '+00:00'))
+                actual_ttl_time.replace('Z', UTC_TIMEZONE_OFFSET))
 
         # Allow for a small time difference (up to 1 minute) due to test execution time
         time_difference = abs(
@@ -424,7 +435,7 @@ class MongoDbRepositoryTestCase(unittest.TestCase):
                 if isinstance(value, str):
                     try:
                         parsed_time = datetime.fromisoformat(
-                            value.replace('Z', '+00:00'))
+                            value.replace('Z', UTC_TIMEZONE_OFFSET))
                         # Allow for small execution time but not 30 minutes in the future
                         time_diff = (
                             parsed_time - datetime.now(timezone.utc)).total_seconds()
@@ -453,7 +464,7 @@ class MongoDbRepositoryTestCase(unittest.TestCase):
         self.db_adapter_mock.move_entity_to_audit_table.return_value = None
 
         # Capture the data passed to adapter.save
-        saved_data = None
+        saved_data: Optional[Dict[str, Any]] = None
 
         def capture_save_data(collection_name, data):
             nonlocal saved_data
@@ -474,6 +485,8 @@ class MongoDbRepositoryTestCase(unittest.TestCase):
         # Verify that the custom TTL field was added
         self.assertIsNotNone(saved_data)
         self.assertIn("delete_after", saved_data)
+        # Type assertion: saved_data is guaranteed to be a dict after assertIsNotNone
+        saved_data = cast(Dict[str, Any], saved_data)
 
         # Verify that the TTL timestamp is correctly calculated for 60 minutes
         expected_ttl_time = before_delete_time + timedelta(minutes=60)
@@ -482,7 +495,7 @@ class MongoDbRepositoryTestCase(unittest.TestCase):
         # Convert string back to datetime if it was serialized
         if isinstance(actual_ttl_time, str):
             actual_ttl_time = datetime.fromisoformat(
-                actual_ttl_time.replace('Z', '+00:00'))
+                actual_ttl_time.replace('Z', UTC_TIMEZONE_OFFSET))
 
         # Allow for a small time difference due to test execution time
         time_difference = abs(
@@ -522,9 +535,9 @@ class MongoDbRepositoryTestCase(unittest.TestCase):
             'previous_version': None,
             'active': True,
             'changed_by_id': uuid.uuid4().hex,
-            'changed_on': '2024-01-15T10:30:00+00:00',  # ISO string
-            'created_at': '2024-01-15T09:00:00+00:00',   # ISO string
-            'updated_at': '2024-01-15T11:00:00+00:00',   # ISO string
+            'changed_on': TEST_DATETIME_CHANGED_ON,  # ISO string
+            'created_at': TEST_DATETIME_CREATED_AT,   # ISO string
+            'updated_at': TEST_DATETIME_UPDATED_AT,   # ISO string
         }
 
         # Mock the adapter to return data with datetime strings
@@ -581,14 +594,14 @@ class MongoDbRepositoryTestCase(unittest.TestCase):
                 'active': True,
                 'changed_by_id': uuid.uuid4().hex,
                 'changed_on': '2024-01-15T10:00:00+00:00',
-                'created_at': '2024-01-15T09:00:00+00:00',
+                'created_at': TEST_DATETIME_CREATED_AT,
             },
             {
                 'entity_id': uuid.uuid4().hex,
                 'version': uuid.uuid4().hex,
                 'active': True,
                 'changed_by_id': uuid.uuid4().hex,
-                'changed_on': '2024-01-15T11:00:00+00:00',
+                'changed_on': TEST_DATETIME_UPDATED_AT,
                 'created_at': '2024-01-15T10:00:00+00:00',
             }
         ]
@@ -639,9 +652,9 @@ class MongoDbRepositoryTestCase(unittest.TestCase):
             'version': uuid.uuid4().hex,
             'active': True,
             'changed_by_id': uuid.uuid4().hex,
-            'changed_on': '2024-01-15T10:30:00+00:00',
-            'created_at': '2024-01-15T09:00:00+00:00',   # Required field as string
-            'updated_at': '2024-01-15T11:00:00+00:00',   # Optional field as string
+            'changed_on': TEST_DATETIME_CHANGED_ON,
+            'created_at': TEST_DATETIME_CREATED_AT,   # Required field as string
+            'updated_at': TEST_DATETIME_UPDATED_AT,   # Optional field as string
             'deleted_at': None                            # Optional field as None
         }
 
@@ -739,7 +752,7 @@ class MongoDbRepositoryTestCase(unittest.TestCase):
             'version': uuid.uuid4().hex,
             'active': True,
             'changed_by_id': uuid.uuid4().hex,
-            'changed_on': '2024-01-15T10:30:00+00:00',  # Valid ISO string
+            'changed_on': TEST_DATETIME_CHANGED_ON,  # Valid ISO string
             'created_at': 'invalid-date-string',         # Invalid datetime string
         }
 
@@ -793,9 +806,9 @@ class MongoDbRepositoryTestCase(unittest.TestCase):
             'version': uuid.uuid4().hex,
             'active': True,
             'changed_by_id': uuid.uuid4().hex,
-            'changed_on': '2024-01-15T10:30:00+00:00',
+            'changed_on': TEST_DATETIME_CHANGED_ON,
             'datetime1': '2024-01-15T10:30:00Z',           # UTC with Z
-            'datetime2': '2024-01-15T10:30:00+00:00',      # UTC with +00:00
+            'datetime2': TEST_DATETIME_CHANGED_ON,      # UTC with +00:00
             'datetime3': '2024-01-15T10:30:00.123456Z',    # With microseconds
             'datetime4': '2024-01-15T10:30:00-05:00',      # With timezone offset
         }

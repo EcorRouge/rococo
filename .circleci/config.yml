@@ -31,6 +31,7 @@ commands:
               -Dsonar.scm.disabled=true \
               -Dsonar.coverage.exclusions=tests/**,tests/**/*.py \
               -Dsonar.python.coverage.reportPaths=coverage.xml \
+              -Dsonar.python.version=3.10 \
               -Dsonar.exclusions=**/.coverage,**/.coverage.*,**/htmlcov/**,**/.scannerwork/**,**/__pycache__/**,**/*.pyc
             
             echo "✅ SonarQube scan completed successfully"

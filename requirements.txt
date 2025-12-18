@@ -25,3 +25,5 @@ websockets>=10.4
 pymongo==4.6.3
 psycopg2-binary==2.9.10
 pynamodb==6.1.0
+twilio>=9.8.6
+jinja2>=3.1.6

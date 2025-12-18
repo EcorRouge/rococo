@@ -25,7 +25,7 @@ extras_require["data-common"] = [
 ]
 
 extras_require["data-surreal"] = [
-    'surrealdb>=1.0.7,<1.1'
+    'surrealdb>=1.0.4,<1.1'
 ]
 
 extras_require["data-mysql"] = [
@@ -64,7 +64,7 @@ extras_require["all"] = [
 
 setup(
     name='rococo',
-    version='1.2.0',
+    version='1.1.13',
     packages=find_packages(),
     url='https://github.com/EcorRouge/rococo',
     license='MIT',

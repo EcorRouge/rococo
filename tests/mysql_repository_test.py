@@ -8,7 +8,7 @@ from uuid import UUID, uuid4
 import json
 import datetime
 from dataclasses import dataclass, fields, field as dc_field
-from typing import Union, Optional
+from typing import Union
 
 from rococo.repositories.mysql.mysql_repository import MySqlRepository
 # Assuming VersionedModel is correctly imported if used directly (it's a base class)
@@ -21,10 +21,10 @@ from rococo.messaging.base import MessageAdapter
 class TestVersionedModel(VersionedModel):
     entity_id: UUID = dc_field(default_factory=uuid4)
     version: UUID = dc_field(default_factory=lambda: UUID(int=0))
-    previous_version: Union[UUID, None] = dc_field(default=None)
-    changed_by_id: Union[UUID, str, None] = dc_field(
+    previous_version: UUID | None = dc_field(default=None)
+    changed_by_id: UUID | str | None = dc_field(
         default_factory=lambda: UUID(int=0))
-    name: Optional[str] = None
+    name: str | None = None
     # active and changed_on are inherited from VersionedModel
 
     def _convert_field_value(self, val, convert_datetime_to_iso_string, convert_uuids):

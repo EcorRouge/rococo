@@ -486,13 +486,12 @@ def test_validate_type_checking_enabled():
 
 def test_validate_union_types():
     """Test validate() handles Union types correctly"""
-    from typing import Union, Optional
 
     @dataclass
     class TestModelWithUnion(VersionedModel):
         use_type_checking = True
-        optional_field: Optional[str] = None
-        union_field: Union[int, str] = "test"
+        optional_field: str | None = None
+        union_field: int | str = "test"
 
     # Test with None for optional field
     model = TestModelWithUnion(optional_field=None, previous_version="test")

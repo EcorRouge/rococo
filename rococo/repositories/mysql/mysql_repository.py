@@ -4,7 +4,7 @@ import re
 from uuid import UUID
 from datetime import datetime
 from dataclasses import fields
-from typing import Any, Dict, List, Type, Union
+from typing import Any, Dict, List, Type
 
 from rococo.data import MySqlAdapter
 from rococo.messaging import MessageAdapter
@@ -217,7 +217,7 @@ class MySqlRepository(BaseRepository):
                     conditions[condition_name] = self._format_condition_value(value)
 
     def get_one(self, conditions: Dict[str, Any] = None, join_fields: List[str] = None,
-                additional_fields: List[str] = None) -> Union[VersionedModel, None]:
+                additional_fields: List[str] = None) -> VersionedModel | None:
         """get one"""
 
         if additional_fields is None:

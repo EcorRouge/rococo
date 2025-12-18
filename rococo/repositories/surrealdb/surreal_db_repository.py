@@ -1,7 +1,7 @@
 """SurrealDbRepository class"""
 
 from dataclasses import fields
-from typing import Any, Dict, List, Type, Union
+from typing import Any, Dict, List, Type
 from uuid import UUID
 
 from rococo.data import SurrealDbAdapter
@@ -82,8 +82,8 @@ class SurrealDbRepository(BaseRepository):
 
     def _process_data_from_db(
         self,
-        data: Union[Dict[str, Any], List[Dict[str, Any]]]
-    ) -> Union[SurrealVersionedModel, List[SurrealVersionedModel], None]:
+        data: Dict[str, Any] | List[Dict[str, Any]]
+    ) -> SurrealVersionedModel | List[SurrealVersionedModel] | None:
         """Method to convert raw SurrealDB data into SurrealVersionedModel instance(s)."""
         if data is None:
             return None
@@ -150,7 +150,7 @@ class SurrealDbRepository(BaseRepository):
         self,
         conditions: Dict[str, Any],
         fetch_related: List[str] = None
-    ) -> Union[SurrealVersionedModel, None]:
+    ) -> SurrealVersionedModel | None:
         """Fetch a single record matching conditions"""
         additional_fields: List[str] = []
 

@@ -3,7 +3,7 @@ base repository for rococo
 """
 import json
 from uuid import UUID
-from typing import Any, Dict, List, Type, Union
+from typing import Any, Dict, List, Type
 from rococo.data.base import DbAdapter
 from rococo.messaging.base import MessageAdapter
 from rococo.models.versioned_model import VersionedModel
@@ -69,7 +69,7 @@ class BaseRepository:
         self,
         conditions: Dict[str, Any],
         fetch_related: List[str] = None
-    ) -> Union[VersionedModel, None]:
+    ) -> VersionedModel | None:
         """
         Fetches a single record from the specified table based on given conditions.
 
@@ -96,7 +96,7 @@ class BaseRepository:
         context: str = "value",
         min_val: int = None,
         max_val: int = None
-    ) -> Union[int, None]:
+    ) -> int | None:
         """
         Validate and convert to integer with optional range check.
         This prevents injection attacks in LIMIT, OFFSET, and other numeric contexts

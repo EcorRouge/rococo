@@ -4,7 +4,7 @@ import re
 from uuid import UUID
 from datetime import datetime
 from dataclasses import fields
-from typing import Any, Dict, List, Type, Union, Optional
+from typing import Any, Dict, List, Type
 
 from rococo.data import PostgreSQLAdapter
 from rococo.messaging import MessageAdapter
@@ -95,7 +95,7 @@ class PostgreSQLRepository(BaseRepository):
         self,
         conditions: Dict[str, Any] = None,
         fetch_related: List[str] = None
-    ) -> Union[VersionedModel, None]:
+    ) -> VersionedModel | None:
         """get one"""
 
         if conditions is not None:
@@ -150,8 +150,8 @@ class PostgreSQLRepository(BaseRepository):
     def get_count(
         self,
         # collection_name: str, # Use self.table_name for consistency
-        index: Optional[str] = None,  # index (for hint) can be optional
-        query: Optional[Dict[str, Any]] = None  # query can be optional
+        index: str | None = None,  # index (for hint) can be optional
+        query: Dict[str, Any] | None = None  # query can be optional
     ) -> int:
         """
         Retrieves the count of records in the repository's table that match the given query parameters.
@@ -196,7 +196,7 @@ class PostgreSQLRepository(BaseRepository):
         self,
         instance: VersionedModel,
         related_field: str
-    ) -> Union[List, Optional[VersionedModel]]:
+    ) -> List | VersionedModel | None:
         """Fetch related entities for a given field in the instance."""
 
         related_value = getattr(instance, related_field)

@@ -2,6 +2,7 @@ import pkgutil
 import os
 import importlib
 import logging
+import types
 from uuid import uuid4, UUID
 from dataclasses import dataclass, field, fields, InitVar, is_dataclass
 from datetime import datetime, timezone
@@ -620,14 +621,17 @@ class VersionedModel:
 
     def _validate_simple_type(self, name: str, value, expected, castable: set, errors: list):
         """Validate a field with a simple (non-Union) type."""
+        # Get a string representation of the expected type
+        expected_str = getattr(expected, '__name__', str(expected))
+
         if value is None:
-            errors.append(f"Invalid type for '{name}': expected {expected.__name__}, got NoneType")
+            errors.append(f"Invalid type for '{name}': expected {expected_str}, got NoneType")
             return
         if isinstance(value, expected):
             return
         if self._try_convert_simple_type(name, value, expected, castable):
             return
-        errors.append(f"Invalid type for '{name}': expected {expected.__name__}, got {type(value).__name__}")
+        errors.append(f"Invalid type for '{name}': expected {expected_str}, got {type(value).__name__}")
 
     def _try_convert_simple_type(self, name: str, value, expected, castable: set) -> bool:
         """Try to convert a value to the expected simple type."""
@@ -660,7 +664,8 @@ class VersionedModel:
                 continue
 
             origin = get_origin(expected)
-            if origin is Union:
+            # Check for both old-style Union and new-style types.UnionType (X | Y syntax)
+            if origin is Union or isinstance(expected, types.UnionType):
                 self._validate_union_type(name, value, get_args(expected), castable, errors)
             else:
                 self._validate_simple_type(name, value, expected, castable, errors)

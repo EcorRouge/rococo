@@ -197,8 +197,8 @@ class DynamoDbAdapter(DbAdapter):
                 range_key_name = name
         return hash_key_name, range_key_name
 
-    def _execute_query(self, model_cls: Type[Model], conditions: Dict[str, Any], 
-                       hash_key_name: str, range_key_name: str, hash_key_val: Any, 
+    def _execute_query(self, model_cls: Type[Model], conditions: Dict[str, Any],
+                       hash_key_name: Optional[str], range_key_name: Optional[str], hash_key_val: Any,
                        limit: int = None, count_only: bool = False):
         """Helper for Query execution."""
         range_key_condition = None

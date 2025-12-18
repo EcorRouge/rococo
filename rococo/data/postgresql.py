@@ -322,9 +322,10 @@ class PostgreSQLAdapter(DbAdapter):
             self._cursor.execute(query, values)
             self._connection.commit()
             return True
-        except psycopg2.Error as ex:
+        except Exception as ex:
             self._connection.rollback()
-            if retry_count < 3 and ex.args[0] == 1213:
+            # PostgreSQL deadlock error codes: 40P01 (deadlock_detected) or 40001 (serialization_failure)
+            if retry_count < 3 and hasattr(ex, 'pgcode') and ex.pgcode in ('40P01', '40001'):
                 # Deadlock detected
                 logging.warning("Deadlock detected on table %s. Retrying in %d seconds. Attempt %d",
                                 table_name, 2**retry_count, retry_count+1)

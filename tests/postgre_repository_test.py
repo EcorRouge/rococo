@@ -15,6 +15,12 @@ from rococo.models.versioned_model import VersionedModel
 from rococo.data.postgresql import PostgreSQLAdapter
 from rococo.messaging.base import MessageAdapter
 
+# Constant for patching the fields function in the repository module
+POSTGRESQL_REPOSITORY_FIELDS_PATH = 'rococo.repositories.postgresql.postgresql_repository.fields'
+
+# Constants for test data
+TEST_NAME_MIXED = "Mixed Test"
+
 
 @dataclass(kw_only=True)
 class TestVersionedModel(VersionedModel):
@@ -623,7 +629,7 @@ def test_fetch_related_one_to_many_relationship(repository, mock_adapter, model_
     mock_adapter.get_many.return_value = [related_record_1, related_record_2]
 
     # Mock the metadata for the field
-    with patch('rococo.repositories.postgresql.postgresql_repository.fields') as mock_fields_func:
+    with patch(POSTGRESQL_REPOSITORY_FIELDS_PATH) as mock_fields_func:
         from dataclasses import Field
         mock_field = Field(default=None, default_factory=None, init=True, repr=True,
                           hash=None, compare=True, metadata={
@@ -671,7 +677,7 @@ def test_fetch_related_many_to_many_relationship(repository, mock_adapter, model
     mock_adapter.get_many.return_value = related_records
 
     # Mock field metadata
-    with patch('rococo.repositories.postgresql.postgresql_repository.fields') as mock_fields_func:
+    with patch(POSTGRESQL_REPOSITORY_FIELDS_PATH) as mock_fields_func:
         from dataclasses import Field
         mock_field = Field(default=None, default_factory=None, init=True, repr=True,
                           hash=None, compare=True, metadata={
@@ -711,7 +717,7 @@ def test_fetch_related_single_relationship(repository, mock_adapter, model_insta
     mock_adapter.get_one.return_value = related_record
 
     # Mock field metadata without relation_type (defaults to single)
-    with patch('rococo.repositories.postgresql.postgresql_repository.fields') as mock_fields_func:
+    with patch(POSTGRESQL_REPOSITORY_FIELDS_PATH) as mock_fields_func:
         from dataclasses import Field
         mock_field = Field(default=None, default_factory=None, init=True, repr=True,
                           hash=None, compare=True, metadata={
@@ -770,7 +776,7 @@ def test_fetch_related_missing_field_metadata(repository, mock_adapter, model_in
     model_instance.related_item_id = uuid4()
 
     # Mock fields to return field without any metadata
-    with patch('rococo.repositories.postgresql.postgresql_repository.fields') as mock_fields_func:
+    with patch(POSTGRESQL_REPOSITORY_FIELDS_PATH) as mock_fields_func:
         from dataclasses import Field
         mock_field = Field(default=None, default_factory=None, init=True, repr=True,
                           hash=None, compare=True, metadata={},  # Empty metadata
@@ -793,7 +799,7 @@ def test_fetch_related_no_relationship_key(repository, mock_adapter, model_insta
     model_instance.related_item_id = uuid4()
 
     # Mock fields with metadata but no 'relationship' key
-    with patch('rococo.repositories.postgresql.postgresql_repository.fields') as mock_fields_func:
+    with patch(POSTGRESQL_REPOSITORY_FIELDS_PATH) as mock_fields_func:
         from dataclasses import Field
         mock_field = Field(default=None, default_factory=None, init=True, repr=True,
                           hash=None, compare=True, metadata={
@@ -825,7 +831,7 @@ def test_fetch_related_none_records_from_get_many(repository, mock_adapter, mode
     mock_adapter.get_many.return_value = None
 
     # Mock field metadata with one_to_many
-    with patch('rococo.repositories.postgresql.postgresql_repository.fields') as mock_fields_func:
+    with patch(POSTGRESQL_REPOSITORY_FIELDS_PATH) as mock_fields_func:
         from dataclasses import Field
         mock_field = Field(default=None, default_factory=None, init=True, repr=True,
                           hash=None, compare=True, metadata={
@@ -879,7 +885,7 @@ def test_process_data_versioned_model_field(repository, test_user_id):
         }
 
         # Mock fields to include metadata
-        with patch('rococo.repositories.postgresql.postgresql_repository.fields') as mock_fields_func:
+        with patch(POSTGRESQL_REPOSITORY_FIELDS_PATH) as mock_fields_func:
             from dataclasses import Field
             related_field = Field(default=None, default_factory=None, init=True, repr=True,
                                 hash=None, compare=True, metadata={'field_type': 'entity_id'},
@@ -917,7 +923,7 @@ def test_process_data_dict_with_entity_id(repository, test_user_id):
         }
 
         # Mock fields with metadata
-        with patch('rococo.repositories.postgresql.postgresql_repository.fields') as mock_fields_func:
+        with patch(POSTGRESQL_REPOSITORY_FIELDS_PATH) as mock_fields_func:
             from dataclasses import Field
             related_field = Field(default=None, default_factory=None, init=True, repr=True,
                                 hash=None, compare=True, metadata={'field_type': 'entity_id'},
@@ -951,7 +957,7 @@ def test_process_data_none_fields_skipped(repository, test_user_id):
             'previous_version': None
         }
 
-        with patch('rococo.repositories.postgresql.postgresql_repository.fields') as mock_fields_func:
+        with patch(POSTGRESQL_REPOSITORY_FIELDS_PATH) as mock_fields_func:
             from dataclasses import Field
             name_field = Field(default=None, default_factory=None, init=True, repr=True,
                              hash=None, compare=True, metadata={},
@@ -988,7 +994,7 @@ def test_process_data_uuid_hyphen_removal(repository, test_user_id):
             'previous_version': None
         }
 
-        with patch('rococo.repositories.postgresql.postgresql_repository.fields') as mock_fields_func:
+        with patch(POSTGRESQL_REPOSITORY_FIELDS_PATH) as mock_fields_func:
             from dataclasses import Field
             entity_field = Field(default=None, default_factory=None, init=True, repr=True,
                                hash=None, compare=True, metadata={},
@@ -1028,7 +1034,7 @@ def test_process_data_datetime_formatting(repository, test_user_id):
             'previous_version': None
         }
 
-        with patch('rococo.repositories.postgresql.postgresql_repository.fields') as mock_fields_func:
+        with patch(POSTGRESQL_REPOSITORY_FIELDS_PATH) as mock_fields_func:
             from dataclasses import Field
             changed_on_field = Field(default=None, default_factory=None, init=True, repr=True,
                                    hash=None, compare=True, metadata={},
@@ -1051,7 +1057,7 @@ def test_process_data_mixed_field_types(repository, test_user_id):
 
     main_instance = TestVersionedModel(
         entity_id=test_uuid,
-        name="Mixed Test",
+        name=TEST_NAME_MIXED,
         changed_by_id=test_user_id,
         changed_on=test_datetime
     )
@@ -1059,7 +1065,7 @@ def test_process_data_mixed_field_types(repository, test_user_id):
     with patch.object(TestVersionedModel, 'as_dict') as mock_as_dict:
         mock_as_dict.return_value = {
             'entity_id': test_uuid,  # UUID
-            'name': "Mixed Test",  # String
+            'name': TEST_NAME_MIXED,  # String
             'related_item_id': nested_model,  # VersionedModel
             'changed_on': test_datetime,  # datetime
             'active': True,  # bool
@@ -1068,7 +1074,7 @@ def test_process_data_mixed_field_types(repository, test_user_id):
             'previous_version': None
         }
 
-        with patch('rococo.repositories.postgresql.postgresql_repository.fields') as mock_fields_func:
+        with patch(POSTGRESQL_REPOSITORY_FIELDS_PATH) as mock_fields_func:
             from dataclasses import Field
 
             entity_field = Field(default=None, default_factory=None, init=True, repr=True,
@@ -1108,7 +1114,7 @@ def test_process_data_mixed_field_types(repository, test_user_id):
     assert result['changed_on'] == '2023-06-20 10:15:30'
     assert result['version'] == str(UUID(int=5)).replace('-', '')
     assert result['changed_by_id'] == str(test_user_id).replace('-', '')
-    assert result['name'] == "Mixed Test"  # String unchanged
+    assert result['name'] == TEST_NAME_MIXED  # String unchanged
     assert result['active'] is True  # bool unchanged
 
 
@@ -1229,8 +1235,6 @@ def test_fetch_related_for_instances_multiple_items(repository, test_user_id):
 
     with patch.object(repository, 'fetch_related_entities_for_field') as mock_fetch:
         # Configure mock to return different values based on instance
-        call_count = 0
-
         def side_effect(instance, field_name):
             if instance.entity_id == UUID(int=1):
                 return related_1
@@ -1374,7 +1378,7 @@ def test_get_one_adapter_raises_exception(repository, mock_adapter):
     """Test get_one when adapter raises an exception"""
     # Mock adapter.get_one to raise an exception when called
     def raise_exception(*args, **kwargs):
-        raise Exception("Database connection failed")
+        raise RuntimeError("Database connection failed")
 
     mock_adapter.get_one = raise_exception
 
@@ -1382,7 +1386,7 @@ def test_get_one_adapter_raises_exception(repository, mock_adapter):
     mock_adapter.__exit__.return_value = None
 
     # Should propagate the exception
-    with pytest.raises(Exception) as exc_info:
+    with pytest.raises(RuntimeError) as exc_info:
         repository.get_one(conditions={'entity_id': UUID(int=1)})
 
     assert "Database connection failed" in str(exc_info.value)

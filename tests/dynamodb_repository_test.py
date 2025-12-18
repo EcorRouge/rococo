@@ -3,7 +3,7 @@ import os
 from uuid import uuid4
 from dataclasses import dataclass
 from unittest.mock import MagicMock, patch, ANY
-from typing import Type
+from typing import Type, Optional
 from pynamodb.models import Model
 from pynamodb.attributes import UnicodeAttribute, BooleanAttribute
 from rococo.data.dynamodb import DynamoDbAdapter
@@ -31,9 +31,11 @@ class PersonModel(Model):
         self.attribute_values = kwargs
 
     def save(self):
+        """Save the person model to the database."""
         pass
     
     def delete(self):
+        """Delete the person model from the database."""
         pass
 
 class PersonAuditModel(Model):
@@ -60,8 +62,8 @@ class PersonAuditModel(Model):
 # Dummy Rococo Model
 @dataclass
 class Person(VersionedModel):
-    first_name: str = None
-    last_name: str = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
 
 class TestDynamoDbRepository(unittest.TestCase):
     def setUp(self):

@@ -8,7 +8,7 @@ from uuid import UUID, uuid4
 import json
 import datetime
 from dataclasses import dataclass, fields, field as dc_field
-from typing import Union, List, Optional
+from typing import Union, List
 
 from rococo.repositories.postgresql.postgresql_repository import PostgreSQLRepository
 from rococo.models.versioned_model import VersionedModel
@@ -27,14 +27,14 @@ class TestVersionedModel(VersionedModel):
     # Override base fields for consistent UUID object usage in tests
     entity_id: UUID = dc_field(default_factory=uuid4)
     version: UUID = dc_field(default_factory=lambda: UUID(int=0))
-    previous_version: Union[UUID, None] = dc_field(default=None)
-    changed_by_id: Union[UUID, str, None] = dc_field(
+    previous_version: UUID | None = dc_field(default=None)
+    changed_by_id: UUID | str | None = dc_field(
         default_factory=lambda: UUID(int=0))
 
-    name: Optional[str] = None  # Example custom field
-    related_item_id: Optional[UUID] = dc_field(
+    name: str | None = None  # Example custom field
+    related_item_id: UUID | None = dc_field(
         default=None)  # For fetch_related tests
-    related_items_ids: Optional[List[UUID]] = dc_field(
+    related_items_ids: List[UUID] | None = dc_field(
         default_factory=list)  # For fetch_related (many)
 
     # active and changed_on are inherited
@@ -1452,7 +1452,7 @@ def test_init_table_name_camelcase_to_snakecase(mock_adapter, mock_message_adapt
     # Create a model with CamelCase name
     @dataclass(kw_only=True)
     class MyTestModel(VersionedModel):
-        name: Optional[str] = None
+        name: str | None = None
 
     # Create repository with CamelCase model
     repo = PostgreSQLRepository(

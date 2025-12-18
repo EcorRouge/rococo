@@ -4,12 +4,11 @@ import re
 from uuid import UUID
 from datetime import datetime
 from dataclasses import fields
-from typing import Any, Dict, List, Type, Union, Optional
+from typing import Any, Dict, List, Type
 
 from rococo.data import PostgreSQLAdapter
 from rococo.messaging import MessageAdapter
 from rococo.models import VersionedModel
-from rococo.models.versioned_model import BaseModel
 from rococo.repositories import BaseRepository
 
 
@@ -19,7 +18,7 @@ class PostgreSQLRepository(BaseRepository):
     def __init__(
             self,
             db_adapter: PostgreSQLAdapter,
-            model: Type[BaseModel],
+            model: Type[VersionedModel],
             message_adapter: MessageAdapter,
             queue_name: str,
             user_id: UUID = None
@@ -37,7 +36,7 @@ class PostgreSQLRepository(BaseRepository):
                 conditions[key] = [str(id) for id in value]
         return conditions
 
-    def _process_data_before_save(self, instance: BaseModel):
+    def _process_data_before_save(self, instance: VersionedModel):
         """Method to convert VersionedModel instance to a data dictionary that can be saved to PostgreSQL"""
         super()._process_data_before_save(instance)
         data = instance.as_dict(
@@ -96,7 +95,7 @@ class PostgreSQLRepository(BaseRepository):
         self,
         conditions: Dict[str, Any] = None,
         fetch_related: List[str] = None
-    ) -> Union[BaseModel, None]:
+    ) -> VersionedModel | None:
         """get one"""
 
         if conditions is not None:
@@ -124,7 +123,7 @@ class PostgreSQLRepository(BaseRepository):
         limit: int = None,
         offset: int = None,
         fetch_related: List[str] = None
-    ) -> List[BaseModel]:
+    ) -> List[VersionedModel]:
         """Get many records, with optional related fields fetched"""
 
         if conditions is not None:
@@ -151,8 +150,8 @@ class PostgreSQLRepository(BaseRepository):
     def get_count(
         self,
         # collection_name: str, # Use self.table_name for consistency
-        index: Optional[str] = None,  # index (for hint) can be optional
-        query: Optional[Dict[str, Any]] = None  # query can be optional
+        index: str | None = None,  # index (for hint) can be optional
+        query: Dict[str, Any] | None = None  # query can be optional
     ) -> int:
         """
         Retrieves the count of records in the repository's table that match the given query parameters.
@@ -195,9 +194,9 @@ class PostgreSQLRepository(BaseRepository):
 
     def fetch_related_entities_for_field(
         self,
-        instance: BaseModel,
+        instance: VersionedModel,
         related_field: str
-    ) -> Union[List, Optional[BaseModel]]:
+    ) -> List | VersionedModel | None:
         """Fetch related entities for a given field in the instance."""
 
         related_value = getattr(instance, related_field)

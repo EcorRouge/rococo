@@ -28,7 +28,9 @@ commands:
               -Dsonar.sources=. \
               -Dsonar.host.url=$SONAR_GLOBAL_HOST \
               -Dsonar.token=$SONAR_GLOBAL_TOKEN \
-              -Dsonar.scm.disabled=true
+              -Dsonar.scm.disabled=true \
+              -Dsonar.coverage.exclusions=tests/**,tests/**/*.py \
+              -Dsonar.python.coverage.reportPaths=coverage.xml
             
             echo "✅ SonarQube scan completed successfully"
 
@@ -39,21 +41,21 @@ jobs:
       - image: cimg/python:3.10-node
     steps:
       - checkout
-      - security_scans
       - python/install-packages:
           pkg-manager: pip
       - python/install-packages:
           pip-dependency-file: requirements.txt
           pkg-manager: pip
       - python/install-packages:
-          args: pytest pytest-mock
+          args: pytest pytest-cov pytest-mock
           pkg-manager: pip
           pypi-cache: false
       - run:
-          name: Run tests
-          command: pytest --junitxml=junit.xml || ((($? == 5)) && echo 'Did not find any tests to run.')
+          name: Run tests with coverage
+          command: pytest --cov=rococo --cov-report=xml:coverage.xml --cov-report=term --junitxml=junit.xml || ((($? == 5)) && echo 'Did not find any tests to run.')
       - store_test_results:
           path: junit.xml
+      - security_scans
 
   build-package:
     # build python package

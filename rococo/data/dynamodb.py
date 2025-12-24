@@ -217,6 +217,19 @@ class DynamoDbAdapter(DbAdapter):
                 return False
         return False
 
+    def hard_delete(self, table: str, entity_id: str, model_cls: Type[BaseModel] = None) -> bool:
+        """Permanently deletes a record from the specified table by entity_id."""
+        if model_cls is None:
+            raise ValueError("model_cls is required for DynamoDB hard_delete")
+
+        pynamo_model = self._generate_pynamo_model(table, model_cls)
+        try:
+            item = pynamo_model.get(entity_id)
+            item.delete()
+            return True
+        except DoesNotExist:
+            return False
+
     def _execute_query_or_scan(self, model_cls: Type[Model], conditions: Dict[str, Any], limit: int = None, count_only: bool = False):
         """
         Helper to determine whether to use Query or Scan based on conditions.

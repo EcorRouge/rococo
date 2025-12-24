@@ -68,5 +68,10 @@ class DbAdapter(ABC):
 
     @abstractmethod
     def delete(self, table: str, data: Dict[str, Any]) -> bool:
-        """Deletes a record in the specified table based on given conditions."""
+        """Soft deletes a record by setting active=False (for VersionedModel)."""
+        pass
+
+    @abstractmethod
+    def hard_delete(self, table: str, entity_id: str) -> bool:
+        """Permanently deletes a record from the specified table by entity_id."""
         pass

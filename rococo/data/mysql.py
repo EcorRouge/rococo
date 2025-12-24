@@ -137,7 +137,8 @@ class MySqlAdapter(DbAdapter):
             conditions: Dict[str, Any],
             sort: List[Tuple[str, str]] = None,
             join_statements: list = None,
-            additional_fields: list = None
+            additional_fields: list = None,
+            is_versioned: bool = True
     ) -> Optional[Dict[str, Any]]:
         fields = [f'{table}.*']
         if additional_fields:
@@ -152,8 +153,10 @@ class MySqlAdapter(DbAdapter):
         if conditions:
             condition_strs_values = [self._build_condition_string(
                 table, k, v) for k, v in conditions.items()]
-        condition_strs_values.append((f"{table}.active = %s", [1]))
-        query += f" WHERE {' AND '.join([condition_str for condition_str, condition_value in condition_strs_values])}"
+        if is_versioned:
+            condition_strs_values.append((f"{table}.active = %s", [1]))
+        if condition_strs_values:
+            query += f" WHERE {' AND '.join([condition_str for condition_str, condition_value in condition_strs_values])}"
 
         if sort:
             sort_strs = [f"{column} {direction}" for column, direction in sort]
@@ -292,4 +295,11 @@ class MySqlAdapter(DbAdapter):
         # Set active = false
         data['active'] = False
         self.save(table, data)
+        return True
+
+    def hard_delete(self, table: str, entity_id: str) -> bool:
+        """Permanently deletes a record from the specified table by entity_id."""
+        query = f"DELETE FROM {table} WHERE entity_id = %s"
+        self._cursor.execute(query, (entity_id.replace('-', ''),))
+        self._connection.commit()
         return True

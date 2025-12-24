@@ -46,7 +46,8 @@ class MongoDbRepository(BaseRepository):
 
     def _process_data_before_save(
         self,
-        instance: BaseModel
+        instance: BaseModel,
+        extra_data: Dict[str, Any] = None
     ) -> Dict[str, Any]:
         """
         Prepares a BaseModel instance for saving by converting it into a data dictionary.
@@ -58,6 +59,8 @@ class MongoDbRepository(BaseRepository):
 
         Args:
             instance (BaseModel): The instance of BaseModel to be processed.
+            extra_data (Dict[str, Any], optional): Additional data to merge into the result
+                (e.g., TTL fields for delete operations). Defaults to None.
 
         Returns:
             Dict[str, Any]: A dictionary representing the prepared data for MongoDB storage.
@@ -74,6 +77,11 @@ class MongoDbRepository(BaseRepository):
         # Only set latest flag for versioned models
         if self._is_versioned_model():
             data["latest"] = True
+
+        # Apply any extra data (e.g., TTL fields for delete operations)
+        if extra_data:
+            data.update(extra_data)
+
         return data
 
     def get_one(
@@ -184,46 +192,22 @@ class MongoDbRepository(BaseRepository):
             f"Deleting entity_id={getattr(instance, 'entity_id', 'N/A')} from {collection_name}")
 
         if self._is_versioned_model():
-            # Soft delete for versioned models
-            instance.prepare_for_save(changed_by_id=self.user_id)
+            # Soft delete for versioned models: set active=False and call save()
             instance.active = False
 
-            data = instance.as_dict(
-                convert_datetime_to_iso_string=True, convert_uuids=True, export_properties=self.save_calculated_fields)
-
+            # Build TTL data if configured
+            extra_data = None
             if self.ttl_field:
-                data[self.ttl_field] = datetime.now(
-                    timezone.utc) + timedelta(minutes=self.ttl_minutes)
+                extra_data = {
+                    self.ttl_field: datetime.now(timezone.utc) + timedelta(minutes=self.ttl_minutes)
+                }
 
-            # Determine if we should move to audit
-            move_to_audit = False
-            if self.use_audit_table:
-                previous_version = getattr(instance, 'previous_version', None)
-                if previous_version and previous_version != get_uuid_hex(0):
-                    move_to_audit = True
-
-            saved = self._execute_within_context(
-                lambda: self.adapter.save(
-                    collection_name,
-                    data,
-                    move_to_audit=move_to_audit
-                )
-            )
-
-            if saved:
-                for k, v in saved.items():
-                    if hasattr(instance, k):
-                        setattr(instance, k, v)
+            return self.save(instance, collection_name, extra_data=extra_data)
         else:
             # Hard delete for non-versioned models
             with self.adapter:
-                coll = self.adapter._get_collection(collection_name, write=True)
-                coll.delete_one(
-                    {"entity_id": instance.entity_id},
-                    session=self.adapter._session
-                )
-
-        return instance
+                self.adapter.hard_delete(collection_name, instance.entity_id)
+            return instance
 
     def aggregate(
         self,
@@ -340,7 +324,8 @@ class MongoDbRepository(BaseRepository):
         self,
         instance: BaseModel,
         collection_name: str,
-        send_message: bool = False
+        send_message: bool = False,
+        extra_data: Dict[str, Any] = None
     ) -> BaseModel:
         """
         Saves a BaseModel instance to the database.
@@ -349,12 +334,14 @@ class MongoDbRepository(BaseRepository):
             instance (BaseModel): The BaseModel instance to save.
             collection_name (str): The name of the MongoDB collection to save to.
             send_message (bool, optional): Whether to send a message to the message queue after saving. Defaults to False.
+            extra_data (Dict[str, Any], optional): Additional data to merge into the save payload
+                (e.g., TTL fields for delete operations). Defaults to None.
 
         Returns:
             BaseModel: The saved BaseModel instance.
         """
         # Prepare the data for saving
-        payload = self._process_data_before_save(instance)
+        payload = self._process_data_before_save(instance, extra_data=extra_data)
         
         # Use appropriate save method based on model type
         if self._is_versioned_model():

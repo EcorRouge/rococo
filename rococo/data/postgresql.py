@@ -422,3 +422,9 @@ class PostgreSQLAdapter(DbAdapter):
         data['active'] = False
         self.save(table, data)
         return True
+
+    def hard_delete(self, table: str, entity_id: str) -> bool:
+        """Permanently deletes a record from the specified table by entity_id."""
+        query = f"DELETE FROM {table} WHERE entity_id = %s"
+        self.execute_query(query, (entity_id.replace('-', ''),))
+        return True

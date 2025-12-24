@@ -165,8 +165,10 @@ class MySqlRepository(BaseRepository):
                     'relationship').get('model')
                 join_table_name = re.sub(
                     r'(?<!^)(?=[A-Z])', '_', join_model.__name__).lower()
-                join_stmt_list.append(
-                    f'INNER JOIN {join_table_name} ON {parent_table_name}.{child_field}={join_table_name}.entity_id AND {join_table_name}.active=true')
+                join_condition = f'INNER JOIN {join_table_name} ON {parent_table_name}.{child_field}={join_table_name}.entity_id'
+                if issubclass(join_model, VersionedModel):
+                    join_condition += f' AND {join_table_name}.active=true'
+                join_stmt_list.append(join_condition)
                 join_field_list = [
                     f'{join_table_name}.{_field.name} AS joined_{child_field}_{join_table_name}_{_field.name}' for
                     _field in fields(join_model)]
@@ -178,7 +180,7 @@ class MySqlRepository(BaseRepository):
                 condition_field = next((field for field in fields(
                     self.model) if field.name == condition_name), None)
                 if condition_field and condition_field.metadata.get('field_type') == 'entity_id':
-                    if isinstance(value, VersionedModel):
+                    if isinstance(value, BaseModel):
                         conditions[condition_name] = str(
                             value.entity_id).replace('-', '')
                     elif isinstance(value, (str, UUID)):
@@ -191,7 +193,7 @@ class MySqlRepository(BaseRepository):
                                 "Filtering an attribute with an empty list is not supported.")
                         conditions[condition_name] = []
                         for v in value:
-                            if isinstance(v, VersionedModel):
+                            if isinstance(v, BaseModel):
                                 conditions[condition_name].append(
                                     str(v.entity_id).replace('-', ''))
                             elif isinstance(v, (str, UUID)):
@@ -206,7 +208,7 @@ class MySqlRepository(BaseRepository):
 
         data = self._execute_within_context(
             self.adapter.get_one, self.table_name, conditions, join_statements=join_stmt_list,
-            additional_fields=additional_fields
+            additional_fields=additional_fields, is_versioned=self._is_versioned_model()
         )
 
         # Calls __post_init__ of model to import related models and update fields.
@@ -255,8 +257,10 @@ class MySqlRepository(BaseRepository):
                     'relationship').get('model')
                 join_table_name = re.sub(
                     r'(?<!^)(?=[A-Z])', '_', join_model.__name__).lower()
-                join_stmt_list.append(
-                    f'INNER JOIN {join_table_name} ON {parent_table_name}.{child_field}={join_table_name}.entity_id AND {join_table_name}.active=true')
+                join_condition = f'INNER JOIN {join_table_name} ON {parent_table_name}.{child_field}={join_table_name}.entity_id'
+                if issubclass(join_model, VersionedModel):
+                    join_condition += f' AND {join_table_name}.active=true'
+                join_stmt_list.append(join_condition)
                 join_field_list = [
                     f'{join_table_name}.{_field.name} AS joined_{child_field}_{join_table_name}_{_field.name}' for
                     _field in fields(join_model)]
@@ -268,7 +272,7 @@ class MySqlRepository(BaseRepository):
                 condition_field = next((field for field in fields(
                     self.model) if field.name == condition_name), None)
                 if condition_field and condition_field.metadata.get('field_type') == 'entity_id':
-                    if isinstance(value, VersionedModel):
+                    if isinstance(value, BaseModel):
                         conditions[condition_name] = str(
                             value.entity_id).replace('-', '')
                     elif isinstance(value, (str, UUID)):
@@ -281,7 +285,7 @@ class MySqlRepository(BaseRepository):
                                 "Filtering an attribute with an empty list is not supported.")
                         conditions[condition_name] = []
                         for v in value:
-                            if isinstance(v, VersionedModel):
+                            if isinstance(v, BaseModel):
                                 conditions[condition_name].append(
                                     str(v.entity_id).replace('-', ''))
                             elif isinstance(v, (str, UUID)):
@@ -295,7 +299,8 @@ class MySqlRepository(BaseRepository):
                         raise NotImplementedError
 
         records = self._execute_within_context(
-            self.adapter.get_many, self.table_name, conditions, sort, limit, offset, join_statements=join_stmt_list,
+            self.adapter.get_many, self.table_name, conditions, sort, limit, offset,
+            active=self._is_versioned_model(), join_statements=join_stmt_list,
             additional_fields=additional_fields
         )
 

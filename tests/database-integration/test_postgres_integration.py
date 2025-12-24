@@ -1286,25 +1286,25 @@ class TestPostgreSQLNonVersionedSimpleLog:
                 # Expected - audit table should not exist
                 assert "does not exist" in str(e) or "relation" in str(e).lower()
 
-    def test_delete_simple_log_soft_delete(self, simple_log_repository, postgres_adapter):
-        """Test deleting a simple log performs soft delete (sets active=FALSE)."""
+    def test_delete_simple_log_hard_delete(self, simple_log_repository, postgres_adapter):
+        """Test deleting a non-versioned simple log performs hard delete (removes record)."""
         # Create log
         log = SimpleLog(message="Temporary log", level="WARNING")
         saved_log = simple_log_repository.save(log)
+        entity_id = str(saved_log.entity_id).replace('-', '')
 
-        # Delete the log
+        # Delete the log (hard delete for non-versioned models)
         simple_log_repository.delete(saved_log)
 
-        # Verify soft delete in database
+        # Verify hard delete - record should be completely removed from database
         with postgres_adapter:
-            # Query with active=False to get inactive records
+            # Query with active=False to check all records (not just active)
             records = postgres_adapter.get_many(
                 'simple_log',
-                {'entity_id': str(saved_log.entity_id).replace('-', '')},
+                {'entity_id': entity_id},
                 active=False
             )
-            assert len(records) == 1
-            assert records[0]['active'] is False  # PostgreSQL uses boolean
+            assert len(records) == 0  # Record should be completely removed
 
     def test_query_active_logs(self, simple_log_repository):
         """Test querying for active logs only."""
@@ -1329,24 +1329,26 @@ class TestPostgreSQLNonVersionedSimpleLog:
         assert "Active log 2" in active_messages
         assert "To be deleted" not in active_messages
 
-    def test_query_deleted_logs(self, simple_log_repository, postgres_adapter):
-        """Test querying for deleted (inactive) logs."""
+    def test_query_deleted_logs_not_found(self, simple_log_repository, postgres_adapter):
+        """Test that hard-deleted logs cannot be queried (non-versioned models use hard delete)."""
         # Create and delete a log
         log = SimpleLog(message="Deleted log entry", level="ERROR")
         saved_log = simple_log_repository.save(log)
+        entity_id = str(saved_log.entity_id).replace('-', '')
+
         simple_log_repository.delete(saved_log)
 
-        # Query for inactive logs directly from database
+        # Query for the deleted log directly from database
         with postgres_adapter:
-            inactive_records = postgres_adapter.get_many(
+            # For non-versioned models, hard delete removes the record completely
+            records = postgres_adapter.get_many(
                 'simple_log',
-                {},
+                {'entity_id': entity_id},
                 active=False
             )
 
-        # Should find our deleted log
-        deleted_messages = [record['message'] for record in inactive_records]
-        assert "Deleted log entry" in deleted_messages
+        # Record should not exist at all (hard delete)
+        assert len(records) == 0
 
     def test_no_audit_table_exists(self, postgres_adapter):
         """Test that no audit table exists for non-versioned SimpleLog model."""
@@ -1692,7 +1694,7 @@ class TestPostgresBrandCarRelationships:
         assert car_brand[0]['name'] == "New Name"
 
     def test_delete_brand_with_cars(self, brands_repository, cars_repository, brand_cars_repository, postgres_adapter):
-        """Test deleting brand and check orphaned relationships."""
+        """Test deleting brand (hard delete for non-versioned) and check orphaned relationships."""
         # Create brand and car
         brand = NonVersionedBrand(name="To Delete")
         saved_brand = brands_repository.save(brand)
@@ -1710,19 +1712,19 @@ class TestPostgresBrandCarRelationships:
         saved_relationship = brand_cars_repository.save(brand_car)
         relationship_id = saved_relationship.entity_id.replace('-', '')
 
-        # Delete brand (soft delete)
+        # Delete brand (hard delete for non-versioned models)
         brands_repository.delete(saved_brand)
 
-        # Verify brand is inactive
+        # Verify brand is completely removed (hard delete)
         with postgres_adapter:
             deleted_brand = postgres_adapter.get_many(
                 'non_versioned_brand',
-                {'entity_id': brand_id, 'active': False},
+                {'entity_id': brand_id},
                 active=False
             )
-            assert len(deleted_brand) == 1
+            assert len(deleted_brand) == 0  # Record should be completely removed
 
-        # Relationship may still exist but brand is inactive
+        # Relationship may still exist but brand is deleted
         # This tests orphaned relationship scenario
         with postgres_adapter:
             relationship = postgres_adapter.get_one(
@@ -1735,7 +1737,7 @@ class TestPostgresBrandCarRelationships:
             assert True  # Query executed successfully
 
     def test_delete_car_removes_relationship(self, brands_repository, cars_repository, brand_cars_repository, postgres_adapter):
-        """Test deleting car and check BrandCar cleanup."""
+        """Test deleting car (hard delete for non-versioned) and check BrandCar cleanup."""
         # Create brand and car
         brand = NonVersionedBrand(name="Test Brand")
         saved_brand = brands_repository.save(brand)
@@ -1752,31 +1754,31 @@ class TestPostgresBrandCarRelationships:
         saved_relationship = brand_cars_repository.save(brand_car)
         relationship_id = saved_relationship.entity_id.replace('-', '')
 
-        # Delete car (soft delete)
+        # Delete car (hard delete for non-versioned models)
         cars_repository.delete(saved_car)
 
-        # Verify car is inactive
+        # Verify car is completely removed (hard delete)
         with postgres_adapter:
             deleted_car = postgres_adapter.get_many(
                 'non_versioned_car',
-                {'entity_id': car_id, 'active': False},
+                {'entity_id': car_id},
                 active=False
             )
-            assert len(deleted_car) == 1
+            assert len(deleted_car) == 0  # Record should be completely removed
 
-        # Relationship may still exist but car is inactive
-        # Query for active relationships should return empty
+        # Relationship may still exist but car is deleted
+        # Query for relationships with the car should return empty since car doesn't exist
         # NOTE: Raw SQL needed - complex multi-table JOIN queries are not easily supported by adapter methods
         with postgres_adapter:
             active_relationships = postgres_adapter.execute_query(
                 """
                 SELECT * FROM non_versioned_brand_car bc
                 INNER JOIN non_versioned_car c ON bc.car_id = c.entity_id
-                WHERE bc.entity_id = %s AND c.active = true AND bc.active = true
+                WHERE bc.entity_id = %s
                 """,
                 (relationship_id,)
             )
-            assert len(active_relationships) == 0
+            assert len(active_relationships) == 0  # Car doesn't exist, so JOIN returns nothing
 
     def test_orphaned_brand_car_relationship(self, brand_cars_repository, postgres_adapter):
         """Test BrandCar with non-existent brand_id or car_id."""

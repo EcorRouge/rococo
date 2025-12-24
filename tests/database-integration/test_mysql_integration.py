@@ -67,11 +67,6 @@ CREATE TABLE IF NOT EXISTS versioned_product_audit (
 NON_VERSIONED_CONFIG_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS non_versioned_config (
     entity_id VARCHAR(32) PRIMARY KEY,
-    version VARCHAR(32),
-    previous_version VARCHAR(32),
-    active TINYINT(1) DEFAULT 1,
-    changed_by_id VARCHAR(32),
-    changed_on DATETIME,
     `key` VARCHAR(255),
     `value` TEXT
 )
@@ -80,11 +75,6 @@ CREATE TABLE IF NOT EXISTS non_versioned_config (
 NON_VERSIONED_POST_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS non_versioned_post (
     entity_id VARCHAR(32) PRIMARY KEY,
-    version VARCHAR(32),
-    previous_version VARCHAR(32),
-    active TINYINT(1) DEFAULT 1,
-    changed_by_id VARCHAR(32),
-    changed_on DATETIME,
     title VARCHAR(255),
     description TEXT
 )
@@ -93,11 +83,6 @@ CREATE TABLE IF NOT EXISTS non_versioned_post (
 NON_VERSIONED_CAR_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS non_versioned_car (
     entity_id VARCHAR(32) PRIMARY KEY,
-    version VARCHAR(32),
-    previous_version VARCHAR(32),
-    active TINYINT(1) DEFAULT 1,
-    changed_by_id VARCHAR(32),
-    changed_on DATETIME,
     name VARCHAR(255),
     brand VARCHAR(255)
 )
@@ -106,11 +91,6 @@ CREATE TABLE IF NOT EXISTS non_versioned_car (
 NON_VERSIONED_BRAND_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS non_versioned_brand (
     entity_id VARCHAR(32) PRIMARY KEY,
-    version VARCHAR(32),
-    previous_version VARCHAR(32),
-    active TINYINT(1) DEFAULT 1,
-    changed_by_id VARCHAR(32),
-    changed_on DATETIME,
     name VARCHAR(255)
 )
 """
@@ -118,11 +98,6 @@ CREATE TABLE IF NOT EXISTS non_versioned_brand (
 NON_VERSIONED_BRAND_CAR_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS non_versioned_brand_car (
     entity_id VARCHAR(32) PRIMARY KEY,
-    version VARCHAR(32),
-    previous_version VARCHAR(32),
-    active TINYINT(1) DEFAULT 1,
-    changed_by_id VARCHAR(32),
-    changed_on DATETIME,
     brand_id VARCHAR(32) NOT NULL,
     car_id VARCHAR(32) NOT NULL,
     INDEX idx_brand_id (brand_id),
@@ -133,11 +108,6 @@ CREATE TABLE IF NOT EXISTS non_versioned_brand_car (
 SIMPLE_LOG_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS simple_log (
     entity_id VARCHAR(32) PRIMARY KEY,
-    version VARCHAR(32),
-    previous_version VARCHAR(32),
-    active TINYINT(1) DEFAULT 1,
-    changed_by_id VARCHAR(32),
-    changed_on DATETIME,
     message TEXT,
     level VARCHAR(50)
 )
@@ -764,14 +734,14 @@ class TestMySQLNonVersionedModel:
 
         column_names = [col['COLUMN_NAME'] for col in columns]
 
-        # Verify Big 6 fields exist for backward compatibility
-        assert 'version' in column_names
-        assert 'previous_version' in column_names
-        assert 'active' in column_names
-        assert 'changed_by_id' in column_names
-        assert 'changed_on' in column_names
+        # Verify Big 6 fields do NOT exist for non-versioned models
+        assert 'version' not in column_names
+        assert 'previous_version' not in column_names
+        assert 'active' not in column_names
+        assert 'changed_by_id' not in column_names
+        assert 'changed_on' not in column_names
 
-        # Verify model-specific fields
+        # Verify model-specific fields DO exist
         assert 'entity_id' in column_names
         assert 'key' in column_names
         assert 'value' in column_names
@@ -825,7 +795,8 @@ class TestMySQLNonVersionedModel:
         with mysql_adapter:
             record = mysql_adapter.get_one(
                 'non_versioned_config',
-                {'entity_id': str(entity_id).replace('-', '')}
+                {'entity_id': str(entity_id).replace('-', '')},
+                is_versioned=False
             )
             assert record is not None
 
@@ -846,7 +817,8 @@ class TestMySQLNonVersionedModel:
             # This should work because `key` is properly escaped
             record = mysql_adapter.get_one(
                 'non_versioned_config',
-                {'entity_id': str(saved.entity_id).replace('-', '')}
+                {'entity_id': str(saved.entity_id).replace('-', '')},
+                is_versioned=False
             )
             assert record is not None
             assert 'key' in record
@@ -1045,27 +1017,27 @@ class TestMySQLNonVersionedSimpleLog:
                 # Expected - audit table should not exist
                 assert "doesn't exist" in str(e) or "Table" in str(e)
 
-    def test_delete_simple_log_soft_delete(self, simple_log_repository, mysql_adapter):
-        """Test deleting a simple log performs soft delete (sets active=False)."""
+    def test_delete_simple_log_hard_delete(self, simple_log_repository, mysql_adapter):
+        """Test deleting a non-versioned simple log performs hard delete (removes record)."""
         # Create log
         log = SimpleLog(message="Temporary log", level="WARNING")
         saved_log = simple_log_repository.save(log)
+        entity_id = str(saved_log.entity_id).replace('-', '')
 
-        # Delete the log
+        # Delete the log (hard delete for non-versioned models)
         simple_log_repository.delete(saved_log)
 
-        # Verify soft delete in database
+        # Verify hard delete - record should be completely removed from database
         with mysql_adapter:
             records = mysql_adapter.get_many(
                 'simple_log',
-                conditions={'entity_id': str(saved_log.entity_id).replace('-', ''), 'active': 0},
+                conditions={'entity_id': entity_id},
                 active=False
             )
-            assert len(records) == 1
-            assert records[0]['active'] == 0  # Soft deleted
+            assert len(records) == 0  # Record should be completely removed
 
     def test_query_active_logs(self, simple_log_repository):
-        """Test querying for active logs only."""
+        """Test querying logs after hard delete (non-versioned models are hard deleted)."""
         # Create multiple logs
         log1 = SimpleLog(message="Active log 1", level="INFO")
         log2 = SimpleLog(message="Active log 2", level="DEBUG")
@@ -1075,36 +1047,38 @@ class TestMySQLNonVersionedSimpleLog:
         saved_log2 = simple_log_repository.save(log2)
         saved_log3 = simple_log_repository.save(log3)
 
-        # Delete one log
+        # Delete one log (hard delete for non-versioned models - record is removed)
         simple_log_repository.delete(saved_log3)
 
-        # Query for active logs (get_many() by default returns active=True)
-        active_logs = simple_log_repository.get_many()
+        # Query for logs - deleted log should not exist (hard deleted)
+        logs = simple_log_repository.get_many()
 
-        # Should have at least 2 active logs (the ones we didn't delete)
-        active_messages = [log.message for log in active_logs]
-        assert "Active log 1" in active_messages
-        assert "Active log 2" in active_messages
-        assert "To be deleted" not in active_messages
+        # Should have at least 2 logs (the ones we didn't delete)
+        log_messages = [log.message for log in logs]
+        assert "Active log 1" in log_messages
+        assert "Active log 2" in log_messages
+        assert "To be deleted" not in log_messages  # Hard deleted, doesn't exist
 
-    def test_query_deleted_logs(self, simple_log_repository, mysql_adapter):
-        """Test querying for deleted (inactive) logs."""
+    def test_query_deleted_logs_not_found(self, simple_log_repository, mysql_adapter):
+        """Test that hard-deleted logs cannot be queried (non-versioned models use hard delete)."""
         # Create and delete a log
         log = SimpleLog(message="Deleted log entry", level="ERROR")
         saved_log = simple_log_repository.save(log)
+        entity_id = str(saved_log.entity_id).replace('-', '')
+
         simple_log_repository.delete(saved_log)
 
-        # Query for inactive logs directly from database
+        # Query for the deleted log directly from database
         with mysql_adapter:
-            inactive_records = mysql_adapter.get_many(
+            # For non-versioned models, hard delete removes the record completely
+            records = mysql_adapter.get_many(
                 'simple_log',
-                conditions={'active': 0},
+                conditions={'entity_id': entity_id},
                 active=False
             )
 
-        # Should find our deleted log
-        deleted_messages = [record['message'] for record in inactive_records]
-        assert "Deleted log entry" in deleted_messages
+        # Record should not exist at all (hard delete)
+        assert len(records) == 0
 
     def test_no_audit_table_exists(self, mysql_adapter):
         """Test that no audit table exists for non-versioned SimpleLog model."""
@@ -1119,7 +1093,7 @@ class TestMySQLNonVersionedSimpleLog:
                 assert "doesn't exist" in str(e) or "Table" in str(e)
 
     def test_schema_version_columns_unused(self, simple_log_repository, mysql_adapter):
-        """Test that version and previous_version columns remain NULL for non-versioned model."""
+        """Test that version and previous_version columns do not exist for non-versioned model."""
         # Create and update a log
         log = SimpleLog(message="Version test", level="INFO")
         saved_log = simple_log_repository.save(log)
@@ -1128,15 +1102,17 @@ class TestMySQLNonVersionedSimpleLog:
         saved_log.message = "Version test updated"
         updated_log = simple_log_repository.save(saved_log)
 
-        # Check database directly - version columns should be NULL
+        # Check database directly - version columns should not exist
         with mysql_adapter:
-            record = mysql_adapter.get_one(
-                'simple_log',
-                {'entity_id': str(updated_log.entity_id).replace('-', '')}
-            )
-            assert record is not None
-            assert record['version'] is None
-            assert record['previous_version'] is None
+            columns = mysql_adapter.execute_query("""
+                SELECT COLUMN_NAME
+                FROM INFORMATION_SCHEMA.COLUMNS
+                WHERE TABLE_SCHEMA = 'database' AND TABLE_NAME = 'simple_log'
+            """)
+            column_names = [col['COLUMN_NAME'] for col in columns]
+            assert 'version' not in column_names
+            assert 'previous_version' not in column_names
+            assert 'active' not in column_names
 
     def test_bulk_save_simple_logs(self, simple_log_repository):
         """Test bulk saving of 100+ simple log entries."""
@@ -1203,13 +1179,15 @@ class TestMySQLNonVersionedSimpleLog:
             assert product_record is not None
             assert product_record['version'] is not None
 
-            # Check logs have no version
+            # Check logs don't have version columns
             log_records = mysql_adapter.get_many(
                 'simple_log',
-                conditions={'entity_id': [str(saved_log.entity_id).replace('-', ''), str(saved_update_log.entity_id).replace('-', '')]}
+                conditions={'entity_id': [str(saved_log.entity_id).replace('-', ''), str(saved_update_log.entity_id).replace('-', '')]},
+                active=False
             )
             assert len(log_records) == 2
-            assert all(record['version'] is None for record in log_records)
+            # Verify version column doesn't exist in the records
+            assert all('version' not in record for record in log_records)
 
 
 # ============================================================================
@@ -1282,7 +1260,7 @@ class TestMySQLBrandCarRelationships:
                 """
                 SELECT c.* FROM non_versioned_car c
                 INNER JOIN non_versioned_brand_car bc ON c.entity_id = bc.car_id
-                WHERE bc.brand_id = %s AND c.active = 1 AND bc.active = 1
+                WHERE bc.brand_id = %s
                 """,
                 (brand_id,)
             )
@@ -1318,7 +1296,7 @@ class TestMySQLBrandCarRelationships:
                 """
                 SELECT b.* FROM non_versioned_brand b
                 INNER JOIN non_versioned_brand_car bc ON b.entity_id = bc.brand_id
-                WHERE bc.car_id = %s AND b.active = 1 AND bc.active = 1
+                WHERE bc.car_id = %s
                 LIMIT 1
                 """,
                 (car_id,)
@@ -1368,7 +1346,7 @@ class TestMySQLBrandCarRelationships:
                     """
                     SELECT c.* FROM non_versioned_car c
                     INNER JOIN non_versioned_brand_car bc ON c.entity_id = bc.car_id
-                    WHERE bc.brand_id = %s AND c.active = 1 AND bc.active = 1
+                    WHERE bc.brand_id = %s
                     """,
                     (brand_id,)
                 )
@@ -1385,7 +1363,8 @@ class TestMySQLBrandCarRelationships:
         with mysql_adapter:
             relationships = mysql_adapter.get_many(
                 'non_versioned_brand_car',
-                conditions={'car_id': car_id}
+                conditions={'car_id': car_id},
+                active=False
             )
 
         assert len(relationships) == 0
@@ -1401,7 +1380,8 @@ class TestMySQLBrandCarRelationships:
         with mysql_adapter:
             relationships = mysql_adapter.get_many(
                 'non_versioned_brand_car',
-                conditions={'brand_id': brand_id}
+                conditions={'brand_id': brand_id},
+                active=False
             )
 
         assert len(relationships) == 0
@@ -1434,7 +1414,7 @@ class TestMySQLBrandCarRelationships:
                 """
                 SELECT b.* FROM non_versioned_brand b
                 INNER JOIN non_versioned_brand_car bc ON b.entity_id = bc.brand_id
-                WHERE bc.car_id = %s AND b.active = 1 AND bc.active = 1
+                WHERE bc.car_id = %s
                 LIMIT 1
                 """,
                 (car_id,)
@@ -1444,7 +1424,7 @@ class TestMySQLBrandCarRelationships:
         assert car_brand[0]['name'] == "New Name"
 
     def test_delete_brand_with_cars(self, brands_repository, cars_repository, brand_cars_repository, mysql_adapter):
-        """Test deleting brand and check orphaned relationships."""
+        """Test deleting brand (hard delete for non-versioned) and check orphaned relationships."""
         # Create brand and car
         brand = NonVersionedBrand(name="To Delete")
         saved_brand = brands_repository.save(brand)
@@ -1462,30 +1442,31 @@ class TestMySQLBrandCarRelationships:
         saved_relationship = brand_cars_repository.save(brand_car)
         relationship_id = saved_relationship.entity_id.replace('-', '')
 
-        # Delete brand (soft delete)
+        # Delete brand (hard delete for non-versioned models)
         brands_repository.delete(saved_brand)
 
-        # Verify brand is inactive
+        # Verify brand is completely removed (hard delete)
         with mysql_adapter:
             deleted_brand = mysql_adapter.get_many(
                 'non_versioned_brand',
-                conditions={'entity_id': brand_id, 'active': 0},
+                conditions={'entity_id': brand_id},
                 active=False
             )
-            assert len(deleted_brand) == 1
+            assert len(deleted_brand) == 0  # Record should be completely removed
 
-        # Relationship may still exist but brand is inactive
+        # Relationship may still exist but brand is deleted
         # This tests orphaned relationship scenario
         with mysql_adapter:
             relationships = mysql_adapter.get_many(
                 'non_versioned_brand_car',
-                conditions={'entity_id': relationship_id}
+                conditions={'entity_id': relationship_id},
+                active=False  # Non-versioned model - no active column
             )
-            # Relationship record still exists
+            # Relationship record may or may not exist
             assert len(relationships) >= 0
 
     def test_delete_car_removes_relationship(self, brands_repository, cars_repository, brand_cars_repository, mysql_adapter):
-        """Test deleting car and check BrandCar cleanup."""
+        """Test deleting car (hard delete for non-versioned) and check BrandCar cleanup."""
         # Create brand and car
         brand = NonVersionedBrand(name="Test Brand")
         saved_brand = brands_repository.save(brand)
@@ -1502,30 +1483,30 @@ class TestMySQLBrandCarRelationships:
         saved_relationship = brand_cars_repository.save(brand_car)
         relationship_id = saved_relationship.entity_id.replace('-', '')
 
-        # Delete car (soft delete)
+        # Delete car (hard delete for non-versioned models)
         cars_repository.delete(saved_car)
 
-        # Verify car is inactive
+        # Verify car is completely removed (hard delete)
         with mysql_adapter:
             deleted_car = mysql_adapter.get_many(
                 'non_versioned_car',
-                conditions={'entity_id': car_id, 'active': 0},
+                conditions={'entity_id': car_id},
                 active=False
             )
-            assert len(deleted_car) == 1
+            assert len(deleted_car) == 0  # Record should be completely removed
 
-        # Relationship may still exist but car is inactive
-        # Query for active relationships should return empty
+        # Relationship may still exist but car is deleted
+        # Query for relationships with the car should return empty since car doesn't exist
         with mysql_adapter:
             active_relationships = mysql_adapter.execute_query(
                 """
                 SELECT * FROM non_versioned_brand_car bc
                 INNER JOIN non_versioned_car c ON bc.car_id = c.entity_id
-                WHERE bc.entity_id = %s AND c.active = 1 AND bc.active = 1
+                WHERE bc.entity_id = %s
                 """,
                 (relationship_id,)
             )
-            assert len(active_relationships) == 0
+            assert len(active_relationships) == 0  # Car doesn't exist, so JOIN returns nothing
 
     def test_orphaned_brand_car_relationship(self, brand_cars_repository, mysql_adapter):
         """Test BrandCar with non-existent brand_id or car_id."""
@@ -1544,7 +1525,8 @@ class TestMySQLBrandCarRelationships:
         with mysql_adapter:
             relationships = mysql_adapter.get_many(
                 'non_versioned_brand_car',
-                conditions={'entity_id': relationship_id}
+                conditions={'entity_id': relationship_id},
+                active=False
             )
             assert len(relationships) == 1
             assert relationships[0]['brand_id'] == fake_brand_id
@@ -1581,7 +1563,8 @@ class TestMySQLBrandCarRelationships:
         with mysql_adapter:
             relationships = mysql_adapter.get_many(
                 'non_versioned_brand_car',
-                conditions={'car_id': car_id}
+                conditions={'car_id': car_id},
+                active=False
             )
 
         # Both relationships exist (no unique constraint enforced)
@@ -1644,11 +1627,8 @@ class TestMySQLBrandCarRelationships:
                 """
                 SELECT b.name, COUNT(bc.car_id) as car_count
                 FROM non_versioned_brand b
-                LEFT JOIN non_versioned_brand_car bc ON b.entity_id = bc.brand_id 
-                    AND bc.active = 1
-                LEFT JOIN non_versioned_car c ON bc.car_id = c.entity_id 
-                    AND c.active = 1
-                WHERE b.active = 1
+                LEFT JOIN non_versioned_brand_car bc ON b.entity_id = bc.brand_id
+                LEFT JOIN non_versioned_car c ON bc.car_id = c.entity_id
                 GROUP BY b.entity_id, b.name
                 ORDER BY b.name
                 """

@@ -448,6 +448,15 @@ class MongoDBAdapter(DbAdapter):
         except errors.PyMongoError as e:
             raise RuntimeError(f"delete failed: {e}") from e
 
+    def hard_delete(self, table: str, entity_id: str) -> bool:
+        """Permanently deletes a record from the specified collection by entity_id."""
+        try:
+            coll = self._get_collection(table, write=True)
+            result = coll.delete_one({"entity_id": entity_id}, session=self._session)
+            return result.deleted_count > 0
+        except errors.PyMongoError as e:
+            raise RuntimeError(f"hard_delete failed: {e}") from e
+
     def insert_many(
         self,
         table: str,

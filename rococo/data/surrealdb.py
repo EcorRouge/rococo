@@ -244,3 +244,9 @@ class SurrealDbAdapter(DbAdapter):
         # Set active = false
         data['active'] = False
         return self.save(table, data)
+
+    def hard_delete(self, table: str, entity_id: str) -> bool:
+        """Permanently deletes a record from the specified table by entity_id."""
+        query = f"DELETE {table}:`{entity_id}`"
+        self.execute_query(query)
+        return True

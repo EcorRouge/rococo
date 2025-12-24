@@ -129,14 +129,29 @@ def get_mongodb_config():
     - MONGODB_PORT
     - MONGODB_DATABASE
 
+    Optional env vars:
+    - MONGODB_USER
+    - MONGODB_PASSWORD
+
     Returns None if any required env var is missing.
     """
     required_vars = ['MONGODB_HOST', 'MONGODB_PORT', 'MONGODB_DATABASE']
     if not all(os.getenv(var) for var in required_vars):
         return None
 
+    # Build URI with optional authentication
+    user = os.getenv('MONGODB_USER')
+    password = os.getenv('MONGODB_PASSWORD')
+    host = os.getenv('MONGODB_HOST')
+    port = os.getenv('MONGODB_PORT')
+
+    if user and password:
+        uri = f"mongodb://{user}:{password}@{host}:{port}/"
+    else:
+        uri = f"mongodb://{host}:{port}/"
+
     return {
-        'uri': f"mongodb://{os.getenv('MONGODB_HOST')}:{os.getenv('MONGODB_PORT')}/",
+        'uri': uri,
         'database': os.getenv('MONGODB_DATABASE')
     }
 

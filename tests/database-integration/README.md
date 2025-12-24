@@ -145,6 +145,8 @@ export POSTGRES_DATABASE=database
 # MongoDB
 export MONGODB_HOST=localhost
 export MONGODB_PORT=4003
+export MONGODB_USER=database
+export MONGODB_PASSWORD=database
 export MONGODB_DATABASE=database
 
 # SurrealDB
@@ -319,7 +321,7 @@ When adding new database adapters:
 
 ## Variables List
 
-```
+```bash
 export MYSQL_HOST=localhost
 export MYSQL_PORT=4000
 export MYSQL_USER=database
@@ -339,9 +341,8 @@ export SURREALDB_USER=database
 export SURREALDB_PASSWORD=database
 export SURREALDB_NAMESPACE=database
 export SURREALDB_DATABASE=database
-export AWS_REGION=
-export AWS_ACCESS_KEY_ID=
-export AWS_SECRET_ACCESS_KEY=
-export DYNAMODB_ENDPOINT_URL=
-export DYNAMODB_ENDPOINT_URL=
+export AWS_REGION=us-east-1
+export AWS_ACCESS_KEY_ID=test
+export AWS_SECRET_ACCESS_KEY=test
+export DYNAMODB_ENDPOINT_URL=http://localhost:8000
 ```

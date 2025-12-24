@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Type, Union, Optional
 from rococo.data import PostgreSQLAdapter
 from rococo.messaging import MessageAdapter
 from rococo.models import VersionedModel
+from rococo.models.versioned_model import BaseModel
 from rococo.repositories import BaseRepository
 
 
@@ -18,7 +19,7 @@ class PostgreSQLRepository(BaseRepository):
     def __init__(
             self,
             db_adapter: PostgreSQLAdapter,
-            model: Type[VersionedModel],
+            model: Type[BaseModel],
             message_adapter: MessageAdapter,
             queue_name: str,
             user_id: UUID = None
@@ -36,7 +37,7 @@ class PostgreSQLRepository(BaseRepository):
                 conditions[key] = [str(id) for id in value]
         return conditions
 
-    def _process_data_before_save(self, instance: VersionedModel):
+    def _process_data_before_save(self, instance: BaseModel):
         """Method to convert VersionedModel instance to a data dictionary that can be saved to PostgreSQL"""
         super()._process_data_before_save(instance)
         data = instance.as_dict(
@@ -71,7 +72,7 @@ class PostgreSQLRepository(BaseRepository):
         self,
         conditions: Dict[str, Any] = None,
         fetch_related: List[str] = None
-    ) -> Union[VersionedModel, None]:
+    ) -> Union[BaseModel, None]:
         """get one"""
 
         if conditions is not None:
@@ -110,7 +111,7 @@ class PostgreSQLRepository(BaseRepository):
         limit: int = None,
         offset: int = None,
         fetch_related: List[str] = None
-    ) -> List[VersionedModel]:
+    ) -> List[BaseModel]:
         """Get many records, with optional related fields fetched"""
 
         if conditions is not None:
@@ -192,9 +193,9 @@ class PostgreSQLRepository(BaseRepository):
 
     def fetch_related_entities_for_field(
         self,
-        instance: VersionedModel,
+        instance: BaseModel,
         related_field: str
-    ) -> Union[List, Optional[VersionedModel]]:
+    ) -> Union[List, Optional[BaseModel]]:
         """Fetch related entities for a given field in the instance."""
 
         related_value = getattr(instance, related_field)

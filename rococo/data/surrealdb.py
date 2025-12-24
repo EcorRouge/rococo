@@ -1,5 +1,4 @@
 import logging
-import asyncio
 from typing import Any, Dict, List, Optional, Tuple, Union
 from uuid import UUID
 from surrealdb import Surreal
@@ -20,37 +19,36 @@ class SurrealDbAdapter(DbAdapter):
         self._namespace = namespace
         self._db_name = db_name
         self._db = None
-        self._event_loop = None
 
     def __enter__(self):
         """Context manager entry point for preparing DB connection."""
-        self._event_loop = asyncio.new_event_loop()
-        self._db = self._event_loop.run_until_complete(self._prepare_db())
+        self._db = self._prepare_db()
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
         """Context manager exit point for closing DB connection."""
-        self._event_loop.run_until_complete(self._db.close())
-        self._event_loop.stop()
-        self._event_loop = None
+        if self._db:
+            self._db.close()
         self._db = None
 
-    async def _prepare_db(self):
+    def _prepare_db(self):
         """Prepares the DB connection."""
         db = Surreal(self._endpoint)
-        await db.connect()
-        await db.signin({"user": self._username, "pass": self._password})
-        await db.use(self._namespace, self._db_name)
+        db.signin({"username": self._username, "password": self._password})
+        db.use(self._namespace, self._db_name)
         return db
 
     def _call_db(self, function_name, *args, **kwargs):
         """Calls a function specified by function_name argument in SurrealDB connection passing forward args and kwargs."""
         if not self._db:
             raise Exception("No connection to SurrealDB.")
-        return self._event_loop.run_until_complete(getattr(self._db, function_name)(*args, **kwargs))
+        return getattr(self._db, function_name)(*args, **kwargs)
 
     def _build_condition_string(self, key, value):
         if isinstance(value, str):
+            # If the string contains backticks, it's a record ID reference - don't add quotes
+            if '`' in value:
+                return f"{key}={value}"
             return f"{key}='{value}'"
         elif isinstance(value, bool):
             return f"{key}={'true' if value is True else 'false'}"
@@ -91,17 +89,18 @@ class SurrealDbAdapter(DbAdapter):
         """
         Parse the response from SurrealDB.
 
-        If the 'result' list has one item, return that item.
-        If the 'result' list has multiple items, return the list.
-        If the 'result' list is empty or if there's no 'result', return an empty list.
+        The blocking SDK returns results directly as a list of dictionaries.
+        If the list has one item, return that item.
+        If the list has multiple items, return the list.
+        If the list is empty, return an empty list.
         """
         if not response or not isinstance(response, list):
             return []
 
-        results = response[0].get("result", [])
-        if len(results) == 1:
-            return results[0]
-        return results
+        # Blocking SDK returns results directly, not wrapped in {'result': [...]}
+        if len(response) == 1:
+            return response[0]
+        return response
 
     def get_one(
         self,
@@ -218,9 +217,25 @@ class SurrealDbAdapter(DbAdapter):
 
     def get_save_query(self, table: str, data: Dict[str, Any]):
         """Returns operation to save a data record in the table."""
-        return 'update', data['id'], data
+        record_id = data['id']
+        # Remove 'id' from data since upsert takes it as a separate parameter
+        data_without_id = {k: v for k, v in data.items() if k != 'id'}
+        return 'upsert', record_id, data_without_id
 
     def save(self, table: str, data: Dict[str, Any]):
+        # Ensure Big 6 fields exist with defaults for backward compatibility
+        # This allows queries with active=true filters to work on non-versioned models
+        if 'version' not in data or data.get('version') is None:
+            data['version'] = None
+        if 'previous_version' not in data or data.get('previous_version') is None:
+            data['previous_version'] = None
+        if 'active' not in data:
+            data['active'] = True  # Default to active
+        if 'changed_by_id' not in data or data.get('changed_by_id') is None:
+            data['changed_by_id'] = None
+        if 'changed_on' not in data or data.get('changed_on') is None:
+            data['changed_on'] = None
+
         save_op = self.get_save_query(table, data)
         db_result = self._call_db(*save_op)
         return db_result
@@ -229,3 +244,9 @@ class SurrealDbAdapter(DbAdapter):
         # Set active = false
         data['active'] = False
         return self.save(table, data)
+
+    def hard_delete(self, table: str, entity_id: str) -> bool:
+        """Permanently deletes a record from the specified table by entity_id."""
+        query = f"DELETE {table}:`{entity_id}`"
+        self.execute_query(query)
+        return True

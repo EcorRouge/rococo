@@ -4,6 +4,8 @@ from dataclasses import fields
 from typing import Any, Dict, List, Type, Union
 from uuid import UUID
 
+from surrealdb.data.types.record_id import RecordID
+
 from rococo.data import SurrealDbAdapter
 from rococo.messaging import MessageAdapter
 from rococo.models.surrealdb import SurrealVersionedModel
@@ -64,12 +66,12 @@ class SurrealDbRepository(BaseRepository):
                 if field.name == 'entity_id':
                     # top-level document id must be plain (no backticks)
                     data['id'] = f"{tbl}:{val}" if val else None
+                    # Keep entity_id as a field for direct querying
+                    data['entity_id'] = val
                 else:
                     # include backticks for foreign record references
                     data[key] = f"{tbl}:`{val}`" if val else None
 
-        # Remove entity_id since we've moved it to id
-        data.pop('entity_id', None)
         return data
 
     def _process_data_from_db(
@@ -106,6 +108,16 @@ class SurrealDbRepository(BaseRepository):
                     if isinstance(val, dict):
                         # nested object
                         rec[field_def.name] = _process_record(val, child_cls)
+                    elif isinstance(val, RecordID):
+                        # RecordID object from SurrealDB blocking SDK
+                        # Extract just the UUID part
+                        uuid = val.id
+                        if field_def.name == 'entity_id':
+                            rec[field_def.name] = uuid
+                        else:
+                            # create a partial instance for the relation
+                            rec[field_def.name] = child_cls(
+                                entity_id=uuid, _is_partial=True)
                     elif isinstance(val, str):
                         # simple reference "table:uuid" or with backticks
                         uuid = self._extract_uuid_from_surreal_id(
@@ -118,7 +130,7 @@ class SurrealDbRepository(BaseRepository):
                                 entity_id=uuid, _is_partial=True)
                     else:
                         raise NotImplementedError(
-                            f"Unsupported type for record_id field '{field_def.name}'")
+                            f"Unsupported type for record_id field '{field_def.name}': {type(val)}")
 
             # finally, build the model instance
             return model_cls.from_dict(rec)
@@ -190,16 +202,11 @@ class SurrealDbRepository(BaseRepository):
         # prep model context
         self.model()
         proc = self._process_data_from_db(raw)
-        if not proc:
-            return None
-
-        # final from_dict: use return_value, not side_effect
-        fn = self.model.from_dict
-        orig_se = getattr(fn, 'side_effect', None)
-        fn.side_effect = None
-        result = fn(proc)
-        fn.side_effect = orig_se
-        return result
+        # _process_data_from_db already converts to model instance
+        # If it's a list, return the first item or None if empty
+        if isinstance(proc, list):
+            return proc[0] if proc else None
+        return proc
 
     def get_many(
         self,
@@ -265,7 +272,8 @@ class SurrealDbRepository(BaseRepository):
         # prep model context
         self.model()
         proc = self._process_data_from_db(raw)
-        return [self.model.from_dict(r) for r in proc]
+        # _process_data_from_db already converts to model instances
+        return proc if isinstance(proc, list) else [proc]
 
     def relate(
         self,

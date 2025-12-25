@@ -142,12 +142,15 @@ class TestDynamoDbRepository(unittest.TestCase):
     def test_save_new(self):
         # Test saving a new record
         person = Person(first_name='Jane', last_name='Doe')
-        
-        with patch.object(PersonModel, 'save') as mock_save:
+
+        with patch('rococo.data.dynamodb.TransactWrite') as mock_transact_write:
+            mock_tx = MagicMock()
+            mock_transact_write.return_value.__enter__.return_value = mock_tx
+
             saved_person = self.repository.save(person, send_message=True)
-            
+
             self.assertEqual(saved_person.first_name, 'Jane')
-            mock_save.assert_called()
+            mock_tx.save.assert_called()
             
             # Verify message was sent
             self.message_adapter.send_message.assert_called_with(
@@ -170,30 +173,31 @@ class TestDynamoDbRepository(unittest.TestCase):
             mock_item.attribute_values = {'entity_id': entity_id, 'first_name': 'Jane', 'active': True}
             mock_get.return_value = mock_item
             
-            with patch.object(PersonAuditModel, 'save') as mock_audit_save:
-                with patch.object(PersonModel, 'save') as mock_save:
-                    self.repository.save(person, send_message=True)
-                    
-                    # Ensure we tried to fetch the old record to audit it
-                    mock_get.assert_called_with(entity_id)
-                    
-                    # Ensure the audit record was saved
-                    mock_audit_save.assert_called()
-                    
-                    # Ensure the new record was saved
-                    mock_save.assert_called()
-                    
-                    # Verify message was sent
-                    self.message_adapter.send_message.assert_called()
+            with patch('rococo.data.dynamodb.TransactWrite') as mock_transact_write:
+                mock_tx = MagicMock()
+                mock_transact_write.return_value.__enter__.return_value = mock_tx
+
+                self.repository.save(person, send_message=True)
+
+                # Ensure we tried to fetch the old record to audit it
+                mock_get.assert_called_with(entity_id)
+
+                # Ensure we called transaction.save twice (audit + new)
+                self.assertEqual(mock_tx.save.call_count, 2)
+
+                # Verify message was sent
+                self.message_adapter.send_message.assert_called()
 
     def test_delete(self):
         person = Person(first_name='Jane')
         person.entity_id = uuid4().hex
-        
-        # Mock get for the delete check (if repository does a check) or just the save (soft delete)
-        with patch.object(PersonModel, 'save') as mock_save:
-             self.repository.delete(person)
-             mock_save.assert_called()
+
+        with patch('rococo.data.dynamodb.TransactWrite') as mock_transact_write:
+            mock_tx = MagicMock()
+            mock_transact_write.return_value.__enter__.return_value = mock_tx
+
+            self.repository.delete(person)
+            mock_tx.save.assert_called()
 
 
 if __name__ == '__main__':

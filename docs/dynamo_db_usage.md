@@ -7,6 +7,7 @@ This guide explains how to use the DynamoDB adapter in Rococo. The adapter uses 
 *   **Zero Config**: No need to define PynamoDB models manually.
 *   **Dynamic Generation**: Automatically converts your Rococo models to PynamoDB models at runtime.
 *   **Audit Support**: Automatically handles audit tables for versioning.
+*   **Atomic Writes**: For `VersionedModel`s, updates are written using a DynamoDB transaction so the audit write and the new version write succeed or fail together.
 
 ## Installation
 
@@ -108,6 +109,14 @@ If you update a record, the adapter automatically moves the old version to an au
 *   **Range Key**: `version`
 
 Ensure your DynamoDB tables are created with these key schemas if you are provisioning them manually.
+
+### Atomic Save + Audit (ACID)
+When saving a `VersionedModel`, Rococo groups the audit insert and the main table write into a single DynamoDB `TransactWriteItems` operation.
+
+This means:
+- Either both the audit record and the new version are written, or neither is.
+- Updates use an optimistic-lock condition based on `previous_version`.
+- Creates use a "must not already exist" condition on `entity_id`.
 
 ## Example Application
 

@@ -54,7 +54,8 @@ class TestDbAdapterAbstractClass(unittest.TestCase):
             'move_entity_to_audit_table',
             'get_save_query',
             'save',
-            'delete'
+            'delete',
+            'hard_delete'
         }
 
         for method in expected_methods:
@@ -108,6 +109,9 @@ class TestDbAdapterAbstractClass(unittest.TestCase):
                 return data
 
             def delete(self, table: str, data: Dict[str, Any]) -> bool:
+                return True
+
+            def hard_delete(self, table: str, entity_id: str) -> bool:
                 return True
 
         # Should not raise
@@ -186,6 +190,9 @@ class TestDbAdapterAbstractClass(unittest.TestCase):
                 return data
 
             def delete(self, table: str, data: Dict[str, Any]) -> bool:
+                return True
+
+            def hard_delete(self, table: str, entity_id: str) -> bool:
                 return True
 
         with TestDbAdapter() as adapter:

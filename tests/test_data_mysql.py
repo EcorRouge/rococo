@@ -1036,7 +1036,7 @@ class TestMySqlAdapterGetSaveQuery(unittest.TestCase):
         # Verify query structure
         self.assertIn("REPLACE INTO", query)
         self.assertIn(TEST_TABLE, query)
-        self.assertIn("id, name, email", query)
+        self.assertIn("`id`, `name`, `email`", query)
         self.assertIn("%s, %s, %s", query)
 
         # Verify values

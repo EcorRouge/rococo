@@ -163,6 +163,7 @@ class TestDynamoDbRepository(unittest.TestCase):
         entity_id = uuid4().hex
         old_version = uuid4().hex
         person.entity_id = entity_id
+        person.version = old_version  # Set version so prepare_for_save preserves it in previous_version
         person.previous_version = old_version
         
         # Mock the 'get' call used by move_entity_to_audit_table

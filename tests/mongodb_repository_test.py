@@ -338,7 +338,7 @@ class MongoDbRepositoryTestCase(unittest.TestCase):
         # Capture the data passed to adapter.save to verify TTL field is added
         saved_data: Optional[Dict[str, Any]] = None
 
-        def capture_save_data(collection_name, data):
+        def capture_save_data(collection_name, data, move_to_audit=False):
             nonlocal saved_data
             saved_data = data
             return data
@@ -407,7 +407,7 @@ class MongoDbRepositoryTestCase(unittest.TestCase):
         # Capture the data passed to adapter.save
         saved_data = None
 
-        def capture_save_data(collection_name, data):
+        def capture_save_data(collection_name, data, move_to_audit=False):
             nonlocal saved_data
             saved_data = data
             return data
@@ -466,7 +466,7 @@ class MongoDbRepositoryTestCase(unittest.TestCase):
         # Capture the data passed to adapter.save
         saved_data: Optional[Dict[str, Any]] = None
 
-        def capture_save_data(collection_name, data):
+        def capture_save_data(collection_name, data, move_to_audit=False):
             nonlocal saved_data
             saved_data = data
             return data
@@ -874,7 +874,7 @@ class MongoDbRepositoryTestCase(unittest.TestCase):
         )
 
         # Mock the save operation - simulate that datetime objects might be converted to strings
-        def mock_save(collection_name, data):
+        def mock_save(collection_name, data, move_to_audit=False):
             # Simulate the scenario where datetime objects are converted to ISO strings during save
             saved_data = data.copy()
             if isinstance(saved_data.get('created_at'), datetime):

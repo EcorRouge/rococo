@@ -5,16 +5,16 @@ from typing import Any, Dict, List, Optional, Type, Tuple
 from rococo.data.dynamodb import DynamoDbAdapter
 from rococo.messaging import MessageAdapter
 from rococo.repositories import BaseRepository
-from rococo.models.versioned_model import VersionedModel, get_uuid_hex
+from rococo.models.versioned_model import BaseModel, VersionedModel, get_uuid_hex
 
 
 class DynamoDbRepository(BaseRepository):
-    """Generic DynamoDB repository for VersionedModel with audit and messaging."""
+    """Generic DynamoDB repository for BaseModel with audit and messaging."""
 
     def __init__(
         self,
         db_adapter: DynamoDbAdapter,
-        model: Type[VersionedModel],
+        model: Type[BaseModel],
         message_adapter: MessageAdapter,
         queue_name: str,
         user_id: Optional[UUID] = None
@@ -35,7 +35,7 @@ class DynamoDbRepository(BaseRepository):
 
     def _process_data_before_save(
         self,
-        instance: VersionedModel
+        instance: BaseModel
     ) -> Dict[str, Any]:
         instance.prepare_for_save(changed_by_id=self.user_id)
         data = instance.as_dict(
@@ -49,9 +49,10 @@ class DynamoDbRepository(BaseRepository):
         self,
         conditions: Dict[str, Any],
         fetch_related: List[str] = None
-    ) -> Optional[VersionedModel]:
+    ) -> Optional[BaseModel]:
         db_conditions = conditions.copy() if conditions else {}
-        if "active" not in db_conditions:
+        # Only add active condition for VersionedModel
+        if self._is_versioned_model() and "active" not in db_conditions:
             db_conditions["active"] = True
 
         data = self._execute_within_context(
@@ -75,9 +76,10 @@ class DynamoDbRepository(BaseRepository):
         limit: int = 100,
         offset: int = 0,
         fetch_related: List[str] = None
-    ) -> List[VersionedModel]:
+    ) -> List[BaseModel]:
         db_conditions = conditions.copy() if conditions else {}
-        if "active" not in db_conditions:
+        # Only add active condition for VersionedModel
+        if self._is_versioned_model() and "active" not in db_conditions:
             db_conditions["active"] = True
 
         records_data = self._execute_within_context(
@@ -101,32 +103,43 @@ class DynamoDbRepository(BaseRepository):
 
     def save(
         self,
-        instance: VersionedModel,
+        instance: BaseModel,
         send_message: bool = False
-    ) -> VersionedModel:
-        # 1) if this isn't the very first version, move the existing latest doc into audit
-        if self.use_audit_table and instance.previous_version and instance.previous_version != get_uuid_hex(0):
-            self._execute_within_context(
-                lambda: self.adapter.move_entity_to_audit_table(
-                    self.table_name,
-                    instance.entity_id,
-                    model_cls=self.model
-                )
+    ) -> BaseModel:
+        # Prepare the data for saving
+        payload = self._process_data_before_save(instance)
+
+        # Use appropriate save method based on model type
+        if self._is_versioned_model():
+            # For versioned models, move existing version to audit if needed
+            if self.use_audit_table:
+                previous_version = getattr(instance, 'previous_version', None)
+                if previous_version and previous_version != get_uuid_hex(0):
+                    self._execute_within_context(
+                        lambda: self.adapter.move_entity_to_audit_table(
+                            self.table_name,
+                            instance.entity_id,
+                            model_cls=self.model
+                        )
+                    )
+
+            # Save with versioning
+            saved = self._execute_within_context(
+                lambda: self.adapter.save(self.table_name, payload, model_cls=self.model)
+            )
+        else:
+            # For non-versioned models, use simple upsert
+            saved = self._execute_within_context(
+                lambda: self.adapter.upsert(self.table_name, payload, model_cls=self.model)
             )
 
-        # 2) Prepare & write the new version
-        payload = self._process_data_before_save(instance)
-        saved = self._execute_within_context(
-            lambda: self.adapter.save(self.table_name, payload, model_cls=self.model)
-        )
-
-        # 3) Hydrate the returned fields onto our instance
+        # Hydrate the returned fields onto our instance
         if saved:
             for k, v in saved.items():
                 if hasattr(instance, k):
                     setattr(instance, k, v)
 
-        # 4) Send a message if requested
+        # Send a message if requested
         if send_message:
             self.message_adapter.send_message(
                 self.queue_name,
@@ -138,37 +151,62 @@ class DynamoDbRepository(BaseRepository):
 
     def delete(
         self,
-        instance: VersionedModel
-    ) -> VersionedModel:
+        instance: BaseModel
+    ) -> BaseModel:
+        """
+        Deletes a BaseModel instance from the database.
+        For VersionedModel, sets its active flag to False (soft delete).
+        For non-versioned models (BaseModel), performs a hard delete from the database.
+
+        Args:
+            instance (BaseModel): The BaseModel instance to delete.
+
+        Returns:
+            BaseModel: The deleted BaseModel instance.
+        """
         self.logger.info(
             f"Deleting entity_id={getattr(instance, 'entity_id', 'N/A')} from {self.table_name}")
 
-        instance.prepare_for_save(changed_by_id=self.user_id)
-        instance.active = False
+        if self._is_versioned_model():
+            # Soft delete for versioned models
+            instance.prepare_for_save(changed_by_id=self.user_id)
+            instance.active = False
 
-        data = instance.as_dict(
-            convert_datetime_to_iso_string=True, convert_uuids=True, export_properties=self.save_calculated_fields)
+            data = instance.as_dict(
+                convert_datetime_to_iso_string=True, convert_uuids=True, export_properties=self.save_calculated_fields)
 
-        if self.use_audit_table and instance.previous_version and instance.previous_version != get_uuid_hex(0):
-            self._execute_within_context(
-                lambda: self.adapter.move_entity_to_audit_table(
+            # Move to audit if needed
+            if self.use_audit_table:
+                previous_version = getattr(instance, 'previous_version', None)
+                if previous_version and previous_version != get_uuid_hex(0):
+                    self._execute_within_context(
+                        lambda: self.adapter.move_entity_to_audit_table(
+                            self.table_name,
+                            data['entity_id'],
+                            model_cls=self.model
+                        )
+                    )
+
+            saved = self._execute_within_context(
+                lambda: self.adapter.save(
                     self.table_name,
-                    data['entity_id'],
+                    data,
                     model_cls=self.model
                 )
             )
 
-        saved = self._execute_within_context(
-            lambda: self.adapter.save(
-                self.table_name,
-                data,
-                model_cls=self.model
-            )
-        )
-
-        if saved:
-            for k, v in saved.items():
-                if hasattr(instance, k):
-                    setattr(instance, k, v)
+            if saved:
+                for k, v in saved.items():
+                    if hasattr(instance, k):
+                        setattr(instance, k, v)
+        else:
+            # Hard delete for non-versioned models
+            with self.adapter:
+                pynamo_model = self.adapter._generate_pynamo_model(self.table_name, self.model)
+                try:
+                    item = pynamo_model.get(instance.entity_id)
+                    item.delete()
+                except Exception as e:
+                    self.logger.warning(f"Could not delete entity: {e}")
 
         return instance

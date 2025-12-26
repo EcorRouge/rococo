@@ -4,11 +4,12 @@ import re
 from uuid import UUID
 from datetime import datetime
 from dataclasses import fields
-from typing import Any, Dict, List, Type
+from typing import Any, Dict, List, Type, Union, Optional
 
 from rococo.data import PostgreSQLAdapter
 from rococo.messaging import MessageAdapter
 from rococo.models import VersionedModel
+from rococo.models.versioned_model import BaseModel
 from rococo.repositories import BaseRepository
 
 
@@ -18,7 +19,7 @@ class PostgreSQLRepository(BaseRepository):
     def __init__(
             self,
             db_adapter: PostgreSQLAdapter,
-            model: Type[VersionedModel],
+            model: Type[BaseModel],
             message_adapter: MessageAdapter,
             queue_name: str,
             user_id: UUID = None
@@ -36,7 +37,7 @@ class PostgreSQLRepository(BaseRepository):
                 conditions[key] = [str(id) for id in value]
         return conditions
 
-    def _process_data_before_save(self, instance: VersionedModel):
+    def _process_data_before_save(self, instance: BaseModel):
         """Method to convert VersionedModel instance to a data dictionary that can be saved to PostgreSQL"""
         super()._process_data_before_save(instance)
         data = instance.as_dict(
@@ -67,35 +68,11 @@ class PostgreSQLRepository(BaseRepository):
             data[field.name] = field_value
         return data
 
-    def _fetch_related_for_instances(
-        self,
-        instances: List[VersionedModel],
-        fetch_related: List[str]
-    ):
-        """Helper to fetch related entities for a list of instances."""
-        if not fetch_related:
-            return
-
-        for instance in instances:
-            related_instances = {}
-            for related_field in fetch_related:
-                if hasattr(instance, related_field):
-                    related_entities = self.fetch_related_entities_for_field(
-                        instance, related_field
-                    )
-                    if related_entities is not None:
-                        related_instances[related_field] = related_entities
-
-            # Replace related_instances in the main instance
-            for key, value in related_instances.items():
-                setattr(instance, key, value)
-
-
     def get_one(
         self,
         conditions: Dict[str, Any] = None,
         fetch_related: List[str] = None
-    ) -> VersionedModel | None:
+    ) -> Union[BaseModel, None]:
         """get one"""
 
         if conditions is not None:
@@ -112,7 +89,18 @@ class PostgreSQLRepository(BaseRepository):
 
         # Handle fetching related entities
         if fetch_related:
-            self._fetch_related_for_instances([instance], fetch_related)
+            related_instances = {}
+            for related_field in fetch_related:
+                if hasattr(instance, related_field):
+                    related_entities = self.fetch_related_entities_for_field(
+                        instance, related_field
+                    )
+                    if related_entities is not None:
+                        related_instances[related_field] = related_entities
+
+            # Replace related_instances in the main instance
+            for key, value in related_instances.items():
+                setattr(instance, key, value)
 
         return instance
 
@@ -123,7 +111,7 @@ class PostgreSQLRepository(BaseRepository):
         limit: int = None,
         offset: int = None,
         fetch_related: List[str] = None
-    ) -> List[VersionedModel]:
+    ) -> List[BaseModel]:
         """Get many records, with optional related fields fetched"""
 
         if conditions is not None:
@@ -141,17 +129,28 @@ class PostgreSQLRepository(BaseRepository):
         instances = [self.model.from_dict(record) for record in records]
 
         # Handle fetching related entities for each instance
-        # Handle fetching related entities for each instance
         if fetch_related:
-            self._fetch_related_for_instances(instances, fetch_related)
+            for instance in instances:
+                related_instances = {}
+                for related_field in fetch_related:
+                    if hasattr(instance, related_field):
+                        related_entities = self.fetch_related_entities_for_field(
+                            instance, related_field
+                        )
+                        if related_entities is not None:
+                            related_instances[related_field] = related_entities
+
+                # Replace related_instances in the main instance
+                for key, value in related_instances.items():
+                    setattr(instance, key, value)
 
         return instances
 
     def get_count(
         self,
         # collection_name: str, # Use self.table_name for consistency
-        index: str | None = None,  # index (for hint) can be optional
-        query: Dict[str, Any] | None = None  # query can be optional
+        index: Optional[str] = None,  # index (for hint) can be optional
+        query: Optional[Dict[str, Any]] = None  # query can be optional
     ) -> int:
         """
         Retrieves the count of records in the repository's table that match the given query parameters.
@@ -194,9 +193,9 @@ class PostgreSQLRepository(BaseRepository):
 
     def fetch_related_entities_for_field(
         self,
-        instance: VersionedModel,
+        instance: BaseModel,
         related_field: str
-    ) -> List | VersionedModel | None:
+    ) -> Union[List, Optional[BaseModel]]:
         """Fetch related entities for a given field in the instance."""
 
         related_value = getattr(instance, related_field)

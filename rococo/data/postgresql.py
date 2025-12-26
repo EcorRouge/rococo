@@ -19,6 +19,7 @@ class PostgreSQLAdapter(DbAdapter):
         self._database = database
         self._connection = None
         self._cursor = None
+        self._table_columns_cache = {}  # Cache for table column names
 
         if connection_resolver is None:
             self._connection_resolver = psycopg2.connect
@@ -65,7 +66,7 @@ class PostgreSQLAdapter(DbAdapter):
     def _call_cursor(self, function_name, *args, **kwargs):
         """Calls a function specified by function_name argument in PostgreSQL Cursor passing forward args and kwargs."""
         if not self._cursor:
-            raise RuntimeError("No cursor is available.")
+            raise Exception("No cursor is available.")
         return getattr(self._cursor, function_name)(*args, **kwargs)
 
     def _build_condition_string(self, table, key, value):
@@ -86,7 +87,7 @@ class PostgreSQLAdapter(DbAdapter):
         elif value is None:
             return f"{key} IS NULL", []
         else:
-            raise TypeError(
+            raise Exception(
                 f"Unsupported type {type(value)} for condition key: {key}, value: {value}")
 
     def get_move_entity_to_audit_table_query(self, table, entity_id):
@@ -191,9 +192,10 @@ class PostgreSQLAdapter(DbAdapter):
         if not db_response:
             return None
         elif isinstance(db_response, list):
-            return db_response[0]
+            result = db_response[0]
+            return self._deserialize_extra_fields(result)
         else:
-            return db_response
+            return self._deserialize_extra_fields(db_response)
 
     def get_many(
             self,
@@ -241,9 +243,9 @@ class PostgreSQLAdapter(DbAdapter):
         if not db_response:
             return []
         elif isinstance(db_response, dict):
-            return [db_response]
+            return [self._deserialize_extra_fields(db_response)]
         else:
-            return db_response
+            return [self._deserialize_extra_fields(row) for row in db_response]
 
     def get_count(
         self,
@@ -283,21 +285,98 @@ class PostgreSQLAdapter(DbAdapter):
             return int(rows[0].get('count', 0) or 0)
         return 0
 
+    def _get_table_columns(self, table_name: str) -> List[str]:
+        """
+        Get the list of column names for a table from the database schema.
+        Results are cached for performance.
+
+        Args:
+            table_name: Name of the table
+
+        Returns:
+            List of column names
+        """
+        if table_name in self._table_columns_cache:
+            return self._table_columns_cache[table_name]
+
+        query = """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_name = %s
+            ORDER BY ordinal_position
+        """
+        rows = self.execute_query(query, (table_name,))
+        columns = [row['column_name'] for row in rows]
+        self._table_columns_cache[table_name] = columns
+        return columns
+
+    def _deserialize_extra_fields(self, row: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Deserialize the 'extra' JSONB column and merge it into the row dict.
+
+        Args:
+            row: A database row as a dictionary
+
+        Returns:
+            The row with extra fields deserialized and merged
+        """
+        if 'extra' in row and row['extra'] is not None:
+            # If extra is a string, parse it as JSON
+            if isinstance(row['extra'], str):
+                try:
+                    extra_data = json.loads(row['extra'])
+                    if isinstance(extra_data, dict):
+                        # Remove the 'extra' key and merge extra fields into the row
+                        row.pop('extra')
+                        row.update(extra_data)
+                except (json.JSONDecodeError, TypeError):
+                    logging.warning(f"Failed to deserialize 'extra' field: {row['extra']}")
+            # If extra is already a dict (psycopg2 might auto-decode JSONB), merge it
+            elif isinstance(row['extra'], dict):
+                extra_data = row.pop('extra')
+                row.update(extra_data)
+        return row
+
     def get_save_query(self, table_name, data):
         """Returns a query to update a row or insert a new one in PostgreSQL."""
-        columns = ', '.join(data.keys())
-        placeholders = ', '.join(['%s'] * len(data))
+        # Get table columns from database schema
+        table_columns = self._get_table_columns(table_name)
 
+        # Separate data into table columns and extra fields
+        table_data = {}
+        extra_data = {}
 
+        for key, value in data.items():
+            if key in table_columns:
+                table_data[key] = value
+            else:
+                extra_data[key] = value
+
+        # If there are extra fields and the table has an 'extra' column, store them as JSON
+        if extra_data and 'extra' in table_columns:
+            table_data['extra'] = json.dumps(extra_data)
+        elif extra_data:
+            # Log warning if there are extra fields but no 'extra' column
+            logging.warning(
+                f"Table '{table_name}' has no 'extra' column but received extra fields: {list(extra_data.keys())}"
+            )
+
+        # Use table_data for the SQL query
+        columns = ', '.join(table_data.keys())
+        placeholders = ', '.join(['%s'] * len(table_data))
+
+        # Prepare the update columns in the form 'column_name = EXCLUDED.column_name'
+        update_columns = ', '.join(
+            [f"{col} = EXCLUDED.{col}" for col in table_data.keys()])
 
         # The first column will be used for update condition (non-unique column, can be any)
-        unique_column = list(data.keys())[0]
+        unique_column = list(table_data.keys())[0]
 
         # The query will first try to update, and if no rows are updated, it will insert
         query = (
             f"WITH updated AS ("
             f"  UPDATE {table_name} "
-            f"  SET {', '.join([f'{col} = %s' for col in data.keys()])} "
+            f"  SET {', '.join([f'{col} = %s' for col in table_data.keys()])} "
             f"  WHERE {unique_column} = %s "
             f"  RETURNING *"
             f") "
@@ -308,8 +387,8 @@ class PostgreSQLAdapter(DbAdapter):
 
         # Prepare values: first, the update values, followed by the insert values
         # values for update and delete condition
-        update_values = tuple(data.values()) + (data[unique_column],)
-        insert_values = tuple(data.values())  # values for insert
+        update_values = tuple(table_data.values()) + (table_data[unique_column],)
+        insert_values = tuple(table_data.values())  # values for insert
 
         # Combine the update and insert values
         values = update_values + insert_values
@@ -322,10 +401,9 @@ class PostgreSQLAdapter(DbAdapter):
             self._cursor.execute(query, values)
             self._connection.commit()
             return True
-        except Exception as ex:
+        except psycopg2.Error as ex:
             self._connection.rollback()
-            # PostgreSQL deadlock error codes: 40P01 (deadlock_detected) or 40001 (serialization_failure)
-            if retry_count < 3 and hasattr(ex, 'pgcode') and ex.pgcode in ('40P01', '40001'):
+            if retry_count < 3 and ex.args[0] == 1213:
                 # Deadlock detected
                 logging.warning("Deadlock detected on table %s. Retrying in %d seconds. Attempt %d",
                                 table_name, 2**retry_count, retry_count+1)
@@ -343,4 +421,10 @@ class PostgreSQLAdapter(DbAdapter):
         # Set active = false
         data['active'] = False
         self.save(table, data)
+        return True
+
+    def hard_delete(self, table: str, entity_id: str) -> bool:
+        """Permanently deletes a record from the specified table by entity_id."""
+        query = f"DELETE FROM {table} WHERE entity_id = %s"
+        self.execute_query(query, (entity_id.replace('-', ''),))
         return True

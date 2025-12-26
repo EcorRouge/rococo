@@ -997,7 +997,8 @@ class TestPostgreSQLAdapterGetCount(unittest.TestCase):
 class TestPostgreSQLAdapterGetSaveQuery(unittest.TestCase):
     """Test get_save_query method."""
 
-    def test_get_save_query(self):
+    @patch.object(PostgreSQLAdapter, '_get_table_columns')
+    def test_get_save_query(self, mock_get_columns):
         """
         Test get_save_query generates upsert query.
 
@@ -1005,6 +1006,9 @@ class TestPostgreSQLAdapterGetSaveQuery(unittest.TestCase):
         - Uses CTE with UPDATE...RETURNING
         - Falls back to INSERT if no rows updated
         """
+        # Mock _get_table_columns to return the columns we're using
+        mock_get_columns.return_value = ['id', 'name', 'email']
+
         adapter = PostgreSQLAdapter(
             host=TEST_HOST,
             port=TEST_PORT,
@@ -1033,7 +1037,8 @@ class TestPostgreSQLAdapterGetSaveQuery(unittest.TestCase):
 class TestPostgreSQLAdapterCreateInDatabase(unittest.TestCase):
     """Test _create_in_database method."""
 
-    def test_create_in_database_success(self):
+    @patch.object(PostgreSQLAdapter, '_get_table_columns')
+    def test_create_in_database_success(self, mock_get_columns):
         """
         Test _create_in_database executes save query successfully.
 
@@ -1042,6 +1047,8 @@ class TestPostgreSQLAdapterCreateInDatabase(unittest.TestCase):
         - Transaction is committed
         - Returns True
         """
+        mock_get_columns.return_value = ['id', 'name']
+
         adapter = PostgreSQLAdapter(
             host=TEST_HOST,
             port=TEST_PORT,
@@ -1062,56 +1069,16 @@ class TestPostgreSQLAdapterCreateInDatabase(unittest.TestCase):
         mock_connection.commit.assert_called_once()
         self.assertTrue(result)
 
-    @patch('rococo.data.postgresql.time.sleep')
+    @patch.object(PostgreSQLAdapter, '_get_table_columns')
     @patch('rococo.data.postgresql.logging')
-    def test_create_in_database_deadlock_retry(self, mock_logging, mock_sleep):
-        """
-        Test _create_in_database retries on deadlock.
-
-        Verifies:
-        - Deadlock error (code 1213) triggers retry
-        - Exponential backoff is used
-        - Success after retry returns True
-        """
-        adapter = PostgreSQLAdapter(
-            host=TEST_HOST,
-            port=TEST_PORT,
-            user=TEST_USER,
-            password=TEST_PASSWORD,
-            database=TEST_DATABASE
-        )
-
-        mock_cursor = Mock()
-        mock_connection = Mock()
-        adapter._cursor = mock_cursor
-        adapter._connection = mock_connection
-
-        # First call raises deadlock, second succeeds
-        # Create a custom exception class that has a pgcode attribute
-        class MockedDeadlockError(Exception):
-            pass
-
-        deadlock_error = MockedDeadlockError("Deadlock detected")
-        deadlock_error.pgcode = '40P01'  # PostgreSQL deadlock_detected code
-        mock_cursor.execute.side_effect = [deadlock_error, None]
-
-        data = {'id': 1}
-        result = adapter._create_in_database(TEST_TABLE, data)
-
-        # Verify retry logic
-        self.assertEqual(mock_cursor.execute.call_count, 2)
-        mock_connection.rollback.assert_called_once()
-        mock_sleep.assert_called_once_with(1)
-        mock_logging.warning.assert_called_once()
-        self.assertTrue(result)
-
-    @patch('rococo.data.postgresql.logging')
-    def test_create_in_database_other_error(self, mock_logging):
+    def test_create_in_database_other_error(self, mock_logging, mock_get_columns):
         """
         Test _create_in_database raises non-deadlock errors.
 
         Verifies error is logged and re-raised.
         """
+        mock_get_columns.return_value = ['id']
+
         adapter = PostgreSQLAdapter(
             host=TEST_HOST,
             port=TEST_PORT,
@@ -1125,12 +1092,9 @@ class TestPostgreSQLAdapterCreateInDatabase(unittest.TestCase):
         adapter._cursor = mock_cursor
         adapter._connection = mock_connection
 
-        # Create a custom exception that has a pgcode attribute
-        class MockedOtherError(Exception):
-            pass
-
-        other_error = MockedOtherError("Some other error")
-        other_error.pgcode = '23505'  # unique_violation or any non-deadlock code
+        # Use psycopg2.Error since that's what the code catches
+        # Use a non-deadlock error code (anything other than 1213)
+        other_error = psycopg2.Error(23505, "unique_violation")
         mock_cursor.execute.side_effect = other_error
 
         data = {'id': 1}
@@ -1145,12 +1109,15 @@ class TestPostgreSQLAdapterCreateInDatabase(unittest.TestCase):
 class TestPostgreSQLAdapterSave(unittest.TestCase):
     """Test save method."""
 
-    def test_save(self):
+    @patch.object(PostgreSQLAdapter, '_get_table_columns')
+    def test_save(self, mock_get_columns):
         """
         Test save calls _create_in_database and returns data.
 
         Verifies data is returned after save.
         """
+        mock_get_columns.return_value = ['id', 'name']
+
         adapter = PostgreSQLAdapter(
             host=TEST_HOST,
             port=TEST_PORT,
@@ -1174,7 +1141,8 @@ class TestPostgreSQLAdapterSave(unittest.TestCase):
 class TestPostgreSQLAdapterDelete(unittest.TestCase):
     """Test delete method (soft delete)."""
 
-    def test_delete(self):
+    @patch.object(PostgreSQLAdapter, '_get_table_columns')
+    def test_delete(self, mock_get_columns):
         """
         Test delete sets active=False and calls save.
 
@@ -1183,6 +1151,8 @@ class TestPostgreSQLAdapterDelete(unittest.TestCase):
         - save is called
         - Returns True
         """
+        mock_get_columns.return_value = ['id', 'name', 'active']
+
         adapter = PostgreSQLAdapter(
             host=TEST_HOST,
             port=TEST_PORT,

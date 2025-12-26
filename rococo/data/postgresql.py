@@ -66,7 +66,7 @@ class PostgreSQLAdapter(DbAdapter):
     def _call_cursor(self, function_name, *args, **kwargs):
         """Calls a function specified by function_name argument in PostgreSQL Cursor passing forward args and kwargs."""
         if not self._cursor:
-            raise Exception("No cursor is available.")
+            raise RuntimeError("No cursor is available.")
         return getattr(self._cursor, function_name)(*args, **kwargs)
 
     def _build_condition_string(self, table, key, value):
@@ -87,7 +87,7 @@ class PostgreSQLAdapter(DbAdapter):
         elif value is None:
             return f"{key} IS NULL", []
         else:
-            raise Exception(
+            raise TypeError(
                 f"Unsupported type {type(value)} for condition key: {key}, value: {value}")
 
     def get_move_entity_to_audit_table_query(self, table, entity_id):

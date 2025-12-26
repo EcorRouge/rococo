@@ -31,7 +31,7 @@ class TestSurrealDbAdapterInit(unittest.TestCase):
 
         Verifies:
         - Connection parameters are stored
-        - db and event_loop are None initially
+        - db is None initially
         """
         adapter = SurrealDbAdapter(
             endpoint=TEST_ENDPOINT,
@@ -47,37 +47,22 @@ class TestSurrealDbAdapterInit(unittest.TestCase):
         self.assertEqual(adapter._namespace, TEST_NAMESPACE)
         self.assertEqual(adapter._db_name, TEST_DATABASE)
         self.assertIsNone(adapter._db)
-        self.assertIsNone(adapter._event_loop)
 
 
 class TestSurrealDbAdapterContextManager(unittest.TestCase):
     """Test SurrealDbAdapter context manager protocol."""
 
-    @patch('rococo.data.surrealdb.asyncio.new_event_loop')
     @patch('rococo.data.surrealdb.Surreal')
-    def test_enter_creates_event_loop_and_connection(self, mock_surreal_class, mock_new_event_loop):
+    def test_enter_creates_connection(self, mock_surreal_class):
         """
-        Test __enter__ creates event loop and prepares DB connection.
+        Test __enter__ creates DB connection.
 
         Verifies:
-        - New event loop is created
-        - _prepare_db is run in event loop
+        - _prepare_db is called
         - Returns self
         """
-        mock_event_loop = MagicMock()
-        mock_new_event_loop.return_value = mock_event_loop
-
-        _mock_db = AsyncMock()
-        mock_surreal_instance = AsyncMock()
+        mock_surreal_instance = MagicMock()
         mock_surreal_class.return_value = mock_surreal_instance
-
-        # Mock the async methods
-        mock_surreal_instance.connect = AsyncMock()
-        mock_surreal_instance.signin = AsyncMock()
-        mock_surreal_instance.use = AsyncMock()
-
-        # Mock run_until_complete to return the mock_surreal_instance
-        mock_event_loop.run_until_complete.return_value = mock_surreal_instance
 
         adapter = SurrealDbAdapter(
             endpoint=TEST_ENDPOINT,
@@ -89,26 +74,22 @@ class TestSurrealDbAdapterContextManager(unittest.TestCase):
 
         result = adapter.__enter__()
 
-        mock_new_event_loop.assert_called_once()
-        mock_event_loop.run_until_complete.assert_called_once()
-        self.assertEqual(adapter._event_loop, mock_event_loop)
+        mock_surreal_class.assert_called_once_with(TEST_ENDPOINT)
+        mock_surreal_instance.signin.assert_called_once()
+        mock_surreal_instance.use.assert_called_once_with(TEST_NAMESPACE, TEST_DATABASE)
         self.assertEqual(adapter._db, mock_surreal_instance)
         self.assertEqual(result, adapter)
 
-    @patch('rococo.data.surrealdb.asyncio.new_event_loop')
     @patch('rococo.data.surrealdb.Surreal')
-    def test_exit_closes_connection_and_stops_loop(self, mock_surreal_class, mock_new_event_loop):
+    def test_exit_closes_connection(self, mock_surreal_class):
         """
-        Test __exit__ closes DB connection and stops event loop.
+        Test __exit__ closes DB connection.
 
         Verifies:
-        - DB close is run in event loop
-        - Event loop is stopped
-        - db and event_loop are set to None
+        - DB close is called
+        - db is set to None
         """
-        mock_event_loop = MagicMock()
-        mock_db = AsyncMock()
-        mock_db.close = AsyncMock()
+        mock_db = MagicMock()
 
         adapter = SurrealDbAdapter(
             endpoint=TEST_ENDPOINT,
@@ -117,34 +98,28 @@ class TestSurrealDbAdapterContextManager(unittest.TestCase):
             namespace=TEST_NAMESPACE,
             db_name=TEST_DATABASE
         )
-        adapter._event_loop = mock_event_loop
         adapter._db = mock_db
 
         adapter.__exit__(None, None, None)
 
-        mock_event_loop.run_until_complete.assert_called_once()
-        mock_event_loop.stop.assert_called_once()
+        mock_db.close.assert_called_once()
         self.assertIsNone(adapter._db)
-        self.assertIsNone(adapter._event_loop)
 
 
 class TestSurrealDbAdapterPrepareDb(unittest.TestCase):
-    """Test _prepare_db async method."""
+    """Test _prepare_db method."""
 
     @patch('rococo.data.surrealdb.Surreal')
-    async def test_prepare_db(self, mock_surreal_class):
+    def test_prepare_db(self, mock_surreal_class):
         """
         Test _prepare_db creates and configures Surreal connection.
 
         Verifies:
         - Surreal instance is created with endpoint
-        - connect, signin, and use are called
+        - signin and use are called
         - Returns configured db instance
         """
-        mock_db = AsyncMock()
-        mock_db.connect = AsyncMock()
-        mock_db.signin = AsyncMock()
-        mock_db.use = AsyncMock()
+        mock_db = MagicMock()
         mock_surreal_class.return_value = mock_db
 
         adapter = SurrealDbAdapter(
@@ -155,11 +130,10 @@ class TestSurrealDbAdapterPrepareDb(unittest.TestCase):
             db_name=TEST_DATABASE
         )
 
-        result = await adapter._prepare_db()
+        result = adapter._prepare_db()
 
         mock_surreal_class.assert_called_once_with(TEST_ENDPOINT)
-        mock_db.connect.assert_called_once()
-        mock_db.signin.assert_called_once_with({"user": TEST_USERNAME, "pass": TEST_PASSWORD})
+        mock_db.signin.assert_called_once_with({"username": TEST_USERNAME, "password": TEST_PASSWORD})
         mock_db.use.assert_called_once_with(TEST_NAMESPACE, TEST_DATABASE)
         self.assertEqual(result, mock_db)
 
@@ -169,7 +143,7 @@ class TestSurrealDbAdapterCallDb(unittest.TestCase):
 
     def test_call_db_success(self):
         """
-        Test _call_db executes db method in event loop.
+        Test _call_db executes db method directly.
 
         Verifies method is called with args and kwargs.
         """
@@ -181,18 +155,14 @@ class TestSurrealDbAdapterCallDb(unittest.TestCase):
             db_name=TEST_DATABASE
         )
 
-        mock_event_loop = MagicMock()
         mock_db = MagicMock()
-        mock_db.query = AsyncMock(return_value="result")
-        mock_event_loop.run_until_complete.return_value = "result"
-
-        adapter._event_loop = mock_event_loop
+        mock_db.query.return_value = "result"
         adapter._db = mock_db
 
         result = adapter._call_db('query', 'SELECT * FROM table')
 
-        # Verify run_until_complete was called
-        mock_event_loop.run_until_complete.assert_called_once()
+        # Verify query was called directly
+        mock_db.query.assert_called_once_with('SELECT * FROM table')
         self.assertEqual(result, "result")
 
     def test_call_db_no_connection(self):
@@ -385,12 +355,8 @@ class TestSurrealDbAdapterRunTransaction(unittest.TestCase):
             db_name=TEST_DATABASE
         )
 
-        mock_event_loop = MagicMock()
         mock_db = MagicMock()
-        adapter._event_loop = mock_event_loop
         adapter._db = mock_db
-
-        mock_event_loop.run_until_complete.return_value = None
 
         operations = [
             ('query', 'INSERT INTO table1 VALUES {name: "test1"}'),
@@ -399,8 +365,8 @@ class TestSurrealDbAdapterRunTransaction(unittest.TestCase):
 
         adapter.run_transaction(operations)
 
-        # Verify _call_db was called for each operation
-        self.assertEqual(mock_event_loop.run_until_complete.call_count, 2)
+        # Verify query was called for each operation
+        self.assertEqual(mock_db.query.call_count, 2)
 
 
 class TestSurrealDbAdapterMoveToAudit(unittest.TestCase):
@@ -444,17 +410,13 @@ class TestSurrealDbAdapterMoveToAudit(unittest.TestCase):
             db_name=TEST_DATABASE
         )
 
-        mock_event_loop = MagicMock()
         mock_db = MagicMock()
-        adapter._event_loop = mock_event_loop
         adapter._db = mock_db
-
-        mock_event_loop.run_until_complete.return_value = None
 
         adapter.move_entity_to_audit_table(TEST_TABLE, TEST_ENTITY_ID)
 
-        # Verify _call_db was called
-        mock_event_loop.run_until_complete.assert_called_once()
+        # Verify query was called
+        mock_db.query.assert_called_once()
 
 
 class TestSurrealDbAdapterExecuteQuery(unittest.TestCase):
@@ -476,18 +438,15 @@ class TestSurrealDbAdapterExecuteQuery(unittest.TestCase):
             db_name=TEST_DATABASE
         )
 
-        mock_event_loop = MagicMock()
         mock_db = MagicMock()
-        adapter._event_loop = mock_event_loop
         adapter._db = mock_db
-
-        mock_event_loop.run_until_complete.return_value = [{'result': [{'id': 1}]}]
+        mock_db.query.return_value = [{'id': 1}]
 
         vars_dict = {'name': 'test'}
         result = adapter.execute_query("SELECT * FROM table WHERE name=$name", vars_dict)
 
-        mock_event_loop.run_until_complete.assert_called_once()
-        self.assertEqual(result, [{'result': [{'id': 1}]}])
+        mock_db.query.assert_called_once_with("SELECT * FROM table WHERE name=$name", vars_dict)
+        self.assertEqual(result, [{'id': 1}])
 
     def test_execute_query_without_vars(self):
         """
@@ -503,16 +462,13 @@ class TestSurrealDbAdapterExecuteQuery(unittest.TestCase):
             db_name=TEST_DATABASE
         )
 
-        mock_event_loop = MagicMock()
         mock_db = MagicMock()
-        adapter._event_loop = mock_event_loop
         adapter._db = mock_db
-
-        mock_event_loop.run_until_complete.return_value = []
+        mock_db.query.return_value = []
 
         adapter.execute_query("SELECT * FROM table")
 
-        mock_event_loop.run_until_complete.assert_called_once()
+        mock_db.query.assert_called_once_with("SELECT * FROM table", {})
 
 
 class TestSurrealDbAdapterParseResponse(unittest.TestCase):
@@ -523,6 +479,7 @@ class TestSurrealDbAdapterParseResponse(unittest.TestCase):
         Test parsing response with single result.
 
         Verifies single item is returned directly.
+        The blocking SDK returns results directly as a list.
         """
         adapter = SurrealDbAdapter(
             endpoint=TEST_ENDPOINT,
@@ -532,7 +489,8 @@ class TestSurrealDbAdapterParseResponse(unittest.TestCase):
             db_name=TEST_DATABASE
         )
 
-        response = [{'result': [{'id': 1, 'name': 'test'}]}]
+        # Blocking SDK returns results directly, not wrapped in {'result': [...]}
+        response = [{'id': 1, 'name': 'test'}]
         result = adapter.parse_db_response(response)
 
         self.assertEqual(result, {'id': 1, 'name': 'test'})
@@ -551,7 +509,8 @@ class TestSurrealDbAdapterParseResponse(unittest.TestCase):
             db_name=TEST_DATABASE
         )
 
-        response = [{'result': [{'id': 1}, {'id': 2}]}]
+        # Blocking SDK returns results directly as a list
+        response = [{'id': 1}, {'id': 2}]
         result = adapter.parse_db_response(response)
 
         self.assertEqual(result, [{'id': 1}, {'id': 2}])
@@ -591,25 +550,6 @@ class TestSurrealDbAdapterParseResponse(unittest.TestCase):
 
         self.assertEqual(result, [])
 
-    def test_parse_response_no_result_key(self):
-        """
-        Test parsing response without 'result' key.
-
-        Verifies empty list is returned.
-        """
-        adapter = SurrealDbAdapter(
-            endpoint=TEST_ENDPOINT,
-            username=TEST_USERNAME,
-            password=TEST_PASSWORD,
-            namespace=TEST_NAMESPACE,
-            db_name=TEST_DATABASE
-        )
-
-        response = [{'other_key': 'value'}]
-        result = adapter.parse_db_response(response)
-
-        self.assertEqual(result, [])
-
 
 class TestSurrealDbAdapterGetOne(unittest.TestCase):
     """Test get_one method."""
@@ -631,17 +571,14 @@ class TestSurrealDbAdapterGetOne(unittest.TestCase):
             db_name=TEST_DATABASE
         )
 
-        mock_event_loop = MagicMock()
         mock_db = MagicMock()
-        adapter._event_loop = mock_event_loop
         adapter._db = mock_db
-
-        mock_event_loop.run_until_complete.return_value = [{'result': [{'id': 1, 'name': 'test'}]}]
+        mock_db.query.return_value = [{'id': 1, 'name': 'test'}]
 
         result = adapter.get_one(TEST_TABLE, {'name': 'test'})
 
         # Verify query was executed
-        mock_event_loop.run_until_complete.assert_called_once()
+        mock_db.query.assert_called_once()
         self.assertEqual(result, {'id': 1, 'name': 'test'})
 
     def test_get_one_with_sort(self):
@@ -658,16 +595,13 @@ class TestSurrealDbAdapterGetOne(unittest.TestCase):
             db_name=TEST_DATABASE
         )
 
-        mock_event_loop = MagicMock()
         mock_db = MagicMock()
-        adapter._event_loop = mock_event_loop
         adapter._db = mock_db
-
-        mock_event_loop.run_until_complete.return_value = [{'result': [{'id': 1}]}]
+        mock_db.query.return_value = [{'id': 1}]
 
         adapter.get_one(TEST_TABLE, {}, sort=[('created_at', 'DESC')])
 
-        mock_event_loop.run_until_complete.assert_called_once()
+        mock_db.query.assert_called_once()
 
     def test_get_one_with_fetch_related(self):
         """
@@ -683,16 +617,13 @@ class TestSurrealDbAdapterGetOne(unittest.TestCase):
             db_name=TEST_DATABASE
         )
 
-        mock_event_loop = MagicMock()
         mock_db = MagicMock()
-        adapter._event_loop = mock_event_loop
         adapter._db = mock_db
-
-        mock_event_loop.run_until_complete.return_value = [{'result': [{'id': 1}]}]
+        mock_db.query.return_value = [{'id': 1}]
 
         adapter.get_one(TEST_TABLE, {}, fetch_related=['related_table'])
 
-        mock_event_loop.run_until_complete.assert_called_once()
+        mock_db.query.assert_called_once()
 
     def test_get_one_with_additional_fields(self):
         """
@@ -708,16 +639,13 @@ class TestSurrealDbAdapterGetOne(unittest.TestCase):
             db_name=TEST_DATABASE
         )
 
-        mock_event_loop = MagicMock()
         mock_db = MagicMock()
-        adapter._event_loop = mock_event_loop
         adapter._db = mock_db
-
-        mock_event_loop.run_until_complete.return_value = [{'result': [{'id': 1}]}]
+        mock_db.query.return_value = [{'id': 1}]
 
         adapter.get_one(TEST_TABLE, {}, additional_fields=['field1', 'field2'])
 
-        mock_event_loop.run_until_complete.assert_called_once()
+        mock_db.query.assert_called_once()
 
 
 class TestSurrealDbAdapterGetMany(unittest.TestCase):
@@ -740,16 +668,13 @@ class TestSurrealDbAdapterGetMany(unittest.TestCase):
             db_name=TEST_DATABASE
         )
 
-        mock_event_loop = MagicMock()
         mock_db = MagicMock()
-        adapter._event_loop = mock_event_loop
         adapter._db = mock_db
-
-        mock_event_loop.run_until_complete.return_value = [{'result': [{'id': 1}, {'id': 2}]}]
+        mock_db.query.return_value = [{'id': 1}, {'id': 2}]
 
         result = adapter.get_many(TEST_TABLE, {'status': 'active'})
 
-        mock_event_loop.run_until_complete.assert_called_once()
+        mock_db.query.assert_called_once()
         self.assertEqual(result, [{'id': 1}, {'id': 2}])
 
     def test_get_many_with_limit(self):
@@ -766,16 +691,13 @@ class TestSurrealDbAdapterGetMany(unittest.TestCase):
             db_name=TEST_DATABASE
         )
 
-        mock_event_loop = MagicMock()
         mock_db = MagicMock()
-        adapter._event_loop = mock_event_loop
         adapter._db = mock_db
-
-        mock_event_loop.run_until_complete.return_value = [{'result': []}]
+        mock_db.query.return_value = []
 
         adapter.get_many(TEST_TABLE, {}, limit=50)
 
-        mock_event_loop.run_until_complete.assert_called_once()
+        mock_db.query.assert_called_once()
 
     def test_get_many_without_active_filter(self):
         """
@@ -791,16 +713,13 @@ class TestSurrealDbAdapterGetMany(unittest.TestCase):
             db_name=TEST_DATABASE
         )
 
-        mock_event_loop = MagicMock()
         mock_db = MagicMock()
-        adapter._event_loop = mock_event_loop
         adapter._db = mock_db
-
-        mock_event_loop.run_until_complete.return_value = [{'result': []}]
+        mock_db.query.return_value = []
 
         adapter.get_many(TEST_TABLE, {}, active=False)
 
-        mock_event_loop.run_until_complete.assert_called_once()
+        mock_db.query.assert_called_once()
 
     def test_get_many_with_sort(self):
         """
@@ -816,16 +735,13 @@ class TestSurrealDbAdapterGetMany(unittest.TestCase):
             db_name=TEST_DATABASE
         )
 
-        mock_event_loop = MagicMock()
         mock_db = MagicMock()
-        adapter._event_loop = mock_event_loop
         adapter._db = mock_db
-
-        mock_event_loop.run_until_complete.return_value = [{'result': []}]
+        mock_db.query.return_value = []
 
         adapter.get_many(TEST_TABLE, {}, sort=[('name', 'ASC')])
 
-        mock_event_loop.run_until_complete.assert_called_once()
+        mock_db.query.assert_called_once()
 
     def test_get_many_with_fetch_related(self):
         """
@@ -841,16 +757,13 @@ class TestSurrealDbAdapterGetMany(unittest.TestCase):
             db_name=TEST_DATABASE
         )
 
-        mock_event_loop = MagicMock()
         mock_db = MagicMock()
-        adapter._event_loop = mock_event_loop
         adapter._db = mock_db
-
-        mock_event_loop.run_until_complete.return_value = [{'result': []}]
+        mock_db.query.return_value = []
 
         adapter.get_many(TEST_TABLE, {}, fetch_related=['related_table'])
 
-        mock_event_loop.run_until_complete.assert_called_once()
+        mock_db.query.assert_called_once()
 
 
 class TestSurrealDbAdapterGetCount(unittest.TestCase):
@@ -870,12 +783,10 @@ class TestSurrealDbAdapterGetCount(unittest.TestCase):
             db_name=TEST_DATABASE
         )
 
-        mock_event_loop = MagicMock()
         mock_db = MagicMock()
-        adapter._event_loop = mock_event_loop
         adapter._db = mock_db
-
-        mock_event_loop.run_until_complete.return_value = [{'result': [{'count': 42}]}]
+        # Blocking SDK returns results directly
+        mock_db.query.return_value = [{'count': 42}]
 
         result = adapter.get_count(TEST_TABLE, {'status': 'active'})
 
@@ -895,9 +806,7 @@ class TestSurrealDbAdapterGetCount(unittest.TestCase):
             db_name=TEST_DATABASE
         )
 
-        mock_event_loop = MagicMock()
         mock_db = MagicMock()
-        adapter._event_loop = mock_event_loop
         adapter._db = mock_db
 
         # parse_db_response might return list
@@ -920,12 +829,9 @@ class TestSurrealDbAdapterGetCount(unittest.TestCase):
             db_name=TEST_DATABASE
         )
 
-        mock_event_loop = MagicMock()
         mock_db = MagicMock()
-        adapter._event_loop = mock_event_loop
         adapter._db = mock_db
-
-        mock_event_loop.run_until_complete.return_value = [{'result': []}]
+        mock_db.query.return_value = []
 
         result = adapter.get_count(TEST_TABLE, {})
 
@@ -946,12 +852,9 @@ class TestSurrealDbAdapterGetCount(unittest.TestCase):
             db_name=TEST_DATABASE
         )
 
-        mock_event_loop = MagicMock()
         mock_db = MagicMock()
-        adapter._event_loop = mock_event_loop
         adapter._db = mock_db
-
-        mock_event_loop.run_until_complete.return_value = [{'result': [{'count': 10}]}]
+        mock_db.query.return_value = [{'count': 10}]
 
         adapter.get_count(TEST_TABLE, {}, options={'hint': 'some_index'})
 
@@ -964,10 +867,10 @@ class TestSurrealDbAdapterGetSaveQuery(unittest.TestCase):
 
     def test_get_save_query(self):
         """
-        Test get_save_query returns update operation.
+        Test get_save_query returns upsert operation.
 
         Verifies:
-        - Returns tuple with 'update', id, and data
+        - Returns tuple with 'upsert', id, and data (without id)
         """
         adapter = SurrealDbAdapter(
             endpoint=TEST_ENDPOINT,
@@ -980,9 +883,10 @@ class TestSurrealDbAdapterGetSaveQuery(unittest.TestCase):
         data = {'id': 'record:123', 'name': 'test', 'email': 'test@example.com'}
         operation = adapter.get_save_query(TEST_TABLE, data)
 
-        self.assertEqual(operation[0], 'update')
+        self.assertEqual(operation[0], 'upsert')
         self.assertEqual(operation[1], 'record:123')
-        self.assertEqual(operation[2], data)
+        # Data should not include 'id' since upsert takes it as a separate parameter
+        self.assertEqual(operation[2], {'name': 'test', 'email': 'test@example.com'})
 
 
 class TestSurrealDbAdapterSave(unittest.TestCase):
@@ -990,7 +894,7 @@ class TestSurrealDbAdapterSave(unittest.TestCase):
 
     def test_save(self):
         """
-        Test save calls _call_db with update operation.
+        Test save calls _call_db with upsert operation.
 
         Verifies result is returned from db.
         """
@@ -1002,18 +906,16 @@ class TestSurrealDbAdapterSave(unittest.TestCase):
             db_name=TEST_DATABASE
         )
 
-        mock_event_loop = MagicMock()
         mock_db = MagicMock()
-        adapter._event_loop = mock_event_loop
         adapter._db = mock_db
 
         saved_data = {'id': 'record:123', 'name': 'test'}
-        mock_event_loop.run_until_complete.return_value = saved_data
+        mock_db.upsert.return_value = saved_data
 
         data = {'id': 'record:123', 'name': 'test'}
         result = adapter.save(TEST_TABLE, data)
 
-        mock_event_loop.run_until_complete.assert_called_once()
+        mock_db.upsert.assert_called_once()
         self.assertEqual(result, saved_data)
 
 
@@ -1037,13 +939,11 @@ class TestSurrealDbAdapterDelete(unittest.TestCase):
             db_name=TEST_DATABASE
         )
 
-        mock_event_loop = MagicMock()
         mock_db = MagicMock()
-        adapter._event_loop = mock_event_loop
         adapter._db = mock_db
 
         updated_data = {'id': 'record:123', 'name': 'test', 'active': False}
-        mock_event_loop.run_until_complete.return_value = updated_data
+        mock_db.upsert.return_value = updated_data
 
         data = {'id': 'record:123', 'name': 'test'}
         result = adapter.delete(TEST_TABLE, data)
@@ -1051,8 +951,8 @@ class TestSurrealDbAdapterDelete(unittest.TestCase):
         # Verify active was set to False
         self.assertFalse(data['active'])
 
-        # Verify save was called (which calls _call_db)
-        mock_event_loop.run_until_complete.assert_called_once()
+        # Verify upsert was called (which is called by save)
+        mock_db.upsert.assert_called_once()
         self.assertEqual(result, updated_data)
 
 

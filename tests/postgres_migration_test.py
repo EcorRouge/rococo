@@ -1,28 +1,40 @@
-
 import sys
-from unittest.mock import MagicMock
-
-# Mock psycopg2 before importing modules that depend on it
-sys.modules["psycopg2"] = MagicMock()
-sys.modules["psycopg2.extras"] = MagicMock()
+from unittest.mock import MagicMock, patch
 
 import pytest
-from rococo.migrations.postgres.migration import PostgresMigration
-from rococo.data.postgresql import PostgreSQLAdapter
+
+
+# Create mock objects for psycopg2
+_mock_psycopg2 = MagicMock()
+_mock_psycopg2_extras = MagicMock()
+
 
 @pytest.fixture
 def mock_db_adapter():
-    adapter = MagicMock(spec=PostgreSQLAdapter)
-    adapter._database = "test_db"
-    # Mocking context manager behavior
-    adapter.__enter__.return_value = adapter
-    adapter.__exit__.return_value = None
-    adapter._connection = MagicMock()
-    return adapter
+    """Fixture that provides a mocked PostgreSQLAdapter."""
+    with patch.dict('sys.modules', {
+        'psycopg2': _mock_psycopg2,
+        'psycopg2.extras': _mock_psycopg2_extras
+    }):
+        from rococo.data.postgresql import PostgreSQLAdapter
+        adapter = MagicMock(spec=PostgreSQLAdapter)
+        adapter._database = "test_db"
+        # Mocking context manager behavior
+        adapter.__enter__.return_value = adapter
+        adapter.__exit__.return_value = None
+        adapter._connection = MagicMock()
+        yield adapter
+
 
 @pytest.fixture
 def migration(mock_db_adapter):
-    return PostgresMigration(mock_db_adapter)
+    """Fixture that provides PostgresMigration with psycopg2 mocked."""
+    with patch.dict('sys.modules', {
+        'psycopg2': _mock_psycopg2,
+        'psycopg2.extras': _mock_psycopg2_extras
+    }):
+        from rococo.migrations.postgres.migration import PostgresMigration
+        yield PostgresMigration(mock_db_adapter)
 
 def test_add_index(migration, mock_db_adapter):
     migration.add_index("test_table", "idx_test", "column1")

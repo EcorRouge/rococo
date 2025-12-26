@@ -12,6 +12,9 @@ class SMSService(ABC):
 
     @abstractmethod
     def __init__(self):
+        """
+        Base constructor for SMSService
+        """
         pass
 
     @abstractmethod

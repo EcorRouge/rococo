@@ -17,7 +17,7 @@ class LoginMethodType(str, Enum):
 class LoginMethod(VersionedModel):
     """A login method model."""
 
-    person_id: str = None
+    person_id: Optional[str] = None
     method_type: Optional[str] = None
     method_data: Optional[dict] = None
     email_id: Optional[str] = None

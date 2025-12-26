@@ -7,13 +7,13 @@ from .enums import EmailProvider
 
 
 __all__ = [
-    Config,
-    MailjetConfig,
-    SESConfig,
-    EmailConfig,
-    EmailService,
-    MailjetService,
-    SESService,
-    email_factory,
-    EmailProvider
+    "Config",
+    "MailjetConfig",
+    "SESConfig",
+    "EmailConfig",
+    "EmailService",
+    "MailjetService",
+    "SESService",
+    "email_factory",
+    "EmailProvider"
 ]

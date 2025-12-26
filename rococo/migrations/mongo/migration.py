@@ -40,7 +40,7 @@ class MongoMigration(MigrationBase):
                 return str(version_doc['version'])
             return '0000000000'
 
-    def update_version_table(self, version: str, commit: bool = True):
+    def update_version_table(self, version: str):
         """Updates the DB version in the db_version collection."""
         with self.db_adapter:
             self._ensure_dbversion_collection(self.db_adapter.db)

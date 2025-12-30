@@ -24,7 +24,7 @@ commands:
             # Execute SonarQube scan
             # NOTE: Update the projectKey below to match your project
             sonar-scanner \
-              -Dsonar.projectKey=rococo-93 \
+              -Dsonar.projectKey=rococo \
               -Dsonar.sources=. \
               -Dsonar.host.url=$SONAR_GLOBAL_HOST \
               -Dsonar.token=$SONAR_GLOBAL_TOKEN \

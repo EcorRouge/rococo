@@ -321,14 +321,14 @@ class TestPostgresVersionedModel:
         
         # Verify custom fields
         assert saved_product.name == "Test Product"
-        assert saved_product.price == 29.99
+        assert saved_product.price == pytest.approx(29.99)
         assert saved_product.description == "A test product"
         
         # Retrieve and verify
         retrieved = versioned_repository.get_one({'entity_id': saved_product.entity_id})
         assert retrieved is not None
         assert retrieved.name == "Test Product"
-        assert float(retrieved.price) == 29.99  # PostgreSQL returns Decimal, convert to float for comparison
+        assert float(retrieved.price) == pytest.approx(29.99)  # PostgreSQL returns Decimal, convert to float for comparison
     
     def test_versioned_model_update(self, versioned_repository):
         """Test updating a versioned entity with version bump."""
@@ -351,7 +351,7 @@ class TestPostgresVersionedModel:
         
         # Verify updated values
         assert updated_product.name == "Updated Name"
-        assert updated_product.price == 24.99
+        assert updated_product.price == pytest.approx(24.99)
     
     def test_versioned_model_delete(self, versioned_repository):
         """Test soft delete sets active=False."""
@@ -573,7 +573,7 @@ class TestPostgresVersionedModel:
             )
             # Should have exactly 1 record in main table
             assert main_record is not None
-            assert float(main_record['price']) == 4.0  # Latest price
+            assert float(main_record['price']) == pytest.approx(4.0)  # Latest price
 
             # Check audit table has all previous versions
             # NOTE: Raw SQL needed - no adapter method exists for querying audit tables directly

@@ -116,7 +116,6 @@ workflows:
             branches:
               only:
                 - main
-                - ilyaskarim-roc-93
       - build-package:
           requires:
             - test-python

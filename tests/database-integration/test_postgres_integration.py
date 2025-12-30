@@ -1702,7 +1702,7 @@ class TestPostgresBrandCarRelationships:
 
         car = NonVersionedCar(name="Orphan Car", brand="")
         saved_car = cars_repository.save(car)
-        car_id = saved_car.entity_id.replace('-', '')
+        _car_id = saved_car.entity_id.replace('-', '')
 
         # Link car to brand
         brand_car = NonVersionedBrandCar(
@@ -1727,14 +1727,13 @@ class TestPostgresBrandCarRelationships:
         # Relationship may still exist but brand is deleted
         # This tests orphaned relationship scenario
         with postgres_adapter:
-            relationship = postgres_adapter.get_one(
+            _relationship = postgres_adapter.get_one(
                 'non_versioned_brand_car',
                 {'entity_id': relationship_id}
             )
             # Relationship record may or may not exist - this test just verifies query works
             # Original test checked len(relationships) >= 0 which is always true
-            # Here we just verify the query executes without error
-            assert True  # Query executed successfully
+            # The query executing without error is sufficient validation
 
     def test_delete_car_removes_relationship(self, brands_repository, cars_repository, brand_cars_repository, postgres_adapter):
         """Test deleting car (hard delete for non-versioned) and check BrandCar cleanup."""
@@ -1867,8 +1866,8 @@ class TestPostgresBrandCarRelationships:
         brand2 = NonVersionedBrand(name="Brand Two")
         saved_brand1 = brands_repository.save(brand1)
         saved_brand2 = brands_repository.save(brand2)
-        brand1_id = saved_brand1.entity_id.replace('-', '')
-        brand2_id = saved_brand2.entity_id.replace('-', '')
+        _brand1_id = saved_brand1.entity_id.replace('-', '')
+        _brand2_id = saved_brand2.entity_id.replace('-', '')
 
         # Create 5 cars
         cars = [
@@ -2003,7 +2002,7 @@ class TestPostgresIntegration:
         # Verify consistency
         assert records is not None
         assert records['name'] == "Consistency Test"
-        assert float(records['price']) == 75.0
+        assert float(records['price']) == pytest.approx(75.0)
 
         # Retrieve via repository
         retrieved = versioned_repository.get_one({'entity_id': entity_id})

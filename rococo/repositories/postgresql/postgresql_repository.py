@@ -72,7 +72,7 @@ class PostgreSQLRepository(BaseRepository):
         self,
         conditions: Dict[str, Any] = None,
         fetch_related: List[str] = None
-    ) -> Union[BaseModel, None]:
+    ) -> Optional[BaseModel]:
         """get one"""
 
         if conditions is not None:
@@ -195,7 +195,7 @@ class PostgreSQLRepository(BaseRepository):
         self,
         instance: BaseModel,
         related_field: str
-    ) -> Union[List, Optional[BaseModel]]:
+    ) -> Optional[Union[List[BaseModel], BaseModel]]:
         """Fetch related entities for a given field in the instance."""
 
         related_value = getattr(instance, related_field)

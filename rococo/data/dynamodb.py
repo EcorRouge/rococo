@@ -11,12 +11,22 @@ class DynamoDbAdapter(DbAdapter):
     """DynamoDB adapter using PynamoDB with dynamic model generation."""
 
     def __init__(self):
+        """Initialize DynamoDbAdapter without connection pooling.
+
+        Unlike database adapters requiring persistent connections, DynamoDB uses
+        stateless HTTP API calls through PynamoDB. No initialization is needed.
+        """
         pass
 
     def __enter__(self):
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
+        """Clean up resources on context exit.
+
+        No cleanup required as DynamoDB operations are stateless.
+        This method exists to satisfy the context manager protocol.
+        """
         pass
 
     def _map_type_to_attribute(self, field_type: Any, is_hash_key: bool = False, is_range_key: bool = False):
@@ -230,59 +240,146 @@ class DynamoDbAdapter(DbAdapter):
         except DoesNotExist:
             return False
 
-    def _execute_query_or_scan(self, model_cls: Type[Model], conditions: Dict[str, Any], limit: int = None, count_only: bool = False):
+    def _get_key_attributes(self, model_cls: Type[Model]) -> Tuple[Optional[str], Optional[str]]:
+        """Extract hash key and range key attribute names from model.
+
+        Args:
+            model_cls: PynamoDB model class
+
+        Returns:
+            Tuple of (hash_key_name, range_key_name)
         """
-        Helper to determine whether to use Query or Scan based on conditions.
-        """
-        # Find hash key and range key using public API instead of _meta
         hash_key_name = None
         range_key_name = None
-        
+
         for name, attr in model_cls.get_attributes().items():
             if getattr(attr, 'is_hash_key', False):
                 hash_key_name = name
             if getattr(attr, 'is_range_key', False):
                 range_key_name = name
 
-        hash_key_val = conditions.get(hash_key_name) if conditions else None
-        
-        if hash_key_val is not None:
-            # Query path: Hash key is present
-            range_key_condition = None
-            filter_condition = None
-            
+        return hash_key_name, range_key_name
+
+    def _build_conditions_for_query(self, model_cls: Type[Model], conditions: Dict[str, Any],
+                                     hash_key_name: str, range_key_name: Optional[str]) -> Tuple[Any, Any]:
+        """Build range key and filter conditions for DynamoDB query.
+
+        Args:
+            model_cls: PynamoDB model class
+            conditions: Query conditions dict
+            hash_key_name: Name of the hash key attribute
+            range_key_name: Name of the range key attribute (if any)
+
+        Returns:
+            Tuple of (range_key_condition, filter_condition)
+        """
+        range_key_condition = None
+        filter_condition = None
+
+        for key, value in conditions.items():
+            if key == hash_key_name:
+                continue
+
+            attr = getattr(model_cls, key)
+            cond = (attr == value)
+
+            if key == range_key_name:
+                range_key_condition = cond
+            else:
+                if filter_condition is None:
+                    filter_condition = cond
+                else:
+                    filter_condition = filter_condition & cond
+
+        return range_key_condition, filter_condition
+
+    def _build_scan_condition(self, model_cls: Type[Model], conditions: Dict[str, Any]) -> Any:
+        """Build scan condition from conditions dict.
+
+        Args:
+            model_cls: PynamoDB model class
+            conditions: Query conditions dict
+
+        Returns:
+            Combined scan condition or None
+        """
+        scan_condition = None
+        if conditions:
             for key, value in conditions.items():
-                if key == hash_key_name:
-                    continue
-                
                 attr = getattr(model_cls, key)
                 cond = (attr == value)
-                
-                if key == range_key_name:
-                    range_key_condition = cond
+                if scan_condition is None:
+                    scan_condition = cond
                 else:
-                    if filter_condition is None:
-                        filter_condition = cond
-                    else:
-                        filter_condition = filter_condition & cond
-            
-            if count_only:
-                return model_cls.count(hash_key_val, range_key_condition=range_key_condition, filter_condition=filter_condition)
-            else:
-                return model_cls.query(hash_key_val, range_key_condition=range_key_condition, filter_condition=filter_condition, limit=limit)
+                    scan_condition = scan_condition & cond
+        return scan_condition
+
+    def _execute_query(self, model_cls: Type[Model], hash_key_val: str,
+                       range_key_condition: Any, filter_condition: Any,
+                       limit: Optional[int], count_only: bool):
+        """Execute DynamoDB Query operation.
+
+        Args:
+            model_cls: PynamoDB model class
+            hash_key_val: Hash key value for query
+            range_key_condition: Range key condition (if any)
+            filter_condition: Additional filter condition (if any)
+            limit: Maximum number of items to return
+            count_only: If True, return count instead of items
+
+        Returns:
+            Query results or count
+        """
+        if count_only:
+            return model_cls.count(hash_key_val, range_key_condition=range_key_condition,
+                                   filter_condition=filter_condition)
+        else:
+            return model_cls.query(hash_key_val, range_key_condition=range_key_condition,
+                                   filter_condition=filter_condition, limit=limit)
+
+    def _execute_scan(self, model_cls: Type[Model], scan_condition: Any,
+                      limit: Optional[int], count_only: bool):
+        """Execute DynamoDB Scan operation.
+
+        Args:
+            model_cls: PynamoDB model class
+            scan_condition: Scan filter condition (if any)
+            limit: Maximum number of items to return
+            count_only: If True, return count instead of items
+
+        Returns:
+            Scan results or count
+        """
+        if count_only:
+            return model_cls.count(filter_condition=scan_condition)
+        else:
+            return model_cls.scan(scan_condition, limit=limit)
+
+    def _execute_query_or_scan(self, model_cls: Type[Model], conditions: Dict[str, Any], limit: int = None, count_only: bool = False):
+        """Determine whether to use Query or Scan based on conditions.
+
+        Query is used when hash key is present in conditions, otherwise Scan is used.
+
+        Args:
+            model_cls: PynamoDB model class
+            conditions: Query conditions dict
+            limit: Maximum number of items to return
+            count_only: If True, return count instead of items
+
+        Returns:
+            Query/Scan results or count
+        """
+        hash_key_name, range_key_name = self._get_key_attributes(model_cls)
+        hash_key_val = conditions.get(hash_key_name) if conditions else None
+
+        if hash_key_val is not None:
+            # Query path: Hash key is present
+            range_key_condition, filter_condition = self._build_conditions_for_query(
+                model_cls, conditions, hash_key_name, range_key_name
+            )
+            return self._execute_query(model_cls, hash_key_val, range_key_condition,
+                                       filter_condition, limit, count_only)
         else:
             # Scan path: Hash key is missing
-            scan_condition = None
-            if conditions:
-                for key, value in conditions.items():
-                    attr = getattr(model_cls, key)
-                    cond = (attr == value)
-                    if scan_condition is None:
-                        scan_condition = cond
-                    else:
-                        scan_condition = scan_condition & cond
-            
-            if count_only:
-                return model_cls.count(filter_condition=scan_condition)
-            else:
-                return model_cls.scan(scan_condition, limit=limit)
+            scan_condition = self._build_scan_condition(model_cls, conditions)
+            return self._execute_scan(model_cls, scan_condition, limit, count_only)

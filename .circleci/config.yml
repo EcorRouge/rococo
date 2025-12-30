@@ -49,14 +49,33 @@ jobs:
           pip-dependency-file: requirements.txt
           pkg-manager: pip
       - python/install-packages:
+          args: pytest pytest-mock
+          pkg-manager: pip
+          pypi-cache: false
+      - run:
+          name: Run tests
+          command: pytest --junitxml=junit.xml || ((($? == 5)) && echo 'Did not find any tests to run.')
+      - store_test_results:
+          path: junit.xml
+
+  sonarqube-scan:
+    # Run SonarQube analysis on main branch only
+    docker:
+      - image: cimg/python:3.10-node
+    steps:
+      - checkout
+      - python/install-packages:
+          pkg-manager: pip
+      - python/install-packages:
+          pip-dependency-file: requirements.txt
+          pkg-manager: pip
+      - python/install-packages:
           args: pytest pytest-cov pytest-mock
           pkg-manager: pip
           pypi-cache: false
       - run:
-          name: Run tests with coverage
+          name: Run tests with coverage for SonarQube
           command: pytest --cov=rococo --cov-report=xml:coverage.xml --cov-report=term --junitxml=junit.xml || ((($? == 5)) && echo 'Did not find any tests to run.')
-      - store_test_results:
-          path: junit.xml
       - security_scans
 
   build-package:
@@ -89,13 +108,14 @@ jobs:
 workflows:
   build-and-test:
     jobs:
-      - test-python:
+      - test-python
+      - sonarqube-scan:
           context:
             - sonarqube
           filters:
             branches:
               only:
-                - ilyaskarim-roc-93
+                - main
       - build-package:
           requires:
             - test-python

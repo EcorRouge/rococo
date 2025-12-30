@@ -18,6 +18,9 @@ class BaseConfig:
     Config class that allows to load from a .toml file, and/or use a .env file.
     """
 
+
+    VAR_NOT_FOUND_MSG = "Warning: var %s not found."
+
     def __init__(self):
         load_dotenv()
         self.project_version = None
@@ -39,7 +42,7 @@ class BaseConfig:
         if var_name in self.env_vars.keys():
             return self.env_vars[var_name]
         else:
-            logger.warning("Variable %s not found.", var_name)
+            logger.warning(self.VAR_NOT_FOUND_MSG, var_name)
             return None
 
     def load_toml(self, toml_folder_dir: str, log_version_string: bool = True) -> bool:
@@ -86,7 +89,7 @@ class BaseConfig:
                 logger.error(
                     "Error: Invalid input format. Please provide a comma-delimited string.")
                 return False
-        logger.warning("Warning: var %s not found.", var_name)
+        logger.warning(self.VAR_NOT_FOUND_MSG, var_name)
         return False
 
     def get_var_as_list(self, var_name: str) -> Optional[List]:
@@ -94,7 +97,7 @@ class BaseConfig:
         Returns a comma-delimited var as list
         """
         if var_name not in self.env_vars.keys():
-            logger.warning("Warning: var %s not found.", var_name)
+            logger.warning(self.VAR_NOT_FOUND_MSG, var_name)
             return None
 
         try:
@@ -113,7 +116,7 @@ class BaseConfig:
             except ValueError:
                 logger.error("Error: Invalid input format. Please provide a proper json string.")
                 return False
-        logger.warning("Warning: var %s not found.", var_name)
+        logger.warning(self.VAR_NOT_FOUND_MSG, var_name)
         return False
 
     @abstractmethod

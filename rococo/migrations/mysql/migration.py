@@ -100,12 +100,12 @@ class MySQLMigration(MigrationBase):
         self.execute(query, commit=commit)
 
     def insert_db_version_data(self, commit: bool = True):
-        query = f"INSERT INTO db_version (version) VALUES (0000000000);"
+        query = "INSERT INTO db_version (version) VALUES (0000000000);"
         self.execute(query, commit=commit)
 
     def update_version_table(self, version, commit: bool = True):
-        query = f"UPDATE db_version SET version = {version};"
-        self.execute(query, commit=commit)
+        query = "UPDATE db_version SET version = %s;"
+        self.execute(query, commit=commit, args=(version,))
 
     @staticmethod
     def _cursor_to_dict(result, description):

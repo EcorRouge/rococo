@@ -41,7 +41,7 @@ class SurrealDbAdapter(DbAdapter):
     def _call_db(self, function_name, *args, **kwargs):
         """Calls a function specified by function_name argument in SurrealDB connection passing forward args and kwargs."""
         if not self._db:
-            raise Exception("No connection to SurrealDB.")
+            raise ConnectionError("No connection to SurrealDB.")
         return getattr(self._db, function_name)(*args, **kwargs)
 
     def _build_condition_string(self, key, value):
@@ -59,7 +59,7 @@ class SurrealDbAdapter(DbAdapter):
         elif isinstance(value, UUID):
             return f"{key}='{str(value)}'"
         else:
-            raise Exception(
+            raise TypeError(
                 f"Unsuppported type {type(value)} for condition key: {key}, value: {value}")
 
     def run_transaction(self, operations_list: List[Any]):

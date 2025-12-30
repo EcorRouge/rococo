@@ -277,14 +277,14 @@ class TestMySQLVersionedModel:
         
         # Verify custom fields
         assert saved_product.name == "Test Product"
-        assert saved_product.price == 29.99
+        assert saved_product.price == pytest.approx(29.99)
         assert saved_product.description == "A test product"
         
         # Retrieve and verify
         retrieved = versioned_repository.get_one({'entity_id': saved_product.entity_id})
         assert retrieved is not None
         assert retrieved.name == "Test Product"
-        assert float(retrieved.price) == 29.99  # MySQL returns Decimal, convert to float for comparison
+        assert float(retrieved.price) == pytest.approx(29.99)  # MySQL returns Decimal, convert to float for comparison
     
     def test_versioned_model_update(self, versioned_repository):
         """Test updating a versioned entity with version bump."""
@@ -307,7 +307,7 @@ class TestMySQLVersionedModel:
         
         # Verify updated values
         assert updated_product.name == "Updated Name"
-        assert updated_product.price == 24.99
+        assert updated_product.price == pytest.approx(24.99)
     
     def test_versioned_model_delete(self, versioned_repository):
         """Test soft delete sets active=False."""
@@ -442,7 +442,7 @@ class TestMySQLVersionedModel:
                 {'entity_id': str(entity_id).replace('-', '')}
             )
             assert record is not None
-            assert float(record['price']) == 200.0
+            assert float(record['price']) == pytest.approx(200.0)
 
     def test_versioned_audit_table_completeness(self, versioned_repository, mysql_adapter):
         """Test audit table has complete version history."""
@@ -490,7 +490,7 @@ class TestMySQLVersionedModel:
         saved = versioned_repository.save(product)
 
         # MySQL DECIMAL(10,2) should preserve 2 decimal places
-        assert float(saved.price) == 99.99
+        assert float(saved.price) == pytest.approx(99.99)
 
     def test_versioned_bulk_save(self, versioned_repository, mysql_adapter):
         """Test bulk saving of 100+ versioned entities with version tracking."""

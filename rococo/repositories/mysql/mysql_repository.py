@@ -4,7 +4,7 @@ import re
 from uuid import UUID
 from datetime import datetime
 from dataclasses import fields
-from typing import Any, Dict, List, Type, Union
+from typing import Any, Dict, List, Optional, Type, Union
 
 from rococo.data import MySqlAdapter
 from rococo.messaging import MessageAdapter
@@ -135,7 +135,7 @@ class MySqlRepository(BaseRepository):
             raise NotImplementedError
 
     def get_one(self, conditions: Dict[str, Any] = None, join_fields: List[str] = None,
-                additional_fields: List[str] = None) -> Union[BaseModel, None]:
+                additional_fields: List[str] = None) -> Optional[BaseModel]:
         """get one"""
 
         if additional_fields is None:

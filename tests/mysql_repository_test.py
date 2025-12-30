@@ -21,50 +21,84 @@ from rococo.messaging.base import MessageAdapter
 class TestVersionedModel(VersionedModel):
     entity_id: UUID = dc_field(default_factory=uuid4)
     version: UUID = dc_field(default_factory=lambda: UUID(int=0))
-    previous_version: Union[UUID, None] = dc_field(default=None)
-    changed_by_id: Union[UUID, str, None] = dc_field(
+    previous_version: UUID | None = dc_field(default=None)
+    changed_by_id: UUID | str | None = dc_field(
         default_factory=lambda: UUID(int=0))
-    name: str = None
+    name: str | None = None
     # active and changed_on are inherited from VersionedModel
+
+    def _convert_field_value(self, val, convert_datetime_to_iso_string, convert_uuids):
+        if isinstance(val, UUID):
+            return str(val) if convert_uuids else val
+        if isinstance(val, datetime.datetime):
+            return val.isoformat() if convert_datetime_to_iso_string else val
+        return val
+
+    def _should_include_none_field(self, field_name):
+        return field_name in ['previous_version', 'name', 'changed_by_id']
 
     def as_dict(self, convert_datetime_to_iso_string=False, convert_uuids=True, export_properties=True):
         data_dict = {}
         for f_info in fields(self):
             val = getattr(self, f_info.name, None)
-            if val is None:
-                # For testing, it's sometimes useful to see None fields explicitly
-                # For now, let's skip them if the original as_dict does.
-                # If VersionedModel.as_dict includes them, this should too.
-                # Based on VersionedModel.as_dict, it seems to filter by self.fields() then __dict__
-                # which implicitly skips Nones if not in __dict__ or if values are None.
-                # For simplicity in test model, let's include if present.
-                # MySqlRepository itself handles None values before passing to adapter if needed.
-                pass  # Let it be handled by getattr default or actual value
 
-            if isinstance(val, UUID):
-                data_dict[f_info.name] = str(val) if convert_uuids else val
-            elif isinstance(val, datetime.datetime):
-                data_dict[f_info.name] = val.isoformat(
-                ) if convert_datetime_to_iso_string else val
-            elif val is not None:  # include other non-None values
-                data_dict[f_info.name] = val
-            elif f_info.name in self.__dict__:  # include if explicitly set to None
+            if val is not None:
+                data_dict[f_info.name] = self._convert_field_value(
+                    val, convert_datetime_to_iso_string, convert_uuids)
+            elif f_info.name in self.__dict__:
                 data_dict[f_info.name] = None
 
-        # Ensure 'name' is in dict if it's an attribute and not None,
-        # or if it was explicitly set to None
-        if hasattr(self, 'name'):
-            if self.name is not None:
-                data_dict['name'] = self.name
-            elif 'name' not in data_dict:  # if not picked up by loop and it was None
-                data_dict['name'] = None
+        if hasattr(self, 'name') and self.name is None and 'name' not in data_dict:
+            data_dict['name'] = None
 
-        # Filter out keys that are None only if that's the desired contract for as_dict
-        # For now, let's return the dict as is, None values included if set.
-        # The original TestVersionedModel in base_repository_test.py did:
-        # return {k: v for k, v in data_dict.items() if v is not None}
-        # Let's align with that common pattern.
-        return {k: v for k, v in data_dict.items() if v is not None or k in ['previous_version', 'name', 'changed_by_id']}
+        return {k: v for k, v in data_dict.items()
+                if v is not None or self._should_include_none_field(k)}
+
+    @classmethod
+    def _is_union_type_with(cls, field_type, *types):
+        if not hasattr(field_type, '__origin__') or field_type.__origin__ is not Union:
+            return False
+        type_args = getattr(field_type, '__args__', [])
+        return any(t in type_args for t in types)
+
+    @classmethod
+    def _convert_uuid_value(cls, val):
+        if val is None:
+            return None
+        if isinstance(val, UUID):
+            return val
+        if isinstance(val, str):
+            try:
+                return UUID(val)
+            except ValueError:
+                return None
+        return None
+
+    @classmethod
+    def _convert_datetime_value(cls, val):
+        if val is None:
+            return None
+        if isinstance(val, datetime.datetime):
+            return val
+        if isinstance(val, str):
+            try:
+                iso_val = val[:-1] + '+00:00' if val.endswith('Z') else val
+                return datetime.datetime.fromisoformat(iso_val)
+            except ValueError:
+                return None
+        return None
+
+    @classmethod
+    def _is_uuid_field(cls, field_type, field_name):
+        if field_type is UUID:
+            return True
+        if cls._is_union_type_with(field_type, UUID):
+            return True
+        return field_name == 'changed_by_id' and cls._is_union_type_with(field_type, UUID, str)
+
+    @classmethod
+    def _is_datetime_field(cls, field_type):
+        return field_type is datetime.datetime or cls._is_union_type_with(field_type, datetime.datetime)
 
     @classmethod
     def from_dict(cls, data: dict):
@@ -73,53 +107,18 @@ class TestVersionedModel(VersionedModel):
 
         init_args = {}
         for f_info in fields(cls):
-            if f_info.name in data:
-                val = data[f_info.name]
-                field_type_actual = f_info.type
+            if f_info.name not in data:
+                continue
 
-                is_uuid_type = field_type_actual is UUID or \
-                    (hasattr(field_type_actual, '__origin__') and field_type_actual.__origin__ is Union and UUID in getattr(
-                        field_type_actual, '__args__', []))
+            val = data[f_info.name]
+            field_type = f_info.type
 
-                is_datetime_type = field_type_actual is datetime.datetime or \
-                    (hasattr(field_type_actual, '__origin__') and field_type_actual.__origin__ is Union and datetime.datetime in getattr(
-                        field_type_actual, '__args__', []))
-
-                # Handle str type for changed_by_id if it's defined as Union[UUID, str, None]
-                is_str_uuid_union_type = (hasattr(field_type_actual, '__origin__') and
-                                          field_type_actual.__origin__ is Union and
-                                          str in getattr(field_type_actual, '__args__', []) and
-                                          UUID in getattr(field_type_actual, '__args__', []))
-
-                # Special handling for changed_by_id if it can be str
-                if is_uuid_type or (f_info.name == 'changed_by_id' and is_str_uuid_union_type):
-                    if isinstance(val, str):
-                        try:
-                            init_args[f_info.name] = UUID(val)
-                        except ValueError:
-                            # If type is strictly UUID and it's not a valid UUID string, assign None or error
-                            # If it's Union[UUID, str, None] for changed_by_id, could keep as str if desired, but test model aims for UUID
-                            init_args[f_info.name] = None
-                    elif isinstance(val, UUID):
-                        init_args[f_info.name] = val
-                    elif val is None:
-                        init_args[f_info.name] = None
-                elif is_datetime_type:
-                    if isinstance(val, str):
-                        try:
-                            iso_val = val
-                            if iso_val.endswith('Z'):
-                                iso_val = iso_val[:-1] + '+00:00'
-                            init_args[f_info.name] = datetime.datetime.fromisoformat(
-                                iso_val)
-                        except ValueError:
-                            init_args[f_info.name] = None
-                    elif isinstance(val, datetime.datetime):
-                        init_args[f_info.name] = val
-                    elif val is None:
-                        init_args[f_info.name] = None
-                else:  # For other types (like str for name, bool for active)
-                    init_args[f_info.name] = val
+            if cls._is_uuid_field(field_type, f_info.name):
+                init_args[f_info.name] = cls._convert_uuid_value(val)
+            elif cls._is_datetime_field(field_type):
+                init_args[f_info.name] = cls._convert_datetime_value(val)
+            else:
+                init_args[f_info.name] = val
 
         return cls(**init_args)
 
@@ -190,7 +189,7 @@ def test_get_one_existing_record(repository, mock_adapter, model_instance):
 
     mock_adapter.get_one.assert_called_once()
     call_args_list = mock_adapter.get_one.call_args_list
-    args, kwargs_adapter_call = call_args_list[0]
+    args, _ = call_args_list[0]
     assert args[1]['entity_id'] == model_instance.entity_id.hex.replace(
         '-', '')
 
@@ -206,7 +205,7 @@ def test_get_one_non_existing_record(repository, mock_adapter):
 
     mock_adapter.get_one.assert_called_once()
     call_args_list = mock_adapter.get_one.call_args_list
-    args, kwargs_adapter_call = call_args_list[0]
+    args, _ = call_args_list[0]
     assert args[1]['entity_id'] == entity_id_to_check.hex.replace('-', '')
 
 
@@ -245,7 +244,7 @@ def test_get_many_records(repository, mock_adapter, test_user_id):
 
     mock_adapter.get_many.assert_called_once()
     call_args_list = mock_adapter.get_many.call_args_list
-    args, kwargs_adapter_call = call_args_list[0]
+    args, _ = call_args_list[0]
     assert args[1]['active']
 
 

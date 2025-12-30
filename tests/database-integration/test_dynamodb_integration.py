@@ -81,7 +81,7 @@ def setup_dynamodb_tables(dynamodb_adapter):
                         write_capacity_units=5,
                         wait=True
                     )
-            except Exception as e:
+            except Exception:
                 # Table might already exist
                 pass
 
@@ -194,7 +194,7 @@ class TestDynamoDBVersionedModel:
 
         # Verify custom fields
         assert saved_product.name == "Test Product"
-        assert saved_product.price == 29.99
+        assert saved_product.price == pytest.approx(29.99)
         assert saved_product.description == "A test product"
 
         # Retrieve and verify
@@ -203,7 +203,7 @@ class TestDynamoDBVersionedModel:
         )
         assert retrieved is not None
         assert retrieved.name == "Test Product"
-        assert retrieved.price == 29.99
+        assert retrieved.price == pytest.approx(29.99)
 
     def test_versioned_model_update(self, versioned_repository):
         """Test updating a versioned entity with version bump."""
@@ -226,7 +226,7 @@ class TestDynamoDBVersionedModel:
 
         # Verify updated values
         assert updated_product.name == "Updated Name"
-        assert updated_product.price == 24.99
+        assert updated_product.price == pytest.approx(24.99)
 
     def test_versioned_model_delete(self, versioned_repository):
         """Test soft delete sets active=False."""
@@ -340,7 +340,7 @@ class TestDynamoDBVersionedModel:
         # Verify final state
         final = versioned_repository.get_one({'entity_id': entity_id})
         assert final.name == "Version History v5"
-        assert final.price == 15.0
+        assert final.price == pytest.approx(15.0)
 
 
 # ============================================================================
@@ -467,13 +467,13 @@ class TestDynamoDBNonVersionedModel:
                 pytest.fail("Item should exist before delete")
 
         # Delete it (should be hard delete for NonVersionedModel)
-        deleted = nonversioned_repository.delete(saved)
+        nonversioned_repository.delete(saved)
 
         # Verify item is actually removed from table
         with dynamodb_adapter:
             pynamo_model = dynamodb_adapter._generate_pynamo_model(NON_VERSIONED_TABLE, NonVersionedConfig)
             try:
-                item_after = pynamo_model.get(entity_id)
+                pynamo_model.get(entity_id)
                 # If we get here, the item still exists - fail the test
                 pytest.fail("Hard delete should have removed the item")
             except DoesNotExist:
@@ -749,7 +749,7 @@ class TestDynamoDBIntegration:
         saved_product = versioned_repository.save(product)
         product_id = saved_product.entity_id
 
-        deleted_product = versioned_repository.delete(saved_product)
+        versioned_repository.delete(saved_product)
 
         # Should still exist in table with active=False
         with dynamodb_adapter:
@@ -765,7 +765,7 @@ class TestDynamoDBIntegration:
         saved_config = nonversioned_repository.save(config)
         config_id = saved_config.entity_id
 
-        deleted_config = nonversioned_repository.delete(saved_config)
+        nonversioned_repository.delete(saved_config)
 
         # Should NOT exist in table (hard delete)
         with dynamodb_adapter:
@@ -839,7 +839,7 @@ class TestDynamoDBIntegration:
         with dynamodb_adapter:
             pynamo_model = dynamodb_adapter._generate_pynamo_model(NON_VERSIONED_TABLE, NonVersionedConfig)
             try:
-                item_after = pynamo_model.get(entity_id)
+                pynamo_model.get(entity_id)
                 pytest.fail("Item should be hard deleted")
             except DoesNotExist:
                 pass  # Expected

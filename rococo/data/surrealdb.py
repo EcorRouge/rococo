@@ -108,7 +108,8 @@ class SurrealDbAdapter(DbAdapter):
         conditions: Dict[str, Any],
         sort: List[Tuple[str, str]] = None,
         fetch_related: list = None,
-        additional_fields: list = None
+        additional_fields: list = None,
+        active: bool = True
     ) -> Dict[str, Any]:
         fields = ['*']
         if additional_fields:
@@ -120,7 +121,8 @@ class SurrealDbAdapter(DbAdapter):
         if conditions:
             condition_strs = [
                 f"{self._build_condition_string(k, v)}" for k, v in conditions.items()]
-        condition_strs.append("active=true")
+        if active:
+            condition_strs.append("active=true")
         query += f" WHERE {' AND '.join(condition_strs)}"
 
         if sort:

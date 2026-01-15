@@ -160,7 +160,8 @@ class PostgreSQLAdapter(DbAdapter):
             conditions: Dict[str, Any],
             sort: List[Tuple[str, str]] = None,
             join_statements: list = None,
-            additional_fields: list = None
+            additional_fields: list = None,
+            active: bool = True
     ) -> Optional[Dict[str, Any]]:
         fields = [f'{table}.*']
         if additional_fields:
@@ -175,7 +176,8 @@ class PostgreSQLAdapter(DbAdapter):
         if conditions:
             condition_strs_values = [self._build_condition_string(
                 table, k, v) for k, v in conditions.items()]
-        condition_strs_values.append((f"{table}.active = %s", ['true']))
+        if active:
+            condition_strs_values.append((f"{table}.active = %s", ['true']))
         query += f" WHERE {' AND '.join([condition_str for condition_str, condition_value in condition_strs_values])}"
 
         if sort:

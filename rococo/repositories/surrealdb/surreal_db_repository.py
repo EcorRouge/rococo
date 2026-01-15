@@ -197,7 +197,8 @@ class SurrealDbRepository(BaseRepository):
             self.table_name,
             conditions,
             fetch_related=fetch_related,
-            additional_fields=additional_fields
+            additional_fields=additional_fields,
+            active=self._is_versioned_model()
         )
         # prep model context
         self.model()
@@ -265,7 +266,8 @@ class SurrealDbRepository(BaseRepository):
             sort=sort,
             limit=limit,
             fetch_related=fetch_related,
-            additional_fields=additional_fields
+            additional_fields=additional_fields,
+            active=self._is_versioned_model()
         )
         if isinstance(raw, dict):
             raw = [raw]

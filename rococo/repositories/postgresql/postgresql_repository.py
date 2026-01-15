@@ -79,7 +79,8 @@ class PostgreSQLRepository(BaseRepository):
             conditions = self._adjust_conditions(conditions)
 
         data = self._execute_within_context(
-            self.adapter.get_one, self.table_name, conditions
+            self.adapter.get_one, self.table_name, conditions,
+            active=self._is_versioned_model()
         )
 
         if not data:
@@ -118,7 +119,8 @@ class PostgreSQLRepository(BaseRepository):
             conditions = self._adjust_conditions(conditions)
         # Fetch the records
         records = self._execute_within_context(
-            self.adapter.get_many, self.table_name, conditions, sort, limit, offset
+            self.adapter.get_many, self.table_name, conditions, sort, limit, offset,
+            active=self._is_versioned_model()
         )
 
         # If the adapter returned a single dictionary, wrap it in a list
@@ -164,8 +166,11 @@ class PostgreSQLRepository(BaseRepository):
             int: The count of matching records.
         """
         # Prepare the actual conditions for the database query
-        # Default conditions from BaseRepository
-        db_conditions = {'latest': True, 'active': True}
+        # Only add versioning filters for VersionedModel
+        if self._is_versioned_model():
+            db_conditions = {'latest': True, 'active': True}
+        else:
+            db_conditions = {}
         if query:  # Ensure query is not None before updating
             actual_query = self._adjust_conditions(
                 query.copy())  # Adjust UUIDs in query

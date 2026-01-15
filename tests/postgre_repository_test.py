@@ -238,7 +238,8 @@ def test_get_one_existing_record(repository, mock_adapter, model_instance):
     # In this case, 'entity_id' value is a single UUID, adjust_conditions doesn't modify it.
     mock_adapter.get_one.assert_called_once_with(
         repository.table_name,
-        query_conditions  # adjust_conditions doesn't change single UUID values
+        query_conditions,  # adjust_conditions doesn't change single UUID values
+        active=True  # VersionedModel passes active=True
     )
     mock_adapter.__enter__.assert_called_once()
     mock_adapter.__exit__.assert_called_once()
@@ -256,7 +257,8 @@ def test_get_one_with_uuid_list_in_conditions(repository, mock_adapter, model_in
 
     mock_adapter.get_one.assert_called_once_with(
         repository.table_name,
-        expected_conditions_for_adapter
+        expected_conditions_for_adapter,
+        active=True  # VersionedModel passes active=True
     )
 
 
@@ -293,7 +295,8 @@ def test_get_many_records(repository, mock_adapter, test_user_id):
         query_conditions,  # adjust_conditions doesn't change this specific query_conditions
         [('name', 'ASC')],
         10,
-        0
+        0,
+        active=True  # VersionedModel passes active=True
     )
 
 

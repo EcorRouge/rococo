@@ -262,14 +262,14 @@ class TestSurrealDBVersionedModel:
         
         # Verify custom fields
         assert saved_product.name == "Test Product"
-        assert saved_product.price == 29.99
+        assert abs(saved_product.price - 29.99) < 0.01
         assert saved_product.description == "A test product"
         
         # Retrieve and verify
         retrieved = versioned_repository.get_one({'entity_id': saved_product.entity_id})
         assert retrieved is not None
         assert retrieved.name == "Test Product"
-        assert retrieved.price == 29.99
+        assert abs(retrieved.price - 29.99) < 0.01
     
     def test_versioned_model_update(self, versioned_repository):
         """Test updating a versioned entity with version bump."""
@@ -292,7 +292,7 @@ class TestSurrealDBVersionedModel:
         
         # Verify updated values
         assert updated_product.name == "Updated Name"
-        assert updated_product.price == 24.99
+        assert abs(updated_product.price - 24.99) < 0.01
     
     def test_versioned_model_delete(self, versioned_repository):
         """Test soft delete sets active=False."""
@@ -370,7 +370,7 @@ class TestSurrealDBVersionedModel:
             name="Record ID Test",
             price=5.0
         )
-        saved_product = versioned_repository.save(product)
+        versioned_repository.save(product)
         
         # Verify the record exists in SurrealDB with correct ID format
         with surrealdb_adapter:
@@ -1340,7 +1340,6 @@ class TestSurrealDBBrandCarRelationships:
         # Create brand
         brand = SurrealNonVersionedBrand(name="Ford")
         brand.prepare_for_save()
-        brand_id = brand.entity_id
 
         # Create car
         car = SurrealNonVersionedCar(name="Mustang", brand="")
@@ -1505,7 +1504,6 @@ class TestSurrealDBBrandCarRelationships:
         # Create brand and car
         brand = SurrealNonVersionedBrand(name="Old Name")
         brand.prepare_for_save()
-        brand_id = brand.entity_id
 
         car = SurrealNonVersionedCar(name="Test Car", brand="")
         car.prepare_for_save()
@@ -1560,11 +1558,9 @@ class TestSurrealDBBrandCarRelationships:
         # Create brand and car
         brand = SurrealNonVersionedBrand(name="To Delete")
         brand.prepare_for_save()
-        brand_id = brand.entity_id
 
         car = SurrealNonVersionedCar(name="Orphan Car", brand="")
         car.prepare_for_save()
-        car_id = car.entity_id
 
         with surrealdb_adapter:
             brand_data = brand.as_dict(convert_datetime_to_iso_string=True, convert_uuids=True)
@@ -1607,7 +1603,6 @@ class TestSurrealDBBrandCarRelationships:
 
         car = SurrealNonVersionedCar(name="To Delete", brand="")
         car.prepare_for_save()
-        car_id = car.entity_id
 
         with surrealdb_adapter:
             brand_data = brand.as_dict(convert_datetime_to_iso_string=True, convert_uuids=True)
@@ -1757,8 +1752,6 @@ class TestSurrealDBBrandCarRelationships:
         brand2 = SurrealNonVersionedBrand(name="Brand Two")
         brand1.prepare_for_save()
         brand2.prepare_for_save()
-        brand1_id = brand1.entity_id
-        brand2_id = brand2.entity_id
 
         # Create 5 cars
         cars = [
@@ -1912,7 +1905,7 @@ class TestSurrealDBIntegration:
 
             # Query the relationship
             result = surrealdb_adapter.execute_query(
-                f"SELECT * FROM related"
+                "SELECT * FROM related"
             )
             relations = surrealdb_adapter.parse_db_response(result)
 
@@ -1924,11 +1917,10 @@ class TestSurrealDBIntegration:
     def test_connection_context_manager(self, surrealdb_adapter):
         """Test connection context manager with multiple operations."""
         # Rapid operations to test connection handling
-        for i in range(10):
+        for _ in range(10):
             with surrealdb_adapter:
-                result = surrealdb_adapter.execute_query("SELECT * FROM surrealversionedproduct LIMIT 1")
+                surrealdb_adapter.execute_query("SELECT * FROM surrealversionedproduct LIMIT 1")
                 # Should complete without connection errors
-        assert True
 
 
 if __name__ == "__main__":

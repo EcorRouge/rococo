@@ -213,7 +213,7 @@ class TestMongoDBVersionedModel:
         
         # Verify custom fields
         assert saved_product.name == "Test Product"
-        assert saved_product.price == 29.99
+        assert saved_product.price == pytest.approx(29.99)
         assert saved_product.description == "A test product"
         
         # Retrieve and verify
@@ -224,7 +224,7 @@ class TestMongoDBVersionedModel:
         )
         assert retrieved is not None
         assert retrieved.name == "Test Product"
-        assert retrieved.price == 29.99
+        assert retrieved.price == pytest.approx(29.99)
     
     def test_versioned_model_update(self, versioned_repository):
         """Test updating a versioned entity with version bump."""
@@ -247,7 +247,7 @@ class TestMongoDBVersionedModel:
         
         # Verify updated values
         assert updated_product.name == "Updated Name"
-        assert updated_product.price == 24.99
+        assert updated_product.price == pytest.approx(24.99)
     
     def test_versioned_model_delete(self, versioned_repository):
         """Test soft delete sets active=False."""
@@ -371,7 +371,7 @@ class TestMongoDBVersionedModel:
 
             # Find the latest version
             latest_version = [v for v in all_versions if v.get('latest') is True][0]
-            assert float(latest_version['price']) == 12.0
+            assert float(latest_version['price']) == pytest.approx(12.0)
 
     def test_versioned_multiple_versions_in_audit(self, versioned_repository, mongodb_adapter):
         """Test that audit collection captures all historical versions."""
@@ -420,7 +420,7 @@ class TestMongoDBVersionedModel:
                 'version': second_version
             })
             assert current is not None
-            assert float(current['price']) == 200.0
+            assert float(current['price']) == pytest.approx(200.0)
 
             # First version should be in audit
             old_version = mongodb_adapter.db[VERSIONED_AUDIT_COLLECTION].find_one({
@@ -428,7 +428,7 @@ class TestMongoDBVersionedModel:
                 'version': first_version
             })
             if old_version:  # May not be in audit yet depending on implementation
-                assert float(old_version['price']) == 100.0
+                assert float(old_version['price']) == pytest.approx(100.0)
 
     def test_versioned_ttl_field_on_delete(self, versioned_repository, mongodb_adapter):
         """Test that deleted records get TTL field if configured."""

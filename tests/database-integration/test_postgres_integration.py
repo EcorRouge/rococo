@@ -321,14 +321,14 @@ class TestPostgresVersionedModel:
         
         # Verify custom fields
         assert saved_product.name == "Test Product"
-        assert saved_product.price == 29.99
+        assert saved_product.price == pytest.approx(29.99)
         assert saved_product.description == "A test product"
         
         # Retrieve and verify
         retrieved = versioned_repository.get_one({'entity_id': saved_product.entity_id})
         assert retrieved is not None
         assert retrieved.name == "Test Product"
-        assert float(retrieved.price) == 29.99  # PostgreSQL returns Decimal, convert to float for comparison
+        assert float(retrieved.price) == pytest.approx(29.99)  # PostgreSQL returns Decimal, convert to float for comparison
     
     def test_versioned_model_update(self, versioned_repository):
         """Test updating a versioned entity with version bump."""
@@ -351,7 +351,7 @@ class TestPostgresVersionedModel:
         
         # Verify updated values
         assert updated_product.name == "Updated Name"
-        assert updated_product.price == 24.99
+        assert updated_product.price == pytest.approx(24.99)
     
     def test_versioned_model_delete(self, versioned_repository):
         """Test soft delete sets active=False."""
@@ -573,7 +573,7 @@ class TestPostgresVersionedModel:
             )
             # Should have exactly 1 record in main table
             assert main_record is not None
-            assert float(main_record['price']) == 4.0  # Latest price
+            assert float(main_record['price']) == pytest.approx(4.0)  # Latest price
 
             # Check audit table has all previous versions
             # NOTE: Raw SQL needed - no adapter method exists for querying audit tables directly
@@ -1702,7 +1702,7 @@ class TestPostgresBrandCarRelationships:
 
         car = NonVersionedCar(name="Orphan Car", brand="")
         saved_car = cars_repository.save(car)
-        car_id = saved_car.entity_id.replace('-', '')
+        _car_id = saved_car.entity_id.replace('-', '')
 
         # Link car to brand
         brand_car = NonVersionedBrandCar(
@@ -1727,14 +1727,13 @@ class TestPostgresBrandCarRelationships:
         # Relationship may still exist but brand is deleted
         # This tests orphaned relationship scenario
         with postgres_adapter:
-            relationship = postgres_adapter.get_one(
+            _relationship = postgres_adapter.get_one(
                 'non_versioned_brand_car',
                 {'entity_id': relationship_id}
             )
             # Relationship record may or may not exist - this test just verifies query works
             # Original test checked len(relationships) >= 0 which is always true
-            # Here we just verify the query executes without error
-            assert True  # Query executed successfully
+            # The query executing without error is sufficient validation
 
     def test_delete_car_removes_relationship(self, brands_repository, cars_repository, brand_cars_repository, postgres_adapter):
         """Test deleting car (hard delete for non-versioned) and check BrandCar cleanup."""
@@ -1867,8 +1866,8 @@ class TestPostgresBrandCarRelationships:
         brand2 = NonVersionedBrand(name="Brand Two")
         saved_brand1 = brands_repository.save(brand1)
         saved_brand2 = brands_repository.save(brand2)
-        brand1_id = saved_brand1.entity_id.replace('-', '')
-        brand2_id = saved_brand2.entity_id.replace('-', '')
+        _brand1_id = saved_brand1.entity_id.replace('-', '')
+        _brand2_id = saved_brand2.entity_id.replace('-', '')
 
         # Create 5 cars
         cars = [
@@ -2003,7 +2002,7 @@ class TestPostgresIntegration:
         # Verify consistency
         assert records is not None
         assert records['name'] == "Consistency Test"
-        assert float(records['price']) == 75.0
+        assert float(records['price']) == pytest.approx(75.0)
 
         # Retrieve via repository
         retrieved = versioned_repository.get_one({'entity_id': entity_id})

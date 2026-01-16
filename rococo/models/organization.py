@@ -12,12 +12,9 @@ from typing import Optional
 class Organization(VersionedModel):
     """An organization model."""
 
-    name: str = None
+    name: Optional[str] = None
     code: Optional[str] = None
     description: Optional[str] = None
     # members (with accompanied roles, including `owner`) are maintained through `PersonOrganizationRole`
-
-    # TODO: to see do we want redundancy, to have a relationship from an `Organization` to its `owner`
-    # despite that `roles` in Organization (including the `owner`) are defined through `PersonOrganizationRole`
-
-    # we could support relationships and hierarchy among organizations
+    # Note: Owner relationships are defined through `PersonOrganizationRole`.
+    # Relationships and hierarchy among organizations could be supported in the future.

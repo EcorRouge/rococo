@@ -3,7 +3,7 @@ base repository for rococo
 """
 import json
 from uuid import UUID
-from typing import Any, Dict, List, Type, Union
+from typing import Any, Dict, List, Optional, Type, Union
 from rococo.data.base import DbAdapter
 from rococo.messaging.base import MessageAdapter
 from rococo.models.versioned_model import BaseModel, VersionedModel
@@ -73,7 +73,7 @@ class BaseRepository:
         self,
         conditions: Dict[str, Any],
         fetch_related: List[str] = None
-    ) -> Union[BaseModel, None]:
+    ) -> Optional[BaseModel]:
         """
         Fetches a single record from the specified table based on given conditions.
 

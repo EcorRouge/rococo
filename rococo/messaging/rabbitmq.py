@@ -114,6 +114,67 @@ class RabbitMqConnection(MessageAdapter):
             )
         )
 
+    def _ack_message_threadsafe(self, ch, delivery_tag):
+        """Ack a message by its delivery tag if channel is open."""
+        if ch.is_open:
+            ch.basic_ack(delivery_tag)
+
+    def _process_message(self, ch, delivery_tag, body, callback):
+        """Callback function that processes the message."""
+        thread_id = threading.get_ident()
+        logger.info(
+            "Thread id: %s Delivery tag: %s Message body: %s",
+            thread_id,
+            delivery_tag,
+            body,
+        )
+        try:
+            callback(body)
+        except Exception:  # pylint: disable=W0718
+            logger.exception("Error processing message...")
+        logger.info(
+            "Thread id: %s Delivery tag: %s Message body: %s Processed...",
+            thread_id,
+            delivery_tag,
+            body,
+        )
+        cb = functools.partial(self._ack_message_threadsafe, ch, delivery_tag)
+        logger.info("Sent ack for Delivery tag %s...", delivery_tag)
+        self._connection.add_callback_threadsafe(cb)
+        self._threads.pop(delivery_tag, None)
+
+    def _on_message_received(self, callback, ch, method_frame, _header_frame, body):
+        """Called when a message is received."""
+        body = json.loads(body.decode())
+        delivery_tag = method_frame.delivery_tag
+        t = threading.Thread(
+            target=self._process_message, args=(ch, delivery_tag, body, callback)
+        )
+        t.start()
+        self._threads[delivery_tag] = t
+
+    def _ensure_connection(self):
+        """Ensures the connection and channel are open."""
+        if not self._channel.is_open or not self._connection.is_open:
+            logging.info("Reconnecting...")
+            self._connect()
+
+    def _should_exit_on_inactivity(self):
+        """Checks if the consumer should exit on inactivity."""
+        return not self._threads and self._read_consume_config().get('EXIT_WHEN_FINISHED') == '1'
+
+    def _process_queue_events(self, queue_name, on_message_callback):
+        """Processes events from the queue. Returns False if should exit."""
+        for method, properties, body in self._channel.consume(queue=queue_name, inactivity_timeout=5):
+            if not method:
+                if self._should_exit_on_inactivity():
+                    logging.info("Reached inactivity timeout. No threads are running and EXIT_WHEN_FINISHED=1, exiting!")
+                    return False
+                continue
+            
+            on_message_callback(self._channel, method, properties, body)
+        return True
+
     def consume_messages(self, queue_name: str,
                          callback_function: Callable[[dict], bool],
                          num_threads: int = 1):
@@ -125,77 +186,29 @@ class RabbitMqConnection(MessageAdapter):
             callback_function (callable): The function to call when a message is received.
             num_threads (int): number of threads
         """
-
-        def _ack_message(ch, delivery_tag):
-            """Ack a message by its delivery tag if channel is open."""
-
-            if ch.is_open:
-                ch.basic_ack(delivery_tag)
-
-        def _do_work(ch, delivery_tag, body, callback):
-            """Callback function that processes the message."""
-
-            thread_id = threading.get_ident()
-            logger.info(
-                "Thread id: %s Delivery tag: %s Message body: %s",
-                thread_id,
-                delivery_tag,
-                body,
-            )
-            try:
-                callback(body)
-            except Exception:  # pylint: disable=W0718
-                logger.exception("Error processing message...")
-            logger.info(
-                "Thread id: %s Delivery tag: %s Message body: %s Processed...",
-                thread_id,
-                delivery_tag,
-                body,
-            )
-            cb = functools.partial(_ack_message, ch, delivery_tag)
-            logger.info("Sent ack for Delivery tag %s...", delivery_tag)
-            self._connection.add_callback_threadsafe(cb)
-            self._threads.pop(delivery_tag, None)
-
-        def _on_message(ch, method_frame, _header_frame, body, args):
-            """Called when a message is received."""
-
-            body = json.loads(body.decode())
-            (callback,) = args
-            delivery_tag = method_frame.delivery_tag
-            t = threading.Thread(
-                target=_do_work, args=(ch, delivery_tag, body, callback)
-            )
-            t.start()
-            self._threads[delivery_tag] = t
-
         self._threads = {}
         self._channel.basic_qos(prefetch_count=num_threads)
 
-        on_message_callback = functools.partial(_on_message, args=(callback_function,))
+        # Fix partial argument passing
+        on_message_callback = functools.partial(self._on_message_received, callback_function)
 
         while True:
             try:
-                if not self._channel.is_open or not self._connection.is_open:
-                    logging.info("Reconnecting...")
-                    self._connect()
+                self._ensure_connection()
                 self._channel.queue_declare(queue=queue_name, durable=True)
                 logging.info("Listening to RabbitMQ queue %s on %s:%s with %s threads...", queue_name,
                             self._host, self._port, num_threads)
-                for method, properties, body in self._channel.consume(queue=queue_name, inactivity_timeout=5):
-                    if (method, properties, body) == (None, None, None):
-                        if len(self._threads) == 0 and self._read_consume_config().get('EXIT_WHEN_FINISHED') == '1':
-                            logging.info("Reached inactivity timeout. No threads are running and EXIT_WHEN_FINISHED=1, exiting!")
-                            break
-                    else:
-                        on_message_callback(self._channel, method, properties, body)
-            except (pika.exceptions.AMQPConnectionError, pika.exceptions.ChannelClosedByBroker) as _:
+                
+                if not self._process_queue_events(queue_name, on_message_callback):
+                    return
+                    
+            except (pika.exceptions.AMQPConnectionError, pika.exceptions.ChannelClosedByBroker):
                 continue
             except KeyboardInterrupt:
                 logging.info("Exiting gracefully...")
                 break
             finally:
                 # Wait for all to complete
-                for thread in self._threads.values():
+                for thread in self._threads.copy().values():
                     thread.join()
 

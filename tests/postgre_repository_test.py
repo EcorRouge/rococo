@@ -21,11 +21,11 @@ class TestVersionedModel(VersionedModel):
     # Override base fields for consistent UUID object usage in tests
     entity_id: UUID = dc_field(default_factory=uuid4)
     version: UUID = dc_field(default_factory=lambda: UUID(int=0))
-    previous_version: Union[UUID, None] = dc_field(default=None)
-    changed_by_id: Union[UUID, str, None] = dc_field(
+    previous_version: Optional[UUID] = dc_field(default=None)
+    changed_by_id: Optional[Union[UUID, str]] = dc_field(
         default_factory=lambda: UUID(int=0))
 
-    name: str = None  # Example custom field
+    name: Optional[str] = None  # Example custom field
     related_item_id: Optional[UUID] = dc_field(
         default=None)  # For fetch_related tests
     related_items_ids: Optional[List[UUID]] = dc_field(
@@ -33,8 +33,34 @@ class TestVersionedModel(VersionedModel):
 
     # active and changed_on are inherited
 
+    @staticmethod
+    def _convert_uuid_value(val, convert_uuids):
+        """Convert UUID value based on conversion flag."""
+        return str(val) if convert_uuids else val
+
+    @staticmethod
+    def _convert_list_uuid_value(val, convert_uuids):
+        """Convert list of UUID values based on conversion flag."""
+        return [str(item) if convert_uuids else item for item in val]
+
+    @staticmethod
+    def _convert_datetime_value(val, convert_datetime_to_iso_string):
+        """Convert datetime value based on conversion flag."""
+        return val.isoformat() if convert_datetime_to_iso_string else val
+
+    def _convert_field_value(self, val, convert_datetime_to_iso_string, convert_uuids):
+        """Convert field value to appropriate type for dict representation."""
+        if isinstance(val, UUID):
+            return self._convert_uuid_value(val, convert_uuids)
+        elif isinstance(val, list) and all(isinstance(item, UUID) for item in val):
+            return self._convert_list_uuid_value(val, convert_uuids)
+        elif isinstance(val, datetime.datetime):
+            return self._convert_datetime_value(val, convert_datetime_to_iso_string)
+        else:
+            return val
+
     def as_dict(self, convert_datetime_to_iso_string=False, convert_uuids=True, export_properties=True):
-        # This as_dict should be robust enough for different calls
+        """Convert model instance to dictionary with optional type conversions."""
         data_dict = {}
         for f_info in fields(self):
             val = getattr(self, f_info.name, None)
@@ -42,39 +68,101 @@ class TestVersionedModel(VersionedModel):
             # Handle specific field 'active' which is bool
             if f_info.name == 'active':
                 data_dict[f_info.name] = val
-                continue  # Skip further processing for 'active' if it's already bool
+                continue
 
             if val is None:
-                # Include None for fields that are explicitly None, helps in asserting later
-                if hasattr(self, f_info.name):  # Only if attribute exists
+                if hasattr(self, f_info.name):
                     data_dict[f_info.name] = None
                 continue
 
-            if isinstance(val, UUID):
-                data_dict[f_info.name] = str(val) if convert_uuids else val
-            elif isinstance(val, list) and all(isinstance(item, UUID) for item in val):
-                data_dict[f_info.name] = [
-                    str(item) if convert_uuids else item for item in val]
-            elif isinstance(val, datetime.datetime):
-                data_dict[f_info.name] = val.isoformat(
-                ) if convert_datetime_to_iso_string else val
-            else:
-                data_dict[f_info.name] = val
+            data_dict[f_info.name] = self._convert_field_value(
+                val, convert_datetime_to_iso_string, convert_uuids
+            )
 
-        # Ensure 'name' is included if it's an attribute
-        if hasattr(self, 'name'):
-            data_dict['name'] = self.name  # Will be None if self.name is None
-        if hasattr(self, 'related_item_id'):
-            data_dict['related_item_id'] = self.related_item_id
-        if hasattr(self, 'related_items_ids'):
-            data_dict['related_items_ids'] = self.related_items_ids
+        # Ensure specific attributes are included
+        for attr in ['name', 'related_item_id', 'related_items_ids']:
+            if hasattr(self, attr):
+                data_dict[attr] = getattr(self, attr)
 
-        # Return all fields, including those that are None, for consistent structure
-        # The _process_data_before_save method will handle None values appropriately for the DB.
         return data_dict
+
+    @staticmethod
+    def _is_uuid_type(field_type):
+        """Check if field type is UUID or Optional[UUID]."""
+        return field_type is UUID or \
+            (hasattr(field_type, '__origin__') and field_type.__origin__ is Union and
+             UUID in getattr(field_type, '__args__', []))
+
+    @staticmethod
+    def _is_datetime_type(field_type):
+        """Check if field type is datetime or Optional[datetime]."""
+        return field_type is datetime.datetime or \
+            (hasattr(field_type, '__origin__') and field_type.__origin__ is Union and
+             datetime.datetime in getattr(field_type, '__args__', []))
+
+    @staticmethod
+    def _is_list_uuid_type(field_type):
+        """Check if field type is List[UUID]."""
+        return (hasattr(field_type, '__origin__') and field_type.__origin__ is list and
+                len(getattr(field_type, '__args__', [])) == 1 and
+                getattr(field_type, '__args__', [None])[0] is UUID)
+
+    @staticmethod
+    def _parse_uuid_value(val):
+        """Parse value as UUID."""
+        if isinstance(val, str):
+            try:
+                return UUID(val)
+            except ValueError:
+                return None
+        elif isinstance(val, UUID):
+            return val
+        elif val is None:
+            return None
+        return None
+
+    @staticmethod
+    def _parse_list_uuid_value(val):
+        """Parse value as List[UUID]."""
+        if isinstance(val, list) and all(isinstance(item, str) for item in val):
+            return [UUID(item) for item in val]
+        elif isinstance(val, list) and all(isinstance(item, UUID) for item in val):
+            return val
+        else:
+            return []
+
+    @staticmethod
+    def _parse_datetime_value(val):
+        """Parse value as datetime."""
+        if isinstance(val, str):
+            try:
+                iso_val = val
+                if iso_val.endswith('Z'):
+                    iso_val = iso_val[:-1] + '+00:00'
+                return datetime.datetime.fromisoformat(iso_val)
+            except ValueError:
+                return None
+        elif isinstance(val, datetime.datetime):
+            return val
+        elif val is None:
+            return None
+        return None
+
+    @classmethod
+    def _convert_field_from_dict(cls, field_type, val):
+        """Convert field value from dict based on field type."""
+        if cls._is_uuid_type(field_type):
+            return cls._parse_uuid_value(val)
+        elif cls._is_list_uuid_type(field_type):
+            return cls._parse_list_uuid_value(val)
+        elif cls._is_datetime_type(field_type):
+            return cls._parse_datetime_value(val)
+        else:
+            return val
 
     @classmethod
     def from_dict(cls, data: dict):
+        """Create model instance from dictionary."""
         if data is None:
             return None
 
@@ -82,54 +170,7 @@ class TestVersionedModel(VersionedModel):
         for f_info in fields(cls):
             if f_info.name in data:
                 val = data[f_info.name]
-                field_type_actual = f_info.type
-
-                is_uuid_type = field_type_actual is UUID or \
-                    (hasattr(field_type_actual, '__origin__') and field_type_actual.__origin__ is Union and UUID in getattr(
-                        field_type_actual, '__args__', []))
-
-                is_datetime_type = field_type_actual is datetime.datetime or \
-                    (hasattr(field_type_actual, '__origin__') and field_type_actual.__origin__ is Union and datetime.datetime in getattr(
-                        field_type_actual, '__args__', []))
-
-                is_list_uuid_type = (hasattr(field_type_actual, '__origin__') and field_type_actual.__origin__ is list and
-                                     len(getattr(field_type_actual, '__args__', [])) == 1 and
-                                     getattr(field_type_actual, '__args__', [None])[0] is UUID)
-
-                if is_uuid_type:
-                    if isinstance(val, str):
-                        try:
-                            init_args[f_info.name] = UUID(val)
-                        except ValueError:
-                            init_args[f_info.name] = None
-                    elif isinstance(val, UUID):
-                        init_args[f_info.name] = val
-                    elif val is None:
-                        init_args[f_info.name] = None
-                elif is_list_uuid_type:
-                    if isinstance(val, list) and all(isinstance(item, str) for item in val):
-                        init_args[f_info.name] = [UUID(item) for item in val]
-                    elif isinstance(val, list) and all(isinstance(item, UUID) for item in val):
-                        init_args[f_info.name] = val
-                    else:
-                        # Default to empty list if conversion fails or type mismatch
-                        init_args[f_info.name] = []
-                elif is_datetime_type:
-                    if isinstance(val, str):
-                        try:
-                            iso_val = val
-                            if iso_val.endswith('Z'):
-                                iso_val = iso_val[:-1] + '+00:00'
-                            init_args[f_info.name] = datetime.datetime.fromisoformat(
-                                iso_val)
-                        except ValueError:
-                            init_args[f_info.name] = None
-                    elif isinstance(val, datetime.datetime):
-                        init_args[f_info.name] = val
-                    elif val is None:
-                        init_args[f_info.name] = None
-                else:
-                    init_args[f_info.name] = val
+                init_args[f_info.name] = cls._convert_field_from_dict(f_info.type, val)
 
         return cls(**init_args)
 

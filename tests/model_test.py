@@ -9,6 +9,17 @@ from unittest.mock import patch, MagicMock
 from rococo.models import VersionedModel
 from rococo.models.versioned_model import ModelValidationError, get_uuid_hex
 
+# Constants for test data to avoid duplication
+TEST_ERROR_MESSAGE = "Test error"
+ERROR_1_MESSAGE = "Error 1"
+ERROR_2_MESSAGE = "Error 2"
+TEST_ERROR_LOWERCASE = "test error"
+TEST_EMAIL_EXAMPLE = "test@example.com"
+TEST_USER_NAME = "Test User"
+TEST_USER_DESCRIPTION = "A test user"
+TEST_USER_EMAIL = "user@test.com"
+TEST_DATETIME_ISO = "2024-01-15T09:00:00+00:00"
+
 
 def test_prepare_for_save():
     """
@@ -117,7 +128,7 @@ def test_post_init_model_resolution(mock_import_module, mock_import_models_modul
         model) if f.name == 'related_field').metadata
 
     # The important thing is that it's no longer a string
-    assert field_metadata['relationship']['model'] is not 'SomeModel'
+    assert field_metadata['relationship']['model'] != 'SomeModel'
     assert hasattr(field_metadata['relationship']['model'], '_mock_name')
 
 
@@ -244,7 +255,7 @@ def test_repr_unloaded_field():
     # The __repr__ method will try to access the field and get an AttributeError
     # This tests that the __getattribute__ method properly raises the error
     with pytest.raises(AttributeError, match="Many-to-many field 'unloaded_field' is not loaded"):
-        repr(model)
+        _ = repr(model)
 
 
 # Tests for item 6: VersionedModel.fields() Class Method
@@ -371,7 +382,7 @@ def test_from_dict_uuid_validation():
 
     # Test with invalid UUID string (should log error but not crash)
     invalid_data = {"entity_id": "invalid-uuid"}
-    model = VersionedModel.from_dict(invalid_data)
+    VersionedModel.from_dict(invalid_data)
 
 
 def test_from_dict_field_filtering():
@@ -687,19 +698,19 @@ def test_dataclass_field_to_dict_conversion():
         )
 
     # Test with single dataclass field
-    error = OrganizationImportError(message="Test error", code=500)
+    error = OrganizationImportError(message=TEST_ERROR_MESSAGE, code=500)
     model = OrganizationImport(runtime_error=error)
     result = model.as_dict()
 
     # The dataclass should be converted to dict
     assert isinstance(result['runtime_error'], dict)
-    assert result['runtime_error']['message'] == "Test error"
+    assert result['runtime_error']['message'] == TEST_ERROR_MESSAGE
     assert result['runtime_error']['code'] == 500
 
     # Test with list of dataclass fields
     errors = [
-        OrganizationImportError(message="Error 1", code=400),
-        OrganizationImportError(message="Error 2", code=404)
+        OrganizationImportError(message=ERROR_1_MESSAGE, code=400),
+        OrganizationImportError(message=ERROR_2_MESSAGE, code=404)
     ]
     model_with_list = OrganizationImport(errors=errors)
     result_with_list = model_with_list.as_dict()
@@ -707,9 +718,9 @@ def test_dataclass_field_to_dict_conversion():
     # The list of dataclasses should be converted to list of dicts
     assert isinstance(result_with_list['errors'], list)
     assert len(result_with_list['errors']) == 2
-    assert result_with_list['errors'][0]['message'] == "Error 1"
+    assert result_with_list['errors'][0]['message'] == ERROR_1_MESSAGE
     assert result_with_list['errors'][0]['code'] == 400
-    assert result_with_list['errors'][1]['message'] == "Error 2"
+    assert result_with_list['errors'][1]['message'] == ERROR_2_MESSAGE
     assert result_with_list['errors'][1]['code'] == 404
 
     # Test with None values
@@ -741,7 +752,7 @@ def test_dataclass_field_from_dict_conversion():
     data = {
         "entity_id": "test-id",
         "runtime_error": {
-            "message": "Test error",
+            "message": TEST_ERROR_MESSAGE,
             "code": 500
         }
     }
@@ -750,15 +761,15 @@ def test_dataclass_field_from_dict_conversion():
 
     # The dict should be converted to dataclass
     assert isinstance(model.runtime_error, OrganizationImportError)
-    assert model.runtime_error.message == "Test error"
+    assert model.runtime_error.message == TEST_ERROR_MESSAGE
     assert model.runtime_error.code == 500
 
     # Test with list of dataclass fields
     data_with_list = {
         "entity_id": "test-id",
         "errors": [
-            {"message": "Error 1", "code": 400},
-            {"message": "Error 2", "code": 404}
+            {"message": ERROR_1_MESSAGE, "code": 400},
+            {"message": ERROR_2_MESSAGE, "code": 404}
         ]
     }
 
@@ -768,10 +779,10 @@ def test_dataclass_field_from_dict_conversion():
     assert isinstance(model_with_list.errors, list)
     assert len(model_with_list.errors) == 2
     assert isinstance(model_with_list.errors[0], OrganizationImportError)
-    assert model_with_list.errors[0].message == "Error 1"
+    assert model_with_list.errors[0].message == ERROR_1_MESSAGE
     assert model_with_list.errors[0].code == 400
     assert isinstance(model_with_list.errors[1], OrganizationImportError)
-    assert model_with_list.errors[1].message == "Error 2"
+    assert model_with_list.errors[1].message == ERROR_2_MESSAGE
     assert model_with_list.errors[1].code == 404
 
     # Test with None values
@@ -843,24 +854,24 @@ def test_dataclass_field_without_metadata():
         runtime_error: Optional[OrganizationImportError] = None
 
     # Test as_dict - should remain as dataclass object
-    error = OrganizationImportError(message="Test error")
+    error = OrganizationImportError(message=TEST_ERROR_MESSAGE)
     model = OrganizationImport(runtime_error=error)
     result = model.as_dict()
 
     # Without metadata, the dataclass should remain as-is
     assert isinstance(result['runtime_error'], OrganizationImportError)
-    assert result['runtime_error'].message == "Test error"
+    assert result['runtime_error'].message == TEST_ERROR_MESSAGE
 
     # Test from_dict - should remain as dict
     data = {
         "entity_id": "test-id",
-        "runtime_error": {"message": "Test error"}
+        "runtime_error": {"message": TEST_ERROR_MESSAGE}
     }
 
     restored = OrganizationImport.from_dict(data)
     # Without metadata, the dict should remain as dict
     assert isinstance(restored.runtime_error, dict)
-    assert restored.runtime_error['message'] == "Test error"
+    assert restored.runtime_error['message'] == TEST_ERROR_MESSAGE
 
 
 # Tests for extra fields support
@@ -949,7 +960,7 @@ def test_extra_fields_roundtrip():
     assert restored.name == original.name
     assert restored.extra == original.extra
     assert restored.extra["dynamic_field"] == "dynamic_value"
-    assert restored.extra["computed_score"] == 95.5
+    assert restored.extra["computed_score"] == pytest.approx(95.5)
     assert restored.extra["metadata"]["source"] == "api"
 
 
@@ -1055,7 +1066,7 @@ def test_extra_fields_with_enum_and_dataclass():
     data = {
         "entity_id": "test-id",
         "status": "inactive",  # Should become enum
-        "error": {"message": "test error"},  # Should become dataclass
+        "error": {"message": TEST_ERROR_LOWERCASE},  # Should become dataclass
         "custom_field": "custom_value",  # Should go to extra
         "dynamic_config": {"setting": "value"}  # Should go to extra
     }
@@ -1068,7 +1079,7 @@ def test_extra_fields_with_enum_and_dataclass():
 
     # Verify dataclass conversion
     assert isinstance(model.error, ErrorInfo)
-    assert model.error.message == "test error"
+    assert model.error.message == TEST_ERROR_LOWERCASE
 
     # Verify extra fields
     assert model.extra["custom_field"] == "custom_value"
@@ -1130,7 +1141,7 @@ def test_extra_fields_direct_attribute_access():
     # Test direct attribute access to extra fields
     assert model.custom_field == "custom_value"
     assert model.dynamic_config == {"setting": "value"}
-    assert model.score == 95.5
+    assert model.score == pytest.approx(95.5)
 
     # Test that regular fields still work
     assert model.name == "test_model"
@@ -1153,12 +1164,12 @@ def test_extra_fields_direct_attribute_setting():
 
     # Verify they are stored in the extra dict
     assert model.extra["new_field"] == "new_value"
-    assert model.extra["rating"] == 4.5
+    assert model.extra["rating"] == pytest.approx(4.5)
     assert model.extra["config"] == {"enabled": True}
 
     # Verify direct access works
     assert model.new_field == "new_value"
-    assert model.rating == 4.5
+    assert model.rating == pytest.approx(4.5)
     assert model.config == {"enabled": True}
 
 
@@ -1206,7 +1217,7 @@ def test_extra_fields_direct_access_roundtrip():
 
     # Verify direct access works on restored model
     assert restored.dynamic_field == "dynamic_value"
-    assert restored.score == 95.5
+    assert restored.score == pytest.approx(95.5)
     assert restored.name == "original_model"
 
 
@@ -1663,7 +1674,7 @@ def test_repository_integration_with_enum_dataclass_and_properties():
     # Create complex model
     model = ComplexModelWithAllFeatures(
         status=Status.inactive,
-        error=ErrorInfo(message="Test error", code=404),
+        error=ErrorInfo(message=TEST_ERROR_MESSAGE, code=404),
         name="complex_test"
     )
     model.extra_field = "extra_value"
@@ -1676,7 +1687,7 @@ def test_repository_integration_with_enum_dataclass_and_properties():
 
     # Dataclass should be converted to dict
     assert isinstance(processed_data_no_props["error"], dict)
-    assert processed_data_no_props["error"]["message"] == "Test error"
+    assert processed_data_no_props["error"]["message"] == TEST_ERROR_MESSAGE
     assert processed_data_no_props["error"]["code"] == 404
 
     # Extra fields should be unwrapped
@@ -1692,14 +1703,14 @@ def test_repository_integration_with_enum_dataclass_and_properties():
 
     # All previous assertions should still hold
     assert processed_data_with_props["status"] == "inactive"
-    assert processed_data_with_props["error"]["message"] == "Test error"
+    assert processed_data_with_props["error"]["message"] == TEST_ERROR_MESSAGE
     assert processed_data_with_props["extra_field"] == "extra_value"
 
     # Properties should now be included
     assert "status_display" in processed_data_with_props
     assert processed_data_with_props["status_display"] == "Status: inactive"
     assert "error_summary" in processed_data_with_props
-    assert processed_data_with_props["error_summary"] == "Test error (404)"
+    assert processed_data_with_props["error_summary"] == f"{TEST_ERROR_MESSAGE} (404)"
 
 
 def test_as_dict_partial_instance_with_properties():
@@ -1735,25 +1746,25 @@ def test_field_alias_in_as_dict():
     class ModelWithAliases(VersionedModel):
         name: str = field(default="test", metadata={'alias': 'display_name'})
         user_email: str = field(
-            default="test@example.com", metadata={'alias': 'email'})
+            default=TEST_EMAIL_EXAMPLE, metadata={'alias': 'email'})
         score: int = field(default=100, metadata={'alias': 'rating'})
         # Field without alias
         description: str = "test description"
 
     model = ModelWithAliases(
-        name="Test User",
-        user_email="user@test.com",
+        name=TEST_USER_NAME,
+        user_email=TEST_USER_EMAIL,
         score=95,
-        description="A test user"
+        description=TEST_USER_DESCRIPTION
     )
 
     result = model.as_dict()
 
     # Aliased fields should use their aliases as keys
     assert "display_name" in result
-    assert result["display_name"] == "Test User"
+    assert result["display_name"] == TEST_USER_NAME
     assert "email" in result
-    assert result["email"] == "user@test.com"
+    assert result["email"] == TEST_USER_EMAIL
     assert "rating" in result
     assert result["rating"] == 95
 
@@ -1764,7 +1775,7 @@ def test_field_alias_in_as_dict():
 
     # Non-aliased fields should use original names
     assert "description" in result
-    assert result["description"] == "A test user"
+    assert result["description"] == TEST_USER_DESCRIPTION
 
     # Big 6 fields should always use original names (no aliases)
     assert "entity_id" in result
@@ -1781,17 +1792,17 @@ def test_field_alias_in_from_dict():
     class ModelWithAliases(VersionedModel):
         name: str = field(default="test", metadata={'alias': 'display_name'})
         user_email: str = field(
-            default="test@example.com", metadata={'alias': 'email'})
+            default=TEST_EMAIL_EXAMPLE, metadata={'alias': 'email'})
         score: int = field(default=100, metadata={'alias': 'rating'})
         description: str = "test description"
 
     # Create data using aliases
     data = {
         "entity_id": "test-id",
-        "display_name": "Test User",
-        "email": "user@test.com",
+        "display_name": TEST_USER_NAME,
+        "email": TEST_USER_EMAIL,
         "rating": 95,
-        "description": "A test user",
+        "description": TEST_USER_DESCRIPTION,
         # Big 6 fields should use original names
         "active": True,
         "version": "test-version"
@@ -1800,10 +1811,10 @@ def test_field_alias_in_from_dict():
     model = ModelWithAliases.from_dict(data)
 
     # Fields should be correctly mapped from aliases to original field names
-    assert model.name == "Test User"
-    assert model.user_email == "user@test.com"
+    assert model.name == TEST_USER_NAME
+    assert model.user_email == TEST_USER_EMAIL
     assert model.score == 95
-    assert model.description == "A test user"
+    assert model.description == TEST_USER_DESCRIPTION
 
     # Big 6 fields should work normally
     assert model.entity_id == "test-id"
@@ -1818,7 +1829,7 @@ def test_field_alias_roundtrip_conversion():
     class ModelWithAliases(VersionedModel):
         full_name: str = field(default="test", metadata={'alias': 'name'})
         contact_email: str = field(
-            default="test@example.com", metadata={'alias': 'email'})
+            default=TEST_EMAIL_EXAMPLE, metadata={'alias': 'email'})
         user_score: int = field(default=100, metadata={'alias': 'score'})
         notes: str = "test notes"
 
@@ -1899,7 +1910,7 @@ def test_field_alias_big_6_fields_not_aliased():
         # Custom field with alias
         name: str = field(default="test", metadata={'alias': 'display_name'})
 
-    model = ModelWithAliases(name="Test User")
+    model = ModelWithAliases(name=TEST_USER_NAME)
     result = model.as_dict()
 
     # Big 6 fields should always use original names, never aliases
@@ -1912,7 +1923,7 @@ def test_field_alias_big_6_fields_not_aliased():
 
     # Custom fields should use aliases
     assert "display_name" in result
-    assert result["display_name"] == "Test User"
+    assert result["display_name"] == TEST_USER_NAME
     assert "name" not in result
 
 
@@ -2006,7 +2017,7 @@ def test_field_alias_with_extra_fields():
         score: int = field(default=100, metadata={'alias': 'rating'})
 
     # Create model with extra fields
-    model = ModelWithAliasesAndExtra(name="Test User", score=95)
+    model = ModelWithAliasesAndExtra(name=TEST_USER_NAME, score=95)
     model.extra = {
         "custom_field": "custom_value",
         "dynamic_data": {"nested": "value"}
@@ -2016,7 +2027,7 @@ def test_field_alias_with_extra_fields():
 
     # Aliased fields should use aliases
     assert "display_name" in result
-    assert result["display_name"] == "Test User"
+    assert result["display_name"] == TEST_USER_NAME
     assert "rating" in result
     assert result["rating"] == 95
 
@@ -2028,7 +2039,7 @@ def test_field_alias_with_extra_fields():
 
     # Test roundtrip with extra fields
     restored = ModelWithAliasesAndExtra.from_dict(result)
-    assert restored.name == "Test User"
+    assert restored.name == TEST_USER_NAME
     assert restored.score == 95
     assert restored.extra["custom_field"] == "custom_value"
     assert restored.extra["dynamic_data"] == {"nested": "value"}
@@ -2160,7 +2171,7 @@ def test_datetime_parsing_from_iso_string():
         'active': True,
         'changed_by_id': 'user123',
         'changed_on': '2024-01-15T10:30:00+00:00',  # ISO string
-        'created_at': '2024-01-15T09:00:00+00:00',   # ISO string
+        'created_at': TEST_DATETIME_ISO,   # ISO string
         'updated_at': '2024-01-15T11:00:00+00:00',   # ISO string
     }
 
@@ -2199,7 +2210,7 @@ def test_datetime_parsing_optional_fields():
     # Test with ISO string for optional field
     test_data = {
         'entity_id': 'test123',
-        'created_at': '2024-01-15T09:00:00+00:00',
+        'created_at': TEST_DATETIME_ISO,
         'updated_at': '2024-01-15T11:00:00+00:00',  # ISO string
         'deleted_at': None  # None value
     }
@@ -2366,7 +2377,7 @@ def test_datetime_parsing_with_other_field_types():
     test_data = {
         'entity_id': 'test123',
         'status': 'inactive',  # Should become enum
-        'created_at': '2024-01-15T09:00:00+00:00',  # Should become datetime
+        'created_at': TEST_DATETIME_ISO,  # Should become datetime
         'score': 95,  # Should remain int
         'name': 'test_model'  # Should remain string
     }
@@ -2401,7 +2412,7 @@ def test_datetime_parsing_none_values():
     # Test with None values
     test_data = {
         'entity_id': 'test123',
-        'required_datetime': '2024-01-15T09:00:00+00:00',
+        'required_datetime': TEST_DATETIME_ISO,
         'optional_datetime': None
     }
 

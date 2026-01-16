@@ -11,7 +11,7 @@ from . import VersionedModel
 class Email(VersionedModel):
     """A email method model."""
 
-    person_id: str = None
+    person_id: Optional[str] = None
     email: Optional[str] = None
     is_verified: bool = False
     is_default: bool = False

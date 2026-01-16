@@ -15,7 +15,44 @@ logger = logging.getLogger(__name__)
 class MailjetService(EmailService):
 
     def __init__(self):
+        # No initialization required - configuration is set via __call__
         pass
+
+    @staticmethod
+    def _convert_string_address(address: str) -> dict:
+        """Convert a string email address to Mailjet format."""
+        return {"Email": address}
+
+    @staticmethod
+    def _convert_dict_address(address: dict) -> dict:
+        """
+        Convert a dict email address to Mailjet format.
+        
+        Supports both uppercase and lowercase keys for Email and Name.
+        Preserves any additional fields from the original dict.
+        """
+        # Extract email (support both uppercase and lowercase keys)
+        email = address.get("Email") or address.get("email")
+        
+        if not email:
+            raise ValueError(
+                f"Dict address must contain 'Email' or 'email' key: {address}")
+        
+        # Build the result dict starting with Email
+        result = {"Email": email}
+        
+        # Extract and add name if valid
+        name = address.get("Name") or address.get("name")
+        if name and isinstance(name, str) and name.strip():
+            result["Name"] = name
+        
+        # Preserve any additional fields from the original dict
+        excluded_keys = {"Email", "email", "Name", "name"}
+        for key, value in address.items():
+            if key not in excluded_keys and key not in result:
+                result[key] = value
+        
+        return result
 
     @staticmethod
     def _convert_addresses(addresses: List[Union[str, dict]]) -> List[dict]:
@@ -36,32 +73,9 @@ class MailjetService(EmailService):
 
         for address in addresses:
             if isinstance(address, str):
-                # Convert string to dict format
-                converted_addresses.append({"Email": address})
+                converted_addresses.append(MailjetService._convert_string_address(address))
             elif isinstance(address, dict):
-                # Extract email (support both uppercase and lowercase keys)
-                email = address.get("Email") or address.get("email")
-                
-                if not email:
-                    raise ValueError(
-                        f"Dict address must contain 'Email' or 'email' key: {address}")
-                
-                # Build the result dict starting with Email
-                result = {"Email": email}
-                
-                # Extract name (support both uppercase and lowercase keys)
-                name = address.get("Name") or address.get("name")
-                
-                # Only include Name if it's not None, not empty, and not whitespace-only
-                if name and isinstance(name, str) and name.strip():
-                    result["Name"] = name
-                
-                # Preserve any additional fields from the original dict
-                for key, value in address.items():
-                    if key not in ["Email", "email", "Name", "name"] and key not in result:
-                        result[key] = value
-                
-                converted_addresses.append(result)
+                converted_addresses.append(MailjetService._convert_dict_address(address))
             else:
                 raise TypeError(
                     f"Address must be string or dict, got {type(address)}: {address}")

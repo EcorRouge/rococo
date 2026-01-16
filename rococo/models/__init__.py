@@ -10,7 +10,6 @@ from .versioned_model import BaseModel, VersionedModel
 #   - NonVersionedModel: Descriptive name (emphasizes it's unversioned)
 # Both refer to the same unversioned model class.
 NonVersionedModel = BaseModel
-
 from .login_method import LoginMethod
 from .organization import Organization
 from .recovery_code import RecoveryCode

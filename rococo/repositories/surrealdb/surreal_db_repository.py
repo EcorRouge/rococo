@@ -1,7 +1,7 @@
 """SurrealDbRepository class"""
 
 from dataclasses import fields
-from typing import Any, Dict, List, Type, Union
+from typing import Any, Dict, List, Optional, Type, Union
 from uuid import UUID
 
 from surrealdb.data.types.record_id import RecordID
@@ -77,7 +77,7 @@ class SurrealDbRepository(BaseRepository):
     def _process_data_from_db(
         self,
         data: Union[Dict[str, Any], List[Dict[str, Any]]]
-    ) -> Union[SurrealVersionedModel, List[SurrealVersionedModel], None]:
+    ) -> Optional[Union[SurrealVersionedModel, List[SurrealVersionedModel]]]:
         """Method to convert raw SurrealDB data into SurrealVersionedModel instance(s)."""
         def _process_record(rec: Dict[str, Any], model_cls: Type[SurrealVersionedModel]) -> SurrealVersionedModel:
             # unwrap the SurrealDB record id into entity_id
@@ -147,7 +147,7 @@ class SurrealDbRepository(BaseRepository):
         self,
         conditions: Dict[str, Any],
         fetch_related: List[str] = None
-    ) -> Union[SurrealVersionedModel, None]:
+    ) -> Optional[SurrealVersionedModel]:
         """Fetch a single record matching conditions"""
         additional_fields: List[str] = []
 

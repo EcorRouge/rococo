@@ -1,10 +1,8 @@
 import os
 import logging
+import importlib
 from importlib import import_module
-# Assuming migration_template.py is in the same directory or accessible in python path
-# For a common module, it would typically be:
-# from rococo.migrations.common.migration_template import get_template
-from .migration_template import get_template # This relative import is fine if it's part of a package
+from .migration_template import get_template
 
 class MigrationRunner:
     def __init__(self, migrations_dir, migration):
@@ -150,42 +148,40 @@ class MigrationRunner:
             print(f"Error creating migration file: {e}")
 
     def run_forward_migration_script(self, initial_db_version_for_run):
-        # Renamed old_db_version to initial_db_version_for_run for clarity
-        current_script_filename = self._get_forward_migration_script()
+        # Iterates one migration at a time, re-resolving the next forward script
+        # against the DB version updated by the just-applied script. Iterative to
+        # avoid stack overflow on deep migration histories.
+        while True:
+            current_script_filename = self._get_forward_migration_script()
 
-        if current_script_filename is None:
-            latest_db_version_after_ops = self.get_db_version()
-            if initial_db_version_for_run == latest_db_version_after_ops:
-                # This means no scripts were found that could run from initial_db_version_for_run
-                logging.info(f'No forward migration scripts found for current DB version: {initial_db_version_for_run}. Database is likely up to date.')
-            else:
-                # This means some migrations ran, and now no more are found.
-                logging.info('All pending forward migrations complete!')
-            logging.info(f'Latest DB version: {latest_db_version_after_ops}')
-            return # End of migration run
+            if current_script_filename is None:
+                latest_db_version_after_ops = self.get_db_version()
+                if initial_db_version_for_run == latest_db_version_after_ops:
+                    logging.info(
+                        f'No forward migration scripts found for current DB version: '
+                        f'{initial_db_version_for_run}. Database is likely up to date.'
+                    )
+                else:
+                    logging.info('All pending forward migrations complete!')
+                logging.info(f'Latest DB version: {latest_db_version_after_ops}')
+                return
 
-        # Using os.path.basename to be platform-agnostic, though split('/') works on POSIX
-        logging.info(f'Running forward migration: {os.path.basename(current_script_filename)}.py')
-        
-        try:
-            # Dynamically import the migration module
-            # Assumes migrations_dir is in sys.path (BaseCli handles this)            
-            module_name = current_script_filename
-            migration_module = import_module(module_name) # Assumes migrations_dir is in sys.path
-            migration_module.upgrade(self.migration)
-        except Exception as e:
-            logging.error(f"Error during forward migration {current_script_filename}.py: {e}", exc_info=True)
-            # This print is for direct CLI feedback during a run
-            print(f"Error applying migration {current_script_filename}.py. Halting.")
-            # Potentially offer to show current DB version or suggest manual check
-            print(f"Current DB version after error: {self.get_db_version()}")
-            return # Stop further migrations
+            logging.info(
+                f'Running forward migration: {os.path.basename(current_script_filename)}.py'
+            )
 
-        # Recursively run next forward migration
-        # The `initial_db_version_for_run` remains the version from the start of this `rf` command.
-        # The next call to `_get_forward_migration_script` will use the *new* current DB version
-        # (updated by the migration script that just ran).
-        return self.run_forward_migration_script(initial_db_version_for_run)
+            try:
+                importlib.invalidate_caches()
+                migration_module = import_module(current_script_filename)
+                migration_module.upgrade(self.migration)
+            except Exception as e:
+                logging.error(
+                    f"Error during forward migration {current_script_filename}.py: {e}",
+                    exc_info=True,
+                )
+                print(f"Error applying migration {current_script_filename}.py. Halting.")
+                print(f"Current DB version after error: {self.get_db_version()}")
+                return
 
     def run_backward_migration_script(self):
         current_script_filename = self._get_backward_migration_script()
@@ -197,8 +193,8 @@ class MigrationRunner:
         logging.info(f'Running backward migration: {os.path.basename(current_script_filename)}.py')
         
         try:
-            module_name = current_script_filename
-            migration_module = import_module(module_name)
+            importlib.invalidate_caches()
+            migration_module = import_module(current_script_filename)
             migration_module.downgrade(self.migration)
         except Exception as e:
             logging.error(f"Error during backward migration {current_script_filename}.py: {e}", exc_info=True)

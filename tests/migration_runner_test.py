@@ -458,6 +458,50 @@ class TestRunForwardMigrationScript:
         assert f"Error applying migration {script_name_no_ext}.py. Halting." in captured.out
         assert f"Current DB version after error: {initial_version}" in captured.out
 
+    def test_runs_long_chain_iteratively_without_stack_overflow(self, raw_runner, mocker):
+        """A deep migration history should iterate, not recurse. Many iterations
+        in a single call should not exceed Python's recursion limit."""
+        chain_length = 2000  # Well above default recursion limit (~1000)
+        script_names = [
+            f"{i + 1:010d}_{i:010d}_step_{i}" for i in range(chain_length)
+        ]
+        # Provide each script in turn, then None to terminate
+        mocker.patch.object(
+            raw_runner,
+            "_get_forward_migration_script",
+            side_effect=script_names + [None],
+        )
+        mocker.patch.object(raw_runner, "get_db_version", return_value=f"{chain_length:010d}")
+        mock_script_module = MagicMock()
+        mock_import_module = mocker.patch(
+            f"{MIGRATION_RUNNER_MODULE_PATH}.import_module",
+            return_value=mock_script_module,
+        )
+
+        raw_runner.run_forward_migration_script(initial_db_version_for_run="0000000000")
+
+        assert mock_import_module.call_count == chain_length
+        assert mock_script_module.upgrade.call_count == chain_length
+
+    def test_calls_invalidate_caches_before_import(self, raw_runner, mocker):
+        """importlib.invalidate_caches is called before each module import so
+        newly-added migration files in long-running processes are picked up."""
+        script_name = "0000000001_0000000000_first_migration"
+        mocker.patch.object(
+            raw_runner, "_get_forward_migration_script", side_effect=[script_name, None]
+        )
+        mocker.patch.object(raw_runner, "get_db_version", return_value="0000000001")
+        mocker.patch(
+            f"{MIGRATION_RUNNER_MODULE_PATH}.import_module", return_value=MagicMock()
+        )
+        invalidate_mock = mocker.patch(
+            f"{MIGRATION_RUNNER_MODULE_PATH}.importlib.invalidate_caches"
+        )
+
+        raw_runner.run_forward_migration_script(initial_db_version_for_run="0000000000")
+
+        invalidate_mock.assert_called_once()
+
 # --- Tests for run_backward_migration_script ---
 class TestRunBackwardMigrationScript:
 

@@ -11,7 +11,18 @@ from rococo.data.base import DbAdapter
 class PostgreSQLAdapter(DbAdapter):
     """PostgreSQL adapter for interacting with PostgreSQL."""
 
-    def __init__(self, host: str, port: int, user: str, password: str, database: str, connection_resolver: Optional[Callable] = None, connection_closer: Optional[Callable] = None):
+
+    def __init__(
+        self,
+        host: str,
+        port: int,
+        user: str,
+        password: str,
+        database: str,
+        connection_resolver: Optional[Callable] = None,
+        connection_closer: Optional[Callable] = None,
+        connect_kwargs: Optional[dict] = None,
+    ):
         self._host = host
         self._port = port
         self._user = user
@@ -19,7 +30,8 @@ class PostgreSQLAdapter(DbAdapter):
         self._database = database
         self._connection = None
         self._cursor = None
-        self._table_columns_cache = {}  # Cache for table column names
+        self._table_columns_cache = {}
+        self._connect_kwargs = connect_kwargs or {}
 
         if connection_resolver is None:
             self._connection_resolver = psycopg2.connect
@@ -27,6 +39,7 @@ class PostgreSQLAdapter(DbAdapter):
             self._connection_resolver = connection_resolver
 
         self._connection_closer = connection_closer
+
 
     def __enter__(self):
         """Context manager entry point for creating DB connection."""
@@ -60,7 +73,8 @@ class PostgreSQLAdapter(DbAdapter):
             port=self._port,
             user=self._user,
             password=self._password,
-            database=self._database
+            database=self._database,
+            **self._connect_kwargs
         )
 
     def _call_cursor(self, function_name, *args, **kwargs):

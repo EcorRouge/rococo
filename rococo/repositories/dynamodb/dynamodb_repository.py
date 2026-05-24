@@ -1,11 +1,11 @@
 import json
 import logging
 from uuid import UUID
-from typing import Any, Dict, List, Optional, Type, Tuple
+from typing import Any, Dict, List, Optional, Type, Tuple, Union
 from rococo.data.dynamodb import DynamoDbAdapter
 from rococo.messaging import MessageAdapter
 from rococo.repositories import BaseRepository
-from rococo.models.versioned_model import BaseModel, VersionedModel, get_uuid_hex
+from rococo.models.versioned_model import BaseModel
 
 
 class DynamoDbRepository(BaseRepository):
@@ -111,33 +111,14 @@ class DynamoDbRepository(BaseRepository):
 
         # Use appropriate save method based on model type
         if self._is_versioned_model():
-            # For versioned models, move existing version to audit if needed
-            if self.use_audit_table:
-                previous_version = getattr(instance, 'previous_version', None)
-                if previous_version and previous_version != get_uuid_hex(0):
-                    self._execute_within_context(
-                        lambda: self.adapter.move_entity_to_audit_table(
-                            self.table_name,
-                            instance.entity_id,
-                            model_cls=self.model
-                        )
-                    )
-
-            # Save with versioning
-            saved = self._execute_within_context(
-                lambda: self.adapter.save(self.table_name, payload, model_cls=self.model)
-            )
+            saved = self._save_versioned(payload)
         else:
             # For non-versioned models, use simple upsert
             saved = self._execute_within_context(
                 lambda: self.adapter.upsert(self.table_name, payload, model_cls=self.model)
             )
 
-        # Hydrate the returned fields onto our instance
-        if saved:
-            for k, v in saved.items():
-                if hasattr(instance, k):
-                    setattr(instance, k, v)
+        self._hydrate_instance(instance, saved)
 
         # Send a message if requested
         if send_message:
@@ -148,6 +129,29 @@ class DynamoDbRepository(BaseRepository):
             )
 
         return instance
+
+    def _save_versioned(
+        self,
+        payload: Dict[str, Any]
+    ) -> Union[Dict[str, Any], None]:
+        return self._execute_within_context(
+            lambda: self.adapter.save_versioned(
+                self.table_name,
+                payload,
+                model_cls=self.model,
+                write_audit=self.use_audit_table
+            )
+        )
+
+    @staticmethod
+    def _hydrate_instance(
+        instance: BaseModel,
+        saved: Union[Dict[str, Any], None]
+    ) -> None:
+        if saved:
+            for k, v in saved.items():
+                if hasattr(instance, k):
+                    setattr(instance, k, v)
 
     def delete(
         self,
@@ -175,30 +179,8 @@ class DynamoDbRepository(BaseRepository):
             data = instance.as_dict(
                 convert_datetime_to_iso_string=True, convert_uuids=True, export_properties=self.save_calculated_fields)
 
-            # Move to audit if needed
-            if self.use_audit_table:
-                previous_version = getattr(instance, 'previous_version', None)
-                if previous_version and previous_version != get_uuid_hex(0):
-                    self._execute_within_context(
-                        lambda: self.adapter.move_entity_to_audit_table(
-                            self.table_name,
-                            data['entity_id'],
-                            model_cls=self.model
-                        )
-                    )
-
-            saved = self._execute_within_context(
-                lambda: self.adapter.save(
-                    self.table_name,
-                    data,
-                    model_cls=self.model
-                )
-            )
-
-            if saved:
-                for k, v in saved.items():
-                    if hasattr(instance, k):
-                        setattr(instance, k, v)
+            saved = self._save_versioned(data)
+            self._hydrate_instance(instance, saved)
         else:
             # Hard delete for non-versioned models
             with self.adapter:

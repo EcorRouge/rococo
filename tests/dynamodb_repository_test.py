@@ -6,7 +6,8 @@ from unittest.mock import MagicMock, patch, ANY
 from typing import Type
 from pynamodb.models import Model
 from pynamodb.attributes import UnicodeAttribute, BooleanAttribute
-from rococo.data.dynamodb import DynamoDbAdapter
+from pynamodb.exceptions import TransactWriteError
+from rococo.data.dynamodb import DynamoDbAdapter, DynamoDbOptimisticLockError
 from rococo.repositories.dynamodb.dynamodb_repository import DynamoDbRepository
 from rococo.models.versioned_model import VersionedModel
 from rococo.messaging import MessageAdapter
@@ -57,6 +58,29 @@ class PersonAuditModel(Model):
     def save(self):
         pass
 
+
+class FakeTransactWrite:
+    instances = []
+
+    def __init__(self, *args, **kwargs):
+        self.args = args
+        self.kwargs = kwargs
+        self.save = MagicMock()
+        self.__class__.instances.append(self)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        return False
+
+
+class FailingTransactWrite(FakeTransactWrite):
+    def __exit__(self, exc_type, exc_value, traceback):
+        if exc_type is None:
+            raise TransactWriteError("transaction cancelled")
+        return False
+
 # Dummy Rococo Model
 @dataclass
 class Person(VersionedModel):
@@ -82,6 +106,7 @@ class TestDynamoDbRepository(unittest.TestCase):
 
     def tearDown(self):
         self.patcher.stop()
+        FakeTransactWrite.instances.clear()
 
     def _mock_generate_model(self, table_name, model_cls, is_audit=False):
         if is_audit:
@@ -143,11 +168,12 @@ class TestDynamoDbRepository(unittest.TestCase):
         # Test saving a new record
         person = Person(first_name='Jane', last_name='Doe')
         
-        with patch.object(PersonModel, 'save') as mock_save:
+        with patch('rococo.data.dynamodb.TransactWrite', FakeTransactWrite):
             saved_person = self.repository.save(person, send_message=True)
             
             self.assertEqual(saved_person.first_name, 'Jane')
-            mock_save.assert_called()
+            self.assertEqual(len(FakeTransactWrite.instances), 1)
+            FakeTransactWrite.instances[0].save.assert_called_once()
             
             # Verify message was sent
             self.message_adapter.send_message.assert_called_with(
@@ -164,36 +190,107 @@ class TestDynamoDbRepository(unittest.TestCase):
         person.version = old_version  # Set version so prepare_for_save preserves it in previous_version
         person.previous_version = old_version
         
-        # Mock the 'get' call used by move_entity_to_audit_table
+        # Mock the consistent read used to build the audit record.
         with patch.object(PersonModel, 'get') as mock_get:
             mock_item = MagicMock()
-            mock_item.attribute_values = {'entity_id': entity_id, 'first_name': 'Jane', 'active': True}
+            mock_item.attribute_values = {
+                'entity_id': entity_id,
+                'version': old_version,
+                'first_name': 'Jane',
+                'active': True
+            }
             mock_get.return_value = mock_item
             
-            with patch.object(PersonAuditModel, 'save') as mock_audit_save:
-                with patch.object(PersonModel, 'save') as mock_save:
-                    self.repository.save(person, send_message=True)
-                    
-                    # Ensure we tried to fetch the old record to audit it
-                    mock_get.assert_called_with(entity_id)
-                    
-                    # Ensure the audit record was saved
-                    mock_audit_save.assert_called()
-                    
-                    # Ensure the new record was saved
-                    mock_save.assert_called()
-                    
-                    # Verify message was sent
-                    self.message_adapter.send_message.assert_called()
+            with patch('rococo.data.dynamodb.TransactWrite', FakeTransactWrite):
+                self.repository.save(person, send_message=True)
+
+                # Ensure we fetched the current row consistently before the transaction.
+                mock_get.assert_called_with(entity_id, consistent_read=True)
+
+                # One transaction should contain the audit put and the main-table put.
+                self.assertEqual(len(FakeTransactWrite.instances), 1)
+                self.assertEqual(FakeTransactWrite.instances[0].save.call_count, 2)
+
+                # Verify message was sent
+                self.message_adapter.send_message.assert_called()
+
+    def test_save_existing_stale_version_raises_optimistic_lock_error(self):
+        person = Person(first_name='Jane', last_name='Doe')
+        entity_id = uuid4().hex
+        old_version = uuid4().hex
+        concurrent_version = uuid4().hex
+        person.entity_id = entity_id
+        person.version = old_version
+        person.previous_version = old_version
+
+        with patch.object(PersonModel, 'get') as mock_get:
+            mock_item = MagicMock()
+            mock_item.attribute_values = {
+                'entity_id': entity_id,
+                'version': concurrent_version,
+                'first_name': 'Concurrent',
+                'active': True
+            }
+            mock_get.return_value = mock_item
+
+            with patch('rococo.data.dynamodb.TransactWrite', FakeTransactWrite):
+                with self.assertRaises(DynamoDbOptimisticLockError):
+                    self.repository.save(person)
+
+                self.assertEqual(len(FakeTransactWrite.instances), 0)
+
+    def test_save_existing_transaction_condition_failure_raises_optimistic_lock_error(self):
+        person = Person(first_name='Jane', last_name='Doe')
+        entity_id = uuid4().hex
+        old_version = uuid4().hex
+        person.entity_id = entity_id
+        person.version = old_version
+        person.previous_version = old_version
+
+        with patch.object(PersonModel, 'get') as mock_get:
+            mock_item = MagicMock()
+            mock_item.attribute_values = {
+                'entity_id': entity_id,
+                'version': old_version,
+                'first_name': 'Jane',
+                'active': True
+            }
+            mock_get.return_value = mock_item
+
+            with patch('rococo.data.dynamodb.TransactWrite', FailingTransactWrite):
+                with patch.object(self.adapter, '_is_optimistic_lock_failure', return_value=True):
+                    with self.assertRaises(DynamoDbOptimisticLockError):
+                        self.repository.save(person)
+
+                self.assertEqual(len(FailingTransactWrite.instances), 1)
+                self.assertEqual(FailingTransactWrite.instances[0].save.call_count, 2)
+
+    def test_save_existing_without_audit_still_uses_optimistic_transaction(self):
+        self.repository.use_audit_table = False
+        person = Person(first_name='Jane', last_name='Doe')
+        entity_id = uuid4().hex
+        old_version = uuid4().hex
+        person.entity_id = entity_id
+        person.version = old_version
+        person.previous_version = old_version
+
+        with patch.object(PersonModel, 'get') as mock_get:
+            with patch('rococo.data.dynamodb.TransactWrite', FakeTransactWrite):
+                self.repository.save(person)
+
+                mock_get.assert_not_called()
+                self.assertEqual(len(FakeTransactWrite.instances), 1)
+                FakeTransactWrite.instances[0].save.assert_called_once()
 
     def test_delete(self):
         person = Person(first_name='Jane')
         person.entity_id = uuid4().hex
         
-        # Mock get for the delete check (if repository does a check) or just the save (soft delete)
-        with patch.object(PersonModel, 'save') as mock_save:
-             self.repository.delete(person)
-             mock_save.assert_called()
+        with patch('rococo.data.dynamodb.TransactWrite', FakeTransactWrite):
+            self.repository.delete(person)
+            self.assertFalse(person.active)
+            self.assertEqual(len(FakeTransactWrite.instances), 1)
+            FakeTransactWrite.instances[0].save.assert_called_once()
 
 
 if __name__ == '__main__':

@@ -1,10 +1,16 @@
 from typing import Any, Dict, List, Optional, Tuple, Type, Union
 import os
 from pynamodb.models import Model
-from pynamodb.attributes import UnicodeAttribute, BooleanAttribute, NumberAttribute, JSONAttribute, UTCDateTimeAttribute, ListAttribute
-from pynamodb.exceptions import DoesNotExist
+from pynamodb.attributes import UnicodeAttribute, BooleanAttribute, NumberAttribute, JSONAttribute, ListAttribute
+from pynamodb.exceptions import DoesNotExist, TransactWriteError
+from pynamodb.transactions import TransactWrite
 from rococo.data.base import DbAdapter
 from rococo.models import BaseModel, VersionedModel
+from rococo.models.versioned_model import get_uuid_hex
+
+
+class DynamoDbOptimisticLockError(RuntimeError):
+    """Raised when a DynamoDB versioned save loses its optimistic lock."""
 
 
 class DynamoDbAdapter(DbAdapter):
@@ -51,6 +57,7 @@ class DynamoDbAdapter(DbAdapter):
             'Meta': type('Meta', (), {
                 'table_name': Meta.table_name_val,
                 'region': Meta.region,
+                'host': os.getenv('DYNAMODB_ENDPOINT_URL'),
                 'aws_access_key_id': Meta.aws_access_key_id,
                 'aws_secret_access_key': Meta.aws_secret_access_key
             })
@@ -167,6 +174,116 @@ class DynamoDbAdapter(DbAdapter):
         item = pynamo_model(**data)
         item.save()
         return item.attribute_values
+
+    def save_versioned(
+        self,
+        table: str,
+        data: Dict[str, Any],
+        model_cls: Type[VersionedModel] = None,
+        write_audit: bool = True
+    ) -> Union[Dict[str, Any], None]:
+        """
+        Atomically save a VersionedModel item and its audit record.
+
+        Existing entities are saved with optimistic locking: the current table
+        row must still have the version carried in ``data['previous_version']``.
+        If that condition fails, no write is committed. When ``write_audit`` is
+        true, the audit row and current row are committed in the same
+        transaction. New entities are conditionally inserted so an accidental
+        reused ``entity_id`` cannot overwrite an existing item.
+        """
+        if model_cls is None:
+            raise ValueError("model_cls is required for DynamoDB save_versioned")
+
+        entity_id = data.get('entity_id')
+        previous_version = data.get('previous_version')
+        if not entity_id:
+            raise RuntimeError("save_versioned failed: 'entity_id' is required in data")
+        if not data.get('version'):
+            raise RuntimeError("save_versioned failed: 'version' is required in data")
+
+        pynamo_model = self._generate_pynamo_model(table, model_cls)
+        item = pynamo_model(**data)
+
+        try:
+            if self._is_initial_version(previous_version):
+                with TransactWrite(connection=pynamo_model._get_connection().connection) as transaction:
+                    transaction.save(
+                        item,
+                        condition=pynamo_model.entity_id.does_not_exist()
+                    )
+                return item.attribute_values
+
+            current_version_condition = pynamo_model.version == previous_version
+
+            audit_item = None
+            audit_condition = None
+            if write_audit:
+                current_values = self._get_current_version_for_audit(
+                    pynamo_model,
+                    entity_id,
+                    previous_version
+                )
+                audit_table_name = f"{table}_audit"
+                pynamo_audit_model = self._generate_pynamo_model(
+                    audit_table_name,
+                    model_cls,
+                    is_audit=True
+                )
+                audit_item = pynamo_audit_model(**current_values)
+                audit_condition = (
+                    pynamo_audit_model.entity_id.does_not_exist()
+                    & pynamo_audit_model.version.does_not_exist()
+                )
+
+            with TransactWrite(connection=pynamo_model._get_connection().connection) as transaction:
+                if audit_item is not None:
+                    transaction.save(audit_item, condition=audit_condition)
+
+                transaction.save(item, condition=current_version_condition)
+            return item.attribute_values
+        except DynamoDbOptimisticLockError:
+            raise
+        except TransactWriteError as e:
+            if self._is_optimistic_lock_failure(e):
+                raise DynamoDbOptimisticLockError(
+                    f"Version conflict while saving entity_id={entity_id} to {table}"
+                ) from e
+            raise RuntimeError(f"save_versioned failed: {e}") from e
+        except Exception as e:
+            raise RuntimeError(f"save_versioned failed: {e}") from e
+
+    @staticmethod
+    def _is_initial_version(previous_version: Any) -> bool:
+        return previous_version in (None, get_uuid_hex(0))
+
+    @staticmethod
+    def _is_optimistic_lock_failure(error: TransactWriteError) -> bool:
+        return any(
+            reason is not None and reason.code == 'ConditionalCheckFailed'
+            for reason in error.cancellation_reasons
+        )
+
+    @staticmethod
+    def _get_current_version_for_audit(
+        pynamo_model: Type[Model],
+        entity_id: str,
+        expected_version: str
+    ) -> Dict[str, Any]:
+        try:
+            current_item = pynamo_model.get(entity_id, consistent_read=True)
+        except DoesNotExist as e:
+            raise DynamoDbOptimisticLockError(
+                f"Cannot update missing DynamoDB entity_id={entity_id}"
+            ) from e
+
+        current_values = current_item.attribute_values.copy()
+        current_version = current_values.get('version')
+        if current_version != expected_version:
+            raise DynamoDbOptimisticLockError(
+                f"Version conflict for entity_id={entity_id}: expected {expected_version}, found {current_version}"
+            )
+        return current_values
 
     def upsert(self, table: str, data: Dict[str, Any], model_cls: Type[BaseModel] = None) -> Union[Dict[str, Any], None]:
         """

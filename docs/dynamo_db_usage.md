@@ -102,12 +102,14 @@ It sets up the following schema:
 *   **Attributes**: Mapped from your dataclass fields.
 
 ### Audit Tables
-If you update a record, the adapter automatically moves the old version to an audit table (e.g., `person_audit`).
+If you update a versioned record, the adapter automatically writes the old version to an audit table (e.g., `person_audit`) and writes the new current version.
 *   **Audit Table Name**: `{table_name}_audit`
 *   **Hash Key**: `entity_id`
 *   **Range Key**: `version`
 
 Ensure your DynamoDB tables are created with these key schemas if you are provisioning them manually.
+
+Versioned saves use DynamoDB `TransactWriteItems` for the audit-table write and main-table write. For existing entities, the main-table write is conditional on the current row's `version` matching the model's `previous_version`; if another writer has already advanced the version, the save raises `DynamoDbOptimisticLockError` and neither write is committed. New versioned entities are also conditionally inserted so a reused `entity_id` cannot overwrite an existing item.
 
 ## Example Application
 

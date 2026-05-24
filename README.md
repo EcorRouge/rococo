@@ -101,6 +101,7 @@ The following extras are available:
 - **data-mysql** - MySQL support
 - **data-mongo** - MongoDB support
 - **data-postgres** - PostgreSQL support
+- **data-dynamodb** - DynamoDB support
 - **messaging** - rabbitmq/sqs messaging
 - **emailing** - mailjet/ses emailing
 - **faxing** - iFax faxing support

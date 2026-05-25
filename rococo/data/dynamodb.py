@@ -115,13 +115,13 @@ class DynamoDbAdapter(DbAdapter):
         except Exception as e:
              raise RuntimeError(f"get_one failed: {e}")
 
-    def get_many(self, table: str, conditions: Dict[str, Any] = None, sort: List[Tuple[str, str]] = None, limit: int = 100, model_cls: Type[BaseModel] = None) -> List[Dict[str, Any]]:
+    def get_many(self, table: str, conditions: Dict[str, Any] = None, sort: List[Tuple[str, str]] = None, limit: int = 100, offset: int = None, model_cls: Type[BaseModel] = None) -> List[Dict[str, Any]]:
         if model_cls is None:
             raise ValueError("model_cls is required for DynamoDB get_many")
 
         pynamo_model = self._generate_pynamo_model(table, model_cls)
         try:
-            results = self._execute_query_or_scan(pynamo_model, conditions, limit=limit)
+            results = self._execute_query_or_scan(pynamo_model, conditions, limit=limit, offset=offset)
             return [item.attribute_values for item in results]
         except Exception as e:
             raise RuntimeError(f"get_many failed: {e}")
@@ -230,14 +230,14 @@ class DynamoDbAdapter(DbAdapter):
         except DoesNotExist:
             return False
 
-    def _execute_query_or_scan(self, model_cls: Type[Model], conditions: Dict[str, Any], limit: int = None, count_only: bool = False):
+    def _execute_query_or_scan(self, model_cls: Type[Model], conditions: Dict[str, Any], limit: int = None, offset: int = None, count_only: bool = False):
         """
         Helper to determine whether to use Query or Scan based on conditions.
         """
         # Find hash key and range key using public API instead of _meta
         hash_key_name = None
         range_key_name = None
-        
+
         for name, attr in model_cls.get_attributes().items():
             if getattr(attr, 'is_hash_key', False):
                 hash_key_name = name
@@ -245,19 +245,24 @@ class DynamoDbAdapter(DbAdapter):
                 range_key_name = name
 
         hash_key_val = conditions.get(hash_key_name) if conditions else None
-        
+
+        # DynamoDB has no native integer offset; fetch limit+offset and skip client-side.
+        effective_limit = limit
+        if limit is not None and offset:
+            effective_limit = limit + offset
+
         if hash_key_val is not None:
             # Query path: Hash key is present
             range_key_condition = None
             filter_condition = None
-            
+
             for key, value in conditions.items():
                 if key == hash_key_name:
                     continue
-                
+
                 attr = getattr(model_cls, key)
                 cond = (attr == value)
-                
+
                 if key == range_key_name:
                     range_key_condition = cond
                 else:
@@ -265,11 +270,12 @@ class DynamoDbAdapter(DbAdapter):
                         filter_condition = cond
                     else:
                         filter_condition = filter_condition & cond
-            
+
             if count_only:
                 return model_cls.count(hash_key_val, range_key_condition=range_key_condition, filter_condition=filter_condition)
             else:
-                return model_cls.query(hash_key_val, range_key_condition=range_key_condition, filter_condition=filter_condition, limit=limit)
+                results = model_cls.query(hash_key_val, range_key_condition=range_key_condition, filter_condition=filter_condition, limit=effective_limit)
+                return self._apply_offset(results, offset, limit)
         else:
             # Scan path: Hash key is missing
             scan_condition = None
@@ -281,8 +287,26 @@ class DynamoDbAdapter(DbAdapter):
                         scan_condition = cond
                     else:
                         scan_condition = scan_condition & cond
-            
+
             if count_only:
                 return model_cls.count(filter_condition=scan_condition)
             else:
-                return model_cls.scan(scan_condition, limit=limit)
+                results = model_cls.scan(scan_condition, limit=effective_limit)
+                return self._apply_offset(results, offset, limit)
+
+    def _apply_offset(self, results, offset, limit):
+        """Skip `offset` items from a PynamoDB result iterator, then collect up to `limit`."""
+        if not offset:
+            return results
+        iterator = iter(results)
+        for _ in range(offset):
+            try:
+                next(iterator)
+            except StopIteration:
+                return []
+        collected = []
+        for item in iterator:
+            collected.append(item)
+            if limit is not None and len(collected) >= limit:
+                break
+        return collected

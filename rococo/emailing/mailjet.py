@@ -71,8 +71,14 @@ class MailjetService(EmailService):
     def __call__(self, config: MailjetConfig, *args, **kwargs):
         super().__call__(config)
 
-        match = re.match(r'^(.*)\s*<(.*)>$', self.config.SOURCE_EMAIL)
-        name, email = match.groups()
+        # Parse SOURCE_EMAIL which accepts two formats:
+        #   "Name <email@example.com>"  → {"Name": "Name", "Email": "email@example.com"}
+        #   "user@example.com"          → {"Name": "", "Email": "user@example.com"}
+        match = re.match(r'^\s*(.*?)\s*<(.+)>\s*$', self.config.SOURCE_EMAIL)
+        if match:
+            name, email = match.groups()
+        else:
+            name, email = '', self.config.SOURCE_EMAIL.strip()
         self.from_address = {"Name": name, "Email": email}
 
         self.client = Client(
@@ -152,7 +158,7 @@ class MailjetService(EmailService):
             response_data = result.json()["Data"]
         except Exception as e:
             message = f"Couldn't find Mailjet contact for {email}: {e}"
-            logger.exception(message, "warning")
+            logger.exception(message)
             return
 
         for contact in response_data:
@@ -163,4 +169,4 @@ class MailjetService(EmailService):
                     self.config.MAILJET_API_KEY, self.config.MAILJET_API_SECRET), timeout=15)
             except Exception as e:
                 message = f"Couldn't remove Mailjet contact for {email} : {e}"
-                logger.exception(message, "warning")
+                logger.exception(message)

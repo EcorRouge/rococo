@@ -419,8 +419,8 @@ class PostgreSQLAdapter(DbAdapter):
             return True
         except psycopg2.Error as ex:
             self._connection.rollback()
-            if retry_count < 3 and ex.args[0] == 1213:
-                # Deadlock detected
+            if retry_count < 3 and getattr(ex, 'pgcode', None) == '40P01':
+                # Deadlock detected (PostgreSQL SQLSTATE 40P01)
                 logging.warning("Deadlock detected on table %s. Retrying in %d seconds. Attempt %d",
                                 table_name, 2**retry_count, retry_count+1)
                 time.sleep(2**retry_count)

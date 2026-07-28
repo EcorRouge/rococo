@@ -228,7 +228,7 @@ class OpenObserve(ObservabilityBase):
             self._httpx_instrumented = True
 
 
-    def enable_postgres_tracing(self):
+    def enable_postgres_tracing(self, enable_commenter=False):
         """
         Patches psycopg2 globally so every query run through it produces a
         span automatically — no changes needed in adapter/repository code.
@@ -237,6 +237,12 @@ class OpenObserve(ObservabilityBase):
         psycopg2 connection is created (e.g. from RepositoryFactory.__init__,
         guarded by a class-level flag + lock — see the calling pattern used
         there). Safe to call more than once; only instruments the first time.
+
+        enable_commenter tags SQL with trace context as a comment, which lets
+        you correlate a slow query in Postgres logs/pg_stat_statements back to
+        the trace that issued it. Off by default: rewriting every statement
+        breaks prepared-statement/plan reuse and pollutes pg_stat_statements,
+        so opt in per service only where the correlation is worth it.
         """
         # Lazy import — only services that call this need
         # opentelemetry-instrumentation-psycopg2 installed
@@ -248,10 +254,7 @@ class OpenObserve(ObservabilityBase):
 
         if not self._psycopg2_instrumented:
             Psycopg2Instrumentor().instrument(
-                enable_commenter=True,   # tags SQL with trace context as a
-                                         # comment — lets you correlate a slow
-                                         # query in Postgres logs/pg_stat_statements
-                                         # back to the exact trace that issued it
+                enable_commenter=enable_commenter,
                 commenter_options={},
             )
             self._psycopg2_instrumented = True

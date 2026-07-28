@@ -401,9 +401,17 @@ def test_enable_postgres_tracing_instruments_once(provider, psycopg2_instrumento
     provider.enable_postgres_tracing()
 
     psycopg2_instrumentor.return_value.instrument.assert_called_once_with(
-        enable_commenter=True, commenter_options={}
+        enable_commenter=False, commenter_options={}
     )
     assert provider._psycopg2_instrumented is True
+
+
+def test_enable_postgres_tracing_commenter_opt_in(provider, psycopg2_instrumentor):
+    provider.enable_postgres_tracing(enable_commenter=True)
+
+    psycopg2_instrumentor.return_value.instrument.assert_called_once_with(
+        enable_commenter=True, commenter_options={}
+    )
 
 
 @pytest.fixture

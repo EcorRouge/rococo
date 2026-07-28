@@ -30,3 +30,18 @@ If your project uses:
 * rococo.messaging - use rococo[messaging]
 
 Update your requirements.txt or pyproject.toml to reflect these changes.
+
+## 1.3.4
+
+`OpenObserve.enable_postgres_tracing()` no longer enables SQL commenting by default.
+
+What's changed
+In 1.3.3 the method always instrumented psycopg2 with `enable_commenter=True`, which appends trace context as a comment to every statement. That rewrites each statement, which hurts prepared-statement/plan reuse and fragments `pg_stat_statements` entries. It is now off by default and opt-in per call:
+
+```python
+provider.enable_postgres_tracing()                        # no SQL commenting (new default)
+provider.enable_postgres_tracing(enable_commenter=True)   # previous 1.3.3 behaviour
+```
+
+Action required
+Spans are still produced for every query either way, so no change is needed unless you rely on trace ids appearing in Postgres logs or `pg_stat_statements`. If you do, pass `enable_commenter=True`.

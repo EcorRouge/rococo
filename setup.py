@@ -53,18 +53,70 @@ extras_require["data"] = [
     *extras_require["data-dynamodb"],
 ]
 
+# Base — required by the logging handler regardless of whether tracing is
+# used at all. Every service using rococo's observability module needs this.
+# opentelemetry-api is included here because the logging handler always tries
+# to correlate log records with the active trace, and the @traced/@traced_step
+# decorators depend only on the API (not the full SDK/exporter stack).
+extras_require["observability"] = [
+    'requests>=2.31.0,<3.0',
+    'opentelemetry-api>=1.24,<2.0',
+]
+
+# Required by anything that calls get_tracer_provider() / OpenObserveTracer,
+# regardless of framework — the base building blocks for tracing itself.
+extras_require["observability-tracing-core"] = [
+    'opentelemetry-sdk>=1.24,<2.0',
+    'opentelemetry-exporter-otlp-proto-http>=1.24,<2.0',
+]
+
+# The opentelemetry-instrumentation-* packages only ever publish prereleases
+# (0.45b0 ... 0.65b0), so the lower bound has to name one explicitly: a plain
+# >=0.45 excludes every existing release and installers resolve nothing.
+extras_require["observability-flask-tracing"] = [
+    'opentelemetry-instrumentation-flask>=0.45b0,<1.0',
+    'opentelemetry-instrumentation-requests>=0.45b0,<1.0',
+    # Used directly to detect streaming responses when wrapping view functions.
+    'Werkzeug>=2.0,<4.0',
+]
+
+extras_require["observability-fastapi-tracing"] = [
+    'opentelemetry-instrumentation-fastapi>=0.45b0,<1.0',
+    'opentelemetry-instrumentation-httpx>=0.45b0,<1.0',
+    'opentelemetry-instrumentation-requests>=0.45b0,<1.0',
+]
+
+extras_require["observability-postgres-tracing"] = [
+    'opentelemetry-instrumentation-psycopg2>=0.45b0,<1.0',
+]
+
+# Python range capped per this package's own declared support window
+extras_require["observability-langgraph-tracing"] = [
+    'openinference-instrumentation-langchain>=0.1.67,<0.2.0; python_version < "3.15"',
+]
+
+extras_require["observability-tracing"] = [
+    *extras_require["observability-tracing-core"],
+    *extras_require["observability-flask-tracing"],
+    *extras_require["observability-fastapi-tracing"],
+    *extras_require["observability-postgres-tracing"],
+    *extras_require["observability-langgraph-tracing"],
+]
+
 extras_require["all"] = [
     *extras_require["data"],
     *extras_require["emailing"],
     *extras_require["messaging"],
     *extras_require["faxing"],
-    *extras_require["sms"]
+    *extras_require["sms"],
+    *extras_require["observability"],
+    *extras_require["observability-tracing"],
 ]
 
 
 setup(
     name='rococo',
-    version='1.3.2',
+    version='1.3.3',
     packages=find_packages(),
     url='https://github.com/EcorRouge/rococo',
     license='MIT',

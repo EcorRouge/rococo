@@ -101,10 +101,18 @@ The following extras are available:
 - **data-mysql** - MySQL support
 - **data-mongo** - MongoDB support
 - **data-postgres** - PostgreSQL support
+- **data-dynamodb** - DynamoDB support
 - **messaging** - rabbitmq/sqs messaging
 - **emailing** - mailjet/ses emailing
 - **faxing** - iFax faxing support
 - **sms** - Twilio sms support
+- **observability** - base observability: OpenObserve logging handler plus the OpenTelemetry API used for trace correlation and the `@traced`/`traced_step` decorators
+- **observability-tracing-core** - OpenTelemetry SDK and OTLP/HTTP exporter, required by anything calling `get_tracer_provider()`
+- **observability-flask-tracing** - Flask + requests instrumentation, and Werkzeug for streaming-response detection
+- **observability-fastapi-tracing** - FastAPI + httpx + requests instrumentation
+- **observability-postgres-tracing** - psycopg2 instrumentation (query spans)
+- **observability-langgraph-tracing** - LangChain/LangGraph instrumentation via OpenInference
+- **observability-tracing** - all tracing extras (core plus every framework instrumentation above)
 
 ### Example
 

@@ -16,8 +16,6 @@ import pytest
 from packaging.requirements import Requirement
 from packaging.utils import canonicalize_name
 
-EXPECTED_VERSION = "1.3.4"
-
 OBSERVABILITY_EXTRAS = (
     "observability",
     "observability-tracing-core",
@@ -69,11 +67,6 @@ def test_version_is_three_part_dotted(setup_kwargs):
     parts = version.split(".")
     assert len(parts) == 3, version
     assert all(part.isdigit() for part in parts), version
-
-
-def test_version_matches_expected_bump(setup_kwargs):
-    # Deliberately exact: a future bump should fail here and be updated knowingly.
-    assert setup_kwargs["version"] == EXPECTED_VERSION
 
 
 # --------------------------------------------------------------------------

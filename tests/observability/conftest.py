@@ -59,6 +59,28 @@ def _matching_modules(prefixes):
     ]
 
 
+def _rebind_parent_attributes(prefixes):
+    """
+    Re-point each parent package attribute at whatever ``sys.modules`` now holds.
+
+    Restoring ``sys.modules`` is not sufficient on its own. Re-importing an
+    evicted package rebinds the attribute on its parent — ``rococo.observability``
+    on the ``rococo`` module — to the *fresh* module object, and putting the
+    original entry back in ``sys.modules`` leaves that attribute pointing at the
+    now-orphaned copy. ``unittest.mock.patch`` resolves dotted targets by getattr
+    traversal rather than a ``sys.modules`` lookup, so it would patch the orphan
+    and silently no-op against the module the tests actually hold a class from.
+    """
+    for name in _matching_modules(prefixes):
+        parent_name, _, leaf = name.rpartition(".")
+        if not parent_name:
+            continue
+        parent = sys.modules.get(parent_name)
+        module = sys.modules[name]
+        if parent is not None and getattr(parent, leaf, None) is not module:
+            setattr(parent, leaf, module)
+
+
 @pytest.fixture
 def block_modules():
     """
@@ -78,11 +100,14 @@ def block_modules():
     saved_modules = dict(sys.modules)
     saved_meta_path = list(sys.meta_path)
     installed = []
+    touched = set()
 
     def block(*prefixes, reset=("rococo.observability",)):
         blocker = _ImportBlocker(prefixes)
         sys.meta_path.insert(0, blocker)
         installed.append(blocker)
+        touched.update(prefixes)
+        touched.update(reset)
         for name in _matching_modules(prefixes) + _matching_modules(reset):
             sys.modules.pop(name, None)
         return blocker
@@ -95,6 +120,7 @@ def block_modules():
     sys.meta_path[:] = saved_meta_path
     sys.modules.clear()
     sys.modules.update(saved_modules)
+    _rebind_parent_attributes(touched)
 
 
 @pytest.fixture
@@ -185,3 +211,4 @@ def reset_observability_modules():
     yield
     sys.modules.clear()
     sys.modules.update(saved)
+    _rebind_parent_attributes(("rococo.observability",))

@@ -88,6 +88,7 @@ class DynamoDbRepository(BaseRepository):
                 conditions=db_conditions,
                 sort=sort,
                 limit=limit,
+                offset=offset,
                 model_cls=self.model
             )
         )

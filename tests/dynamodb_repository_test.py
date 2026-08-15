@@ -186,6 +186,96 @@ class TestDynamoDbRepository(unittest.TestCase):
                     # Verify message was sent
                     self.message_adapter.send_message.assert_called()
 
+    def _mock_person_items(self, count):
+        items = []
+        for i in range(count):
+            mock_item = MagicMock()
+            mock_item.attribute_values = {
+                'entity_id': uuid4().hex,
+                'first_name': f'Person{i}',
+                'active': True,
+            }
+            items.append(mock_item)
+        return items
+
+    def test_get_many_no_offset(self):
+        # When offset is not provided, behavior should be identical to before:
+        # adapter must not request extra items and should return everything fetched.
+        PersonModel.get_attributes = MagicMock()
+        mock_hash_attr = MagicMock()
+        mock_hash_attr.is_hash_key = True
+        mock_hash_attr.is_range_key = False
+        PersonModel.get_attributes.return_value = {'entity_id': mock_hash_attr}
+
+        items = self._mock_person_items(3)
+
+        with patch.object(PersonModel, 'scan') as mock_scan:
+            mock_scan.return_value = items
+            results = self.repository.get_many({'first_name': 'Person0'}, limit=10)
+
+            self.assertEqual(len(results), 3)
+            # scan should be called with the raw limit (no offset added)
+            _, kwargs = mock_scan.call_args
+            self.assertEqual(kwargs.get('limit'), 10)
+
+    def test_get_many_with_offset_scan(self):
+        # Scan path: offset=2, limit=2 should fetch 4 and return items [2..4).
+        PersonModel.get_attributes = MagicMock()
+        mock_hash_attr = MagicMock()
+        mock_hash_attr.is_hash_key = True
+        mock_hash_attr.is_range_key = False
+        PersonModel.get_attributes.return_value = {'entity_id': mock_hash_attr}
+
+        items = self._mock_person_items(5)
+        expected_first_names = [items[2].attribute_values['first_name'],
+                                items[3].attribute_values['first_name']]
+
+        with patch.object(PersonModel, 'scan') as mock_scan:
+            mock_scan.return_value = iter(items[:4])  # adapter requested limit+offset=4
+            results = self.repository.get_many({'first_name': 'X'}, limit=2, offset=2)
+
+            self.assertEqual(len(results), 2)
+            self.assertEqual([r.first_name for r in results], expected_first_names)
+            _, kwargs = mock_scan.call_args
+            self.assertEqual(kwargs.get('limit'), 4)
+
+    def test_get_many_with_offset_query(self):
+        # Query path (hash key present): offset must be applied client-side.
+        PersonModel.get_attributes = MagicMock()
+        mock_hash_attr = MagicMock()
+        mock_hash_attr.is_hash_key = True
+        mock_hash_attr.is_range_key = False
+        PersonModel.get_attributes.return_value = {'entity_id': mock_hash_attr}
+
+        entity_id = uuid4().hex
+        items = self._mock_person_items(5)
+
+        with patch.object(PersonModel, 'query') as mock_query:
+            mock_query.return_value = iter(items[:3])  # limit+offset=3
+            results = self.repository.get_many({'entity_id': entity_id}, limit=2, offset=1)
+
+            self.assertEqual(len(results), 2)
+            self.assertEqual(results[0].first_name, items[1].attribute_values['first_name'])
+            self.assertEqual(results[1].first_name, items[2].attribute_values['first_name'])
+            _, kwargs = mock_query.call_args
+            self.assertEqual(kwargs.get('limit'), 3)
+
+    def test_get_many_offset_exceeds_results(self):
+        # When offset >= total items returned, should produce an empty list.
+        PersonModel.get_attributes = MagicMock()
+        mock_hash_attr = MagicMock()
+        mock_hash_attr.is_hash_key = True
+        mock_hash_attr.is_range_key = False
+        PersonModel.get_attributes.return_value = {'entity_id': mock_hash_attr}
+
+        items = self._mock_person_items(2)
+
+        with patch.object(PersonModel, 'scan') as mock_scan:
+            mock_scan.return_value = iter(items)
+            results = self.repository.get_many({'first_name': 'X'}, limit=5, offset=10)
+
+            self.assertEqual(results, [])
+
     def test_delete(self):
         person = Person(first_name='Jane')
         person.entity_id = uuid4().hex
